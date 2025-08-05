@@ -18,7 +18,7 @@
             placeholder="enter username..."
             class="text-input"
           />
-          <button @click="handleUsernameUpdate" class="action-button">SET NAME</button>
+          <button @click="handleUsernameUpdate" class="action-button" :disabled="!usernameInput">SET NAME</button>
         </div>
 
         <div class="input-group">
@@ -28,7 +28,7 @@
             placeholder="type a message..."
             class="text-input"
           />
-          <button @click="handleSayClick" class="action-button">SAY</button>
+          <button @click="handleSayClick" class="action-button" :disabled="!textToSay">SAY</button>
         </div>
 
         <div class="input-group">
@@ -43,10 +43,13 @@
         </div>
 
         <div class="input-group button-row">
-          <button @click="requestStateChange({ jumping: true })" class="action-button">JUMP</button>
-          <button @click="requestStateChange({ cheeks_on: !bbyState.cheeks_on })" class="action-button">CHEEKS</button>
-          <button @click="requestStateChange({ stretch_up: true })" class="action-button">STRETCH</button>
-          <button @click="sayRandomFact" class="action-button">RANDOM FACT</button>
+          <button @click="requestStateChange({ jumping: true })" class="action-button">jump</button>
+          <button @click="requestStateChange({ cheeks_on: !bbyState.cheeks_on })" class="action-button">blush</button>
+          <button @click="requestStateChange({ stretch_up: true })" class="action-button">stretch</button>
+          <button @click="sayRandomFact" class="action-button">random fact</button>
+        </div>
+        <div class="input-group button-row">
+          <button @click="clearBubbles" class="action-button">pop bubbles</button>
         </div>
       </div>
     </div>
@@ -90,7 +93,7 @@ import { bbyUse } from './composables/bbyUse.ts';
 import bbySprite from './components/bbySprite.vue';
 import bbyBubble from './components/bbyBubble.vue';
 
-const { bbyState, say, requestStateChange, sayRandomFact, username, setUsername } = bbyUse();
+const { bbyState, say, requestStateChange, sayRandomFact, username, setUsername, clearBubbles } = bbyUse();
 
 const textToSay = ref('');
 const colorInput = ref('#85efee');

@@ -199,6 +199,19 @@ html, body {
   font-family: var(--primary-font);
 }
 
+.action-button:disabled {
+  background-color: var(--border-color);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.action-button:hover {
+  background-color: var(--accent-hover);
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px #000;
+}
+
 .button-row {
   justify-content: space-around;
 }

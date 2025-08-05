@@ -1,12 +1,16 @@
 <template>
-  <canvas ref="bbyCanvas" :width="canvasSize[0]" :height="canvasSize[1]"></canvas>
+  <canvas
+    ref="bbyCanvas"
+    :width="canvasSize[0]"
+    :height="canvasSize[1]"
+    aria-label="AI baby sprite, somewhere between a ghost and a robot"
+    role="img"
+  ></canvas>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
-
-// Import images for Vite to process
 import bbyBodyUrl from '@/assets/bbySprites/bbyBODY.png';
 import bbyCheeksUrl from '@/assets/bbySprites/bbyCHEEKS.png';
 import bbyEyesUrl from '@/assets/bbySprites/bbyEYES.png';

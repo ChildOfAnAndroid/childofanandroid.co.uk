@@ -195,6 +195,11 @@ function removeBubble(id: string) {
   }
 }
 
+function clearBubbles() {
+  bbyState.bubbles = [];
+  bbyState.graveyardBubbles = [];
+}
+
 function sayRandomFact() {
   const factKeys = Object.keys(bbyFacts.value);
   if (factKeys.length === 0) {
@@ -261,5 +266,6 @@ export function bbyUse() {
     say,
     removeBubble,
     sayRandomFact,
+    clearBubbles,
   };
 }

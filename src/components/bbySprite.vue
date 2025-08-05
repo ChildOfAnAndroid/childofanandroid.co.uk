@@ -89,7 +89,7 @@ const draw = () => {
   for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
      ctx.drawImage(images.bbyEYES, eyeSourceX, i * spriteSize.height, spriteSize.width, spriteSize.height, baseOffsetX, baseOffsetY, spriteSize.width, spriteSize.height);
   }
-  const mouthSourceX = Math.max(0, Math.min(bbyState.mouth, numMouthStyles)) * spriteSize.width;
+  const mouthSourceX = Math.max(0, Math.min(bbyState.mouth, numMouthStyles - 1)) * spriteSize.width;
   ctx.drawImage(images.bbyMOUTH, mouthSourceX, 0, spriteSize.width, spriteSize.height, baseOffsetX, baseOffsetY, spriteSize.width, spriteSize.height);
   
   ctx.filter = 'none';
@@ -116,7 +116,7 @@ onMounted(async () => {
   }
 });
 
-watch([bbyState, currentColour], draw, { deep: true });
+watch([bbyState, currentColour, tintStrength], draw, { deep: true });
 </script>
 
 <style scoped>

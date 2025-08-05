@@ -13,6 +13,16 @@
 
         <div class="input-group">
           <input
+            v-model="usernameInput"
+            @keyup.enter="handleUsernameUpdate"
+            placeholder="enter username..."
+            class="text-input"
+          />
+          <button @click="handleUsernameUpdate" class="action-button">SET NAME</button>
+        </div>
+
+        <div class="input-group">
+          <input
             v-model="textToSay"
             @keyup.enter="handleSayClick"
             placeholder="type a message..."
@@ -80,14 +90,19 @@ import { bbyUse } from './composables/bbyUse.ts';
 import bbySprite from './components/bbySprite.vue';
 import bbyBubble from './components/bbyBubble.vue';
 
-const { bbyState, say, requestStateChange, sayRandomFact } = bbyUse();
+const { bbyState, say, requestStateChange, sayRandomFact, username, setUsername } = bbyUse();
 
 const textToSay = ref('');
 const colorInput = ref('#85efee');
+const usernameInput = ref(username.value);
 
 const handleSayClick = () => {
   say(textToSay.value);
   textToSay.value = '';
+};
+
+const handleUsernameUpdate = () => {
+  setUsername(usernameInput.value);
 };
 
 const updateTargetColor = () => {

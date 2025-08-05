@@ -36,6 +36,13 @@ const targetColour = reactive({ r: 133, g: 239, b: 238 });
 const currentColour = reactive({ r: 133, g: 239, b: 238 });
 const tintStrength = ref(1.0);
 
+const username = ref(localStorage.getItem('bbyUsername') || 'kevinonline420');
+
+function setUsername(name: string) {
+  username.value = name;
+  localStorage.setItem('bbyUsername', name);
+}
+
 const bbyFacts = ref<Record<string, { value: string, author: string }>>({});
 
 let isClientRunning = false;
@@ -94,14 +101,15 @@ async function requestStateChange(updates: object) {
 }
 
 async function say(text: string) {
-  if (!text) return;
+  const trimmed = text.trim();
+  if (!trimmed) return;
 
   const randw = (min: number, max: number) => `${Math.random() * (max - min) + min}vw`;
   const randh = (min: number, max: number) => `${Math.random() * (max - min) + min}vh`;
 
   const userBubble: Bubble = {
     id: `bubble-user-${Date.now()}`,
-    text,
+    text: trimmed,
     ghostX: randw(-50, 50),
     ghostY: randh(-50, 50),
     ghostR: `${Math.random() * 1440 - 1440}deg`,
@@ -113,7 +121,7 @@ async function say(text: string) {
     const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/say', { 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text }),
+      body: JSON.stringify({ text: trimmed, username: username.value }),
     });
 
     if (!response.ok) throw new Error(`Server responded with ${response.status}`);
@@ -225,18 +233,21 @@ watch(currentColour, (newColour) => {
   immediate: true  // Runs the watcher immediately on component load, setting the initial color
 });
 
-watch(() => bbyState.isSpeaking, (isSpeaking) => {
-    if(!isSpeaking) return;
+let mouthInterval: ReturnType<typeof setInterval> | null = null;
+  watch(() => bbyState.isSpeaking, (isSpeaking) => {
+    if (mouthInterval) {clearInterval(mouthInterval); mouthInterval = null;}
+    if (!isSpeaking) {bbyState.mouth = 1; return;}
 
-    const mouthInterval = setInterval(() => {
-        if(!bbyState.isSpeaking) {
-            clearInterval(mouthInterval);
-            bbyState.mouth = 1;
-            return;
-        }
-        bbyState.mouth = 55 + Math.floor(Math.random() * 11);
+    mouthInterval = setInterval(() => {
+      if (!bbyState.isSpeaking) {
+        clearInterval(mouthInterval!);
+        mouthInterval = null;
+        bbyState.mouth = 1;
+        return;
+      }
+      bbyState.mouth = 55 + Math.floor(Math.random() * 11);
     }, 120);
-});
+  });
 
 export function bbyUse() {
   startClient();
@@ -244,6 +255,8 @@ export function bbyUse() {
     bbyState: readonly(bbyState),
     currentColour: readonly(currentColour),
     tintStrength: readonly(tintStrength),
+    username: readonly(username),
+    setUsername,
     requestStateChange,
     say,
     removeBubble,

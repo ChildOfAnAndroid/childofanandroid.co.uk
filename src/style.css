@@ -293,7 +293,6 @@ label {
   animation: ghost-fly-away var(--ghost-duration, 420s) ease-out forwards;
   animation-delay: var(--ghost-delay, 420s);
   z-index: 0;
-  mix-blend-mode: lighten;
 }
 
 @keyframes ghost-fly-away {

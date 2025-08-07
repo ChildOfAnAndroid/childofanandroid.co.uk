@@ -1,5 +1,5 @@
 <template>
-  <button @click="say('test bubble')">+ Add Test Bubble</button>
+  <button @click="say('test bubble', 'kevinonline420')">+ add test bubble</button>
 
   <TransitionGroup tag="div" class="bubble-container" name="bubble-list" appear>
     <div
@@ -7,8 +7,15 @@
       :key="bubble.id"
       class="speech-bubble"
       :data-bubble-id="bubble.id"
+      @click="removeBubble(bubble.id)"
+      :data-author="bubble.author"
+      :style="{
+        'backgroundColor': bubble.bgColor,
+        'borderColor': bubble.borderColor,
+      }"
     >
       <span v-html="bubble.text"></span>
+      <strong class="bubble-author"> {{ bubble.author }}</strong>
     </div>
   </TransitionGroup>
 </template>
@@ -17,7 +24,7 @@
 import { onUpdated, nextTick } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 
-const { bbyState, say } = bbyUse();
+const { bbyState, say, removeBubble } = bbyUse();
 
 onUpdated(async () => {
   await nextTick();
@@ -36,7 +43,7 @@ onUpdated(async () => {
   flex-direction: column;
   justify-content: flex-end;
   padding: 1rem 0;
-  gap: 0.75rem;
+  gap: 0.5rem;
   overflow-y: auto;
   scroll-behavior: smooth;
   scrollbar-width: none;

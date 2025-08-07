@@ -9,18 +9,6 @@
 
       <!-- control panel -->
       <div class="controls-panel">
-        <h3 class="panel-title">--[ BBY_CTRL ]--</h3>
-
-        <div class="input-group">
-          <input
-            v-model="usernameInput"
-            @keyup.enter="handleUsernameUpdate"
-            placeholder="enter username..."
-            class="text-input"
-          />
-          <button @click="handleUsernameUpdate" class="action-button" :disabled="!usernameInput">SET NAME</button>
-        </div>
-
         <div class="input-group">
           <input
             v-model="textToSay"
@@ -31,25 +19,16 @@
           <button @click="handleSayClick" class="action-button" :disabled="!textToSay">SAY</button>
         </div>
 
-        <div class="input-group">
-          <label for="color-picker">TARGET_COLOUR:</label>
-          <input
-            id="color-picker"
-            type="color"
-            v-model="colorInput"
-            @input="updateTargetColor"
-            class="color-input"
-          />
-        </div>
-
         <div class="input-group button-row">
+          <input id="color-picker" type="color" v-model="colorInput" @input="updateTargetColor" class="color-input" />
+          <button @click="randomiseColor" class="action-button">colour</button>
           <button @click="requestStateChange({ jumping: true })" class="action-button">jump</button>
           <button @click="requestStateChange({ cheeks_on: !bbyState.cheeks_on })" class="action-button">blush</button>
           <button @click="requestStateChange({ stretch_up: true })" class="action-button">stretch</button>
-          <button @click="sayRandomFact" class="action-button">random fact</button>
-        </div>
-        <div class="input-group button-row">
-          <button @click="clearBubbles" class="action-button">pop bubbles</button>
+          <button @click="clearBubbles" class="action-button">pop</button>
+          <input v-model="usernameInput" @keyup.enter="handleUsernameUpdate" placeholder="enter username..." class="name-input"/>
+          <button @click="handleUsernameUpdate" class="action-button" :disabled="!usernameInput">name</button>
+          <button @click="sayRandomFact" class="action-button">fact</button>
         </div>
       </div>
     </div>
@@ -82,6 +61,7 @@
         }"
       >
         <span v-html="ghost.text"></span>
+        <strong class="bubble-author"> {{ ghost.author }}</strong>
       </div>
     </div>
   </div>
@@ -93,14 +73,14 @@ import { bbyUse } from './composables/bbyUse.ts';
 import bbySprite from './components/bbySprite.vue';
 import bbyBubble from './components/bbyBubble.vue';
 
-const { bbyState, say, requestStateChange, sayRandomFact, username, setUsername, clearBubbles } = bbyUse();
+const { bbyState, say, requestStateChange, sayRandomFact, author, setUsername, clearBubbles } = bbyUse();
 
 const textToSay = ref('');
 const colorInput = ref('#85efee');
-const usernameInput = ref(username.value);
+const usernameInput = ref(author.value);
 
 const handleSayClick = () => {
-  say(textToSay.value);
+  say(textToSay.value, usernameInput.value); 
   textToSay.value = '';
 };
 
@@ -116,6 +96,14 @@ const updateTargetColor = () => {
     const B = parseInt(hex.substring(4, 6), 16);
     requestStateChange({ R, G, B });
   }
+};
+
+const randomiseColor = () => {
+  const R = Math.floor(Math.random() * 256);
+  const G = Math.floor(Math.random() * 256);
+  const B = Math.floor(Math.random() * 256);
+  colorInput.value = `#${[R, G, B].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+  requestStateChange({ R, G, B });
 };
 </script>
 

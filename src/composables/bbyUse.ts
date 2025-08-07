@@ -6,6 +6,7 @@ import _ from 'lodash';
 interface Bubble {
   id: string;
   text: string;
+  author?: string;
   ghostX?: string;
   ghostY?: string;
   ghostR?: string;
@@ -36,10 +37,10 @@ const targetColour = reactive({ r: 133, g: 239, b: 238 });
 const currentColour = reactive({ r: 133, g: 239, b: 238 });
 const tintStrength = ref(1.0);
 
-const username = ref(localStorage.getItem('bbyUsername') || 'kevinonline420');
+const author = ref(localStorage.getItem('bbyUsername') || 'kevinonline420');
 
 function setUsername(name: string) {
-  username.value = name;
+  author.value = name;
   localStorage.setItem('bbyUsername', name);
 }
 
@@ -70,7 +71,6 @@ function startClient() {
       if (!response.ok) return;
       
       const serverState = await response.json();
-      
       Object.assign(bbyState, serverState);
       
       if (serverState.R !== undefined) {
@@ -80,6 +80,46 @@ function startClient() {
       }
     } catch (error) { /* ignore */ }
   }, 50);
+
+  setInterval(async () => {
+    try {
+      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/chat_history');
+      if (!response.ok) return;
+      
+      const serverHistory: { id: string; author: string; text: string }[] = await response.json();
+      serverHistory.forEach(message => {
+        const bubbleExists = bbyState.bubbles.some(b => b.id === message.id);
+        const ghostExists = bbyState.graveyardBubbles.some(g => g.id === `ghost-${message.id}`);
+        if (!bubbleExists && !ghostExists) {
+          const randw = (min: number, max: number) => `${Math.random() * (max - min) + min}vw`;
+          const randh = (min: number, max: number) => `${Math.random() * (max - min) + min}vh`;
+          const r = Math.round(currentColour.r);
+          const g = Math.round(currentColour.g);
+          const b = Math.round(currentColour.b);
+          const stampedBgColor = `rgba(${r}, ${g}, ${b}, 0.9)`;
+          const stampedBorderColor = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
+
+          // this is where new bubbles are created
+          const newBubble: Bubble = {
+            id: message.id,
+            text: message.text,
+            author: message.author,
+            ghostX: randw(-50, 50),
+            ghostY: randh(-50, 50),
+            ghostR: `${Math.random() * 1440 * (Math.random()>0.5?1:-1)}deg`,
+            bgColor: stampedBgColor,
+            borderColor: stampedBorderColor,
+          };
+
+          bbyState.bubbles.push(newBubble);
+          setTimeout(() => removeBubble(newBubble.id), 55000 + Math.random() * 55000);
+        }
+      });
+
+    } catch (error) { 
+      console.error("Failed to fetch chat history:", error);
+    }
+  }, 1500);
 
   function colourAnimationLoop() {
     currentColour.r += (targetColour.r - currentColour.r) * 0.02;
@@ -100,55 +140,25 @@ async function requestStateChange(updates: object) {
   } catch (error) { console.error("Failed to send state change:", error); }
 }
 
-async function say(text: string) {
+async function say(text: string, author: string) {
   const trimmed = text.trim();
   if (!trimmed) return;
-
-  const randw = (min: number, max: number) => `${Math.random() * (max - min) + min}vw`;
-  const randh = (min: number, max: number) => `${Math.random() * (max - min) + min}vh`;
-
-  const userBubble: Bubble = {
-    id: `bubble-user-${Date.now()}`,
-    text: trimmed,
-    ghostX: randw(-50, 50),
-    ghostY: randh(-50, 50),
-    ghostR: `${Math.random() * 1440 - 1440}deg`,
-  };
-  bbyState.bubbles.push(userBubble);
-  setTimeout(() => removeBubble(userBubble.id), 55000 + Math.random() * 55000);
-
   try {
     const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/say', { 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: trimmed, username: username.value }),
+      body: JSON.stringify({ text: trimmed, author: author}), 
     });
 
-    if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-
-    const data = await response.json();
-    const reply = data.reply;
-
-    if (reply) {
-      const replyBubble: Bubble = {
-        id: `bubble-bby-${Date.now()}`,
-        text: reply,
-        ghostX: randw(-50, 50),
-        ghostY: randh(-50, 50),
-        ghostR: `${Math.random() * 1440 - 1360}deg`,
-      };
-
-      setTimeout(() => {bbyState.bubbles.push(replyBubble);
-        setTimeout(() => removeBubble(replyBubble.id), 55000 + Math.random() * 55000);
-      }, 300 + Math.random() * 500);
+    if (!response.ok) {
+      throw new Error(`Server responded with ${response.status}`);
     }
-
   } catch (error) {
-    console.error("Failed to talk to Baby:", error);
+    console.error("failed to talk to baby:", error);
   }
 }
 
-const MAX_GHOSTS = 421;
+const MAX_GHOSTS = 1000;
 
 function removeBubble(id: string) {
   const bubbleEl = document.querySelector(`[data-bubble-id="${id}"]`);
@@ -157,18 +167,13 @@ function removeBubble(id: string) {
   if (bubbleEl && bubbleIndex !== -1) {
     const rect = bubbleEl.getBoundingClientRect();
     const originalBubble = bbyState.bubbles[bubbleIndex];
-
-    const r = Math.round(currentColour.r);
-    const g = Math.round(currentColour.g);
-    const b = Math.round(currentColour.b);
-    const stampedBgColor = `rgba(${r}, ${g}, ${b}, 0.9)`;
-    const stampedBorderColor = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
     
-    const duration = Math.random() * 1500 + 15;
+    const duration = Math.random() * 4500 + 15;
     const delay = Math.random() * 2;
     const easings = ['ease-in-out', 'ease-in', 'ease-out', 'linear', 'cubic-bezier(0.25, 1, 0.5, 1)', 'cubic-bezier(0.4, 0, 0.2, 1)'];
     const easing = easings[Math.floor(Math.random() * easings.length)];
 
+    // this is where all things are copied from main bubbles
     const ghostBubble: Bubble = {
       id: `ghost-${originalBubble.id}`,
       text: originalBubble.text,
@@ -178,11 +183,12 @@ function removeBubble(id: string) {
       ghostX: originalBubble.ghostX,
       ghostY: originalBubble.ghostY,
       ghostR: originalBubble.ghostR,
+      author: originalBubble.author,
       duration: `${duration}s`,
       easing: easing,
       delay: `${delay}s`,
-      bgColor: stampedBgColor,
-      borderColor: stampedBorderColor,
+      bgColor: originalBubble.bgColor,
+      borderColor: originalBubble.borderColor,
     };
 
     bbyState.graveyardBubbles.push(ghostBubble);
@@ -197,13 +203,12 @@ function removeBubble(id: string) {
 
 function clearBubbles() {
   bbyState.bubbles = [];
-  bbyState.graveyardBubbles = [];
 }
 
 function sayRandomFact() {
   const factKeys = Object.keys(bbyFacts.value);
   if (factKeys.length === 0) {
-    say("I don't know any facts yet...");
+    say("I don't know any facts yet...", author.value);
     return;
   }
 
@@ -212,22 +217,19 @@ function sayRandomFact() {
 
   if (fact && fact.value) {
     const message = `hey bby, did you know that ${randomKey} is ${fact.value}?`;
-        say(message);
+    say(message, author.value); 
   }
 }
 
 watch(currentColour, (newColour) => {
-  // Get the clean RGB values
   const r = Math.round(newColour.r);
   const g = Math.round(newColour.g);
   const b = Math.round(newColour.b);
 
   const root = document.documentElement;
-
-  // Set the background color variable, including the 90% transparency from your original style.
+  // sets a root style property that changes every time it is watched, allowing fast colour changes on the bubbles etc
   root.style.setProperty('--bubble-bg', `rgba(${r}, ${g}, ${b}, 0.9)`);
   
-  // As a bonus, let's also set the border to be a darker version of the main color.
   const borderR = Math.max(0, r - 30);
   const borderG = Math.max(0, g - 30);
   const borderB = Math.max(0, b - 30);
@@ -250,7 +252,7 @@ let mouthInterval: ReturnType<typeof setInterval> | null = null;
         bbyState.mouth = 1;
         return;
       }
-      bbyState.mouth = 55 + Math.floor(Math.random() * 11);
+      bbyState.mouth = 75 + Math.floor(Math.random() * 11);
     }, 120);
   });
 
@@ -260,7 +262,7 @@ export function bbyUse() {
     bbyState: readonly(bbyState),
     currentColour: readonly(currentColour),
     tintStrength: readonly(tintStrength),
-    username: readonly(username),
+    author: readonly(author),
     setUsername,
     requestStateChange,
     say,

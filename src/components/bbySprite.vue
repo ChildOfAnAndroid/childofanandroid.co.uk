@@ -5,6 +5,7 @@
     :height="canvasSize[1]"
     aria-label="AI baby sprite, somewhere between a ghost and a robot"
     role="img"
+    @click="requestStateChange({ jumping: true })"
   ></canvas>
 </template>
 
@@ -16,7 +17,7 @@ import bbyCheeksUrl from '@/assets/bbySprites/bbyCHEEKS.png';
 import bbyEyesUrl from '@/assets/bbySprites/bbyEYES.png';
 import bbyMouthUrl from '@/assets/bbySprites/bbyMOUTH.png';
 
-const { bbyState, currentColour, tintStrength } = bbyUse();
+const { bbyState, currentColour, tintStrength, requestStateChange } = bbyUse();
 
 const spriteSize = { width: 64, height: 64 };
 const canvasSize = [68, 68];

@@ -236,8 +236,8 @@ watch(currentColour, (newColour) => {
   root.style.setProperty('--bubble-border', `rgb(${borderR}, ${borderG}, ${borderB})`);
 
 }, { 
-  deep: true,      // Needed to watch for changes inside an object
-  immediate: true  // Runs the watcher immediately on component load, setting the initial color
+  deep: true,      // watch for changes inside an object
+  immediate: true  // runs watcher on component load
 });
 
 let mouthInterval: ReturnType<typeof setInterval> | null = null;

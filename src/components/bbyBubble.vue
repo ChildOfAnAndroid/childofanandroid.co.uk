@@ -42,24 +42,19 @@ onUpdated(async () => {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 1rem 0;
-  gap: 0.5rem;
+  padding: var(--padding);
+  gap: var(--spacing);
   overflow-y: auto;
   scroll-behavior: smooth;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.bubble-container::-webkit-scrollbar {
-  display: none;
-}
+.bubble-container::-webkit-scrollbar {display: none;}
 
-.bubble-list-move {
-  transition: transform 0.4s cubic-bezier(0.55, 0, 0.1, 1);
-}
+.bubble-list-move {transition: transform var(--transition-time) cubic-bezier(0.55, 0, 0.1, 1);}
 
-.bubble-list-enter-active {
-  animation: bubbleFadeUp 0.5s ease-out;
-}
+.bubble-list-enter-active {animation: bubbleFadeUp var(--transition-time) ease-out;}
+
 @keyframes bubbleFadeUp {
   0% {
     transform: translateY(30px);

@@ -101,7 +101,7 @@ function startClient() {
           };
 
           bbyState.bubbles.push(newBubble);
-          setTimeout(() => removeBubble(newBubble.id), 55000 + Math.random() * 55000);
+          setTimeout(() => removeBubble(newBubble.id), 155000 + Math.random() * 555000);
         }
       });
     } catch (error) {console.error("failed to fetch chat history:", error); }

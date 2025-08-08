@@ -42,8 +42,9 @@ onUpdated(async () => {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: var(--padding);
-  gap: var(--spacing);
+  padding: var(--padding, 0.25vw);
+  align-items: var(--font-align);
+  gap: var(--spacing, 0.5vw);
   overflow-y: auto;
   scroll-behavior: smooth;
   scrollbar-width: none;
@@ -53,7 +54,26 @@ onUpdated(async () => {
 
 .bubble-list-move {transition: transform var(--transition-time) cubic-bezier(0.55, 0, 0.1, 1);}
 
-.bubble-list-enter-active {animation: bubbleFadeUp var(--transition-time) ease-out;}
+.bubble-list-enter-active {animation: bubbleFadeUp var(--transition-time, 0.2s) ease-out;}
+
+.speech-bubble {
+  position: relative;
+  max-width: var(--bubble-width);
+  padding: var(--padding);
+  border: var(--border);
+  border-radius: var(--border-radius);
+  background-color: var(--bby-colour, rgba(133, 239, 238, 0.9));
+  box-shadow: var(--box-shadow);
+  word-break: break-word;
+  text-align: var(--font-align);
+}
+
+.bubble-author {
+  display: inline;
+  margin-left: var(--spacing, 0.5vw);
+  font-size: var(--small-font-size);
+  font-weight: bold;
+}
 
 @keyframes bubbleFadeUp {
   0% {

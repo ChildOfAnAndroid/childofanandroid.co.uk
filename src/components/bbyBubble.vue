@@ -42,10 +42,11 @@ onUpdated(async () => {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: var(--padding, 0.25vw);
+  padding: var(--padding, 0.25vmax);
   align-items: var(--font-align);
-  gap: var(--spacing, 0.5vw);
+  gap: var(--spacing, 0.5vmax);
   overflow-y: auto;
+  overflow-x: visible;
   scroll-behavior: smooth;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -66,18 +67,19 @@ onUpdated(async () => {
   box-shadow: var(--box-shadow);
   word-break: break-word;
   text-align: var(--font-align);
+  z-index: var(--bubble-z);
 }
 
 .bubble-author {
   display: inline;
-  margin-left: var(--spacing, 0.5vw);
+  margin-left: var(--spacing, 0.5vmax);
   font-size: var(--small-font-size);
   font-weight: bold;
 }
 
 @keyframes bubbleFadeUp {
   0% {
-    transform: translateY(30px);
+    transform: translateY(var(--nav-width));
     opacity: 0;
   }
   100% {
@@ -85,5 +87,5 @@ onUpdated(async () => {
     opacity: 0.8;
   }
 }
-
+ 
 </style>

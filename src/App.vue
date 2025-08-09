@@ -19,15 +19,15 @@ src/App.vue
 #app-container {
   display: flex;
   flex-direction: row;
-  width: var(--full-width, 100vw);
-  height: var(--full-height, 100vh);
+  width: var(--full-width, 100dvw);
+  height: var(--full-height, 100dvh);
   position: relative;
   background-color: var(--bg-color);
 }
 
 .main-content-area {
   flex-grow: 1; /* all available space */
-  height: var(--full-height, 100vh);
+  height: var(--full-height, 100dvh);
   position: relative;
   overflow: hidden; /* contains the pages */
 }

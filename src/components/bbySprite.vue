@@ -48,12 +48,12 @@ const draw = () => {
   offscreenCanvas.height = spriteSize.height;
   const offCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
 
-  // 1. Draw base body to offscreen canvas
+  // draw base
   for (let i = 0; i < bbyBODY_numLayers; i++) {
     offCtx.drawImage(images.bbyBODY, 0, i * spriteSize.height, spriteSize.width, spriteSize.height, 0, 0, spriteSize.width, spriteSize.height);
   }
 
-  // 2. Apply colour tint pixel by pixel
+  // apply pixel tints
   const imageData = offCtx.getImageData(0, 0, spriteSize.width, spriteSize.height);
   const pixels = imageData.data;
   for (let i = 0; i < pixels.length; i += 4) {
@@ -72,7 +72,7 @@ const draw = () => {
   }
   offCtx.putImageData(imageData, 0, 0);
 
-  // 3. Calculate final dimensions and position
+  // final pos
   const stretch_x = spriteSize.width + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0) - (bbyState.squish_left ? 1 : 0) - (bbyState.squish_right ? 1 : 0);
   const stretch_y = spriteSize.height + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0) - (bbyState.squish_up ? 1 : 0) - (bbyState.squish_down ? 1 : 0);
   const offset_x = (canvasSize[0] - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
@@ -82,10 +82,10 @@ const draw = () => {
   const baseOffsetX = (canvasSize[0] - spriteSize.width) / 2;
   const baseOffsetY = (canvasSize[1] - spriteSize.height) / 2 + jumpset;
 
-  // 4. Draw tinted, stretched body
+  // tinted dancy boi
   ctx.drawImage(offscreenCanvas, offset_x, offset_y, stretch_x, stretch_y);
   
-  // 5. Draw facial features with darken filter
+  // face colour match
   ctx.filter = 'brightness(85%)';
   if (bbyState.cheeks_on) {
     ctx.drawImage(images.bbyCHEEKS, 0, 0, spriteSize.width, spriteSize.height, baseOffsetX, baseOffsetY, spriteSize.width, spriteSize.height);

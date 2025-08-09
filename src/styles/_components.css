@@ -36,7 +36,7 @@
   border-radius: var(--border-radius);
   box-shadow: var(--box-shadow);
   width: var(--content-width);
-  flex-shrink: 0; /* no shrinking */
+  flex: 1 1 auto;                 /* take remaining space */
   z-index: var(--nav-z);
 }
 

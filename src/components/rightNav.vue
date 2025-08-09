@@ -9,11 +9,12 @@
 .right-nav-column {
   /* Layout and Sizing */
   display: flex;
+  flex: 0 1 auto;              /* shrink if needed, grow if needed */
+  width: var(--nav-width);
   flex-direction: row;         /* vertical stacking for writing-mode */
   justify-content: flex-start; /* start at top */
-  width: var(--nav-width);
   writing-mode: vertical-rl;
-  flex-shrink: 1;
+  flex-shrink: 0;
   text-align: var(--font-align);
   gap: 0;
   padding: 0;
@@ -22,6 +23,7 @@
   z-index: var(--nav-z);
   font-size: var(--font-size);
   line-height: var(--line-height);
+  white-space: nowrap;  
 }
 
 a {

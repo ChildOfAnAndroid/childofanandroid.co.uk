@@ -17,6 +17,7 @@ src/App.vue
 
 <style>
 #app-container {
+  min-width: 0;
   display: flex;
   flex-direction: row;
   width: var(--full-width, 100dvw);
@@ -26,6 +27,7 @@ src/App.vue
 }
 
 .main-content-area {
+  min-width: 0;
   flex: 1 1 auto;             /* take remaining space */
   height: var(--full-height);
   position: relative;

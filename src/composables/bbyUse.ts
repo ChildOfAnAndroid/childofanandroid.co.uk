@@ -13,6 +13,7 @@ interface Bubble {
   startX?: string;
   startY?: string;
   width?: string;
+  height?: string;
   duration?: string;
   easing?: string;
   delay?: string;
@@ -42,7 +43,9 @@ let isClientRunning = false;
 
 async function fetchBbyFacts() {
   try {
-    const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/bbybook');
+    const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/bbybook', {
+      cache: 'no-store',
+    });
     if (!response.ok) return;
     bbyFacts.value = await response.json();
     console.log(`Loaded ${Object.keys(bbyFacts.value).length} bbyfacts!`);
@@ -57,7 +60,9 @@ function startClient() {
   fetchBbyFacts();
   setInterval(async () => {
     try {
-      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/state');
+      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/state', {
+        cache: 'no-store',
+      });
       if (!response.ok) return;
       
       const serverState = await response.json();
@@ -72,7 +77,9 @@ function startClient() {
   }, 50);
   setInterval(async () => {
     try {
-      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/chat_history');
+      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/chat_history', {
+        cache: 'no-store',
+      });
       if (!response.ok) return;
       
       const serverHistory: { id: string; author: string; text: string }[] = await response.json();
@@ -121,6 +128,7 @@ async function requestStateChange(updates: object) {
     await fetch('https://bbyapi.childofanandroid.co.uk/api/set', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
       body: JSON.stringify(updates),
     });
   } catch (error) { console.error("failed to send state change:", error); }
@@ -129,17 +137,28 @@ async function requestStateChange(updates: object) {
 async function say(text: string, author: string) {
   const trimmed = text.trim();
   if (!trimmed) return;
-  try {
-    const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/say', { 
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: trimmed, author: author}), 
-    });
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/say', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ text: trimmed, author: author}),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`);
+      }
+      return; // success
+    } catch (error) {
+      if (attempt === MAX_ATTEMPTS) {
+        console.error("failed to talk to baby:", error);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
     }
-  } catch (error) {console.error("failed to talk to baby:", error); }
+  }
 }
 
 const MAX_GHOSTS = 1000;
@@ -151,7 +170,7 @@ function removeBubble(id: string) {
     const rect = bubbleEl.getBoundingClientRect();
     const originalBubble = bbyState.bubbles[bubbleIndex];
     
-    const duration = Math.random() * 4500 + 15;
+    const duration = Math.random() * 1000 + 15;
     const delay = Math.random() * 2;
     const easings = ['ease-in-out', 'ease-in', 'ease-out', 'linear', 'cubic-bezier(0.25, 1, 0.5, 1)', 'cubic-bezier(0.4, 0, 0.2, 1)'];
     const easing = easings[Math.floor(Math.random() * easings.length)];
@@ -160,9 +179,10 @@ function removeBubble(id: string) {
     const ghostBubble: Bubble = {
       id: `ghost-${originalBubble.id}`,
       text: originalBubble.text,
-      startX: `${rect.left}px`,
-      startY: `${rect.top}px`,
+      startX: `${rect.left + window.scrollX}px`,
+      startY: `${rect.top + window.scrollY}px`,
       width: `${rect.width}px`,
+      height: `${rect.height}px`,
       ghostX: originalBubble.ghostX,
       ghostY: originalBubble.ghostY,
       ghostR: originalBubble.ghostR,

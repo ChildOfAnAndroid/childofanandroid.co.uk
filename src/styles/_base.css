@@ -1,0 +1,98 @@
+/* base css */
+
+/* ROOT STYLES */
+:root {
+  /* basic */
+  --full-height: 100dvh;
+  --full-width: 100dvw;
+
+  --full-vmax: 100vmax;
+  --nav-width: 4vmax;
+  --content-width: 96vmax;
+  --bubble-width: 100%;
+
+  --bby-canvas-size: 68px;
+  --bby-size: 64px;
+
+  /* colours */
+  --bby-colour: #e0e0e0;
+  --bby-colour-dark: #0f3460;
+
+  --bg-colour: #1a1a2e;
+  --panel-colour: #16213e;
+
+  --accent-colour: #e94560;
+  --accent-hover: #c63a50;
+
+  /* padding */
+  --padding: 0.5vmin;
+  --spacing: 1.0vmin;
+
+  /* borders */
+  --border-colour: var(--bby-colour-dark);
+  --border-width: var(--padding);
+  --border-radius: var(--spacing);
+  --border: var(--border-width) solid var(--border-colour);
+
+  /* margins */
+  --margin: 0;
+
+  /* fonts */
+  --line-height: 2.5vmin;
+  --small-line-height: 2.0vmin;
+
+  --font: 'Silkscreen', monospace;
+  --font-size: 2.0vmin;
+  --font-colour: #e0e0e0;
+  --font-shadow: 0 0 var(--padding) 0 var(--shadow-colour);
+  --font-align: center;
+
+  --small-font-size: 1.5vmin;
+
+  /* shadow */
+  --shadow-transparency: 0.1;
+  --shadow-colour: rgba(0, 0, 0, var(--shadow-transparency));
+  --box-shadow: 0 var(--padding) var(--spacing) var(--shadow-colour);
+
+  /* z index */
+  --ghost-z: 0;
+  --bby-z: 1;
+  --bubble-z: 2;
+  --nav-z: 3;
+  --tab-z: 4;
+
+  /* timings */
+  --transition-time: 0.42s;
+
+}
+
+/* BODY */
+html, body {
+  margin: var(--margin);
+  padding: 0;
+  background-color: var(--bg-colour);
+  color: var(--font-colour);
+  font-family: var(--font);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+
+/* BUTTON */
+button {
+  border: var(--border);
+  border-radius: var(--border-radius);
+  font-size: var(--font-size);
+  font-family: var(--font);
+  background-color: var(--panel-colour);
+  color: var(--font-colour);
+  cursor: pointer;
+  transition: border-color var(--transition-time);
+}
+
+button:hover {border-color: var(--accent-colour);}

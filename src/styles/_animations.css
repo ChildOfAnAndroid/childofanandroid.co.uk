@@ -1,0 +1,61 @@
+/* animations css */
+
+.bubble-graveyard-global {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--full-width);
+  height: var(--full-height);
+  pointer-events: none;
+  z-index: var(--ghost-z);
+  overflow: hidden;
+}
+
+.ghost-bubble {
+  position: absolute;
+  word-break: break-word;
+  text-shadow: var(--font-shadow);
+  background: var(--bby-colour);
+  border: var(--border);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  color: var(--font-colour);
+  font-family: var(--font);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  padding: var(--padding);
+  transform-origin: center center;
+  animation: ghost-fly-away var(--ghost-duration, 420s) ease-out forwards;
+  animation-delay: var(--ghost-delay, 420s);
+}
+
+@keyframes ghost-fly-away {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 0.8;
+  }
+
+  1% {
+    transform: translate(0, 0) rotate(calc(var(--dest-r) * 0.005)) scale(1.1);
+    opacity: 0.5;
+    filter: blur(3.33px) hue-rotate(-10deg);
+  }
+
+  5% {
+    transform: translate(1px, -1px) rotate(calc(var(--dest-r) * 0.01)) scale(1.5);
+    opacity: 0.3;
+    filter: blur(9.99px) hue-rotate(100deg);
+  }
+
+  10% {
+    transform: translate(1px, -1px) rotate(calc(var(--dest-r) * 0.1)) scale(1.1);
+    opacity: 0.2;
+    filter: blur(13.32px) hue-rotate(-90deg);
+  }
+
+  100% {
+    transform: translate(var(--dest-x), var(--dest-y)) rotate(calc(var(--dest-r) + 360deg)) scale(0.4);
+    opacity: 0.3;
+    filter: blur(6.66px) hue-rotate(360deg);
+  }
+}

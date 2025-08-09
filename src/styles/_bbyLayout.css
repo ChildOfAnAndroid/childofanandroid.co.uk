@@ -1,0 +1,37 @@
+/* bby layout css */
+
+.page-container {
+  width: var(--full-width);
+  height: var(--full-height);
+  position: relative;
+}
+
+.left-column {
+  position: absolute;
+  width: 66%;
+  height: var(--full-height);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* controls to bottom */
+  z-index: var(--bubble-z); /* above bby-stage */
+}
+
+.right-column {
+  position: absolute;
+  right: 0;
+  width: 33%;
+  height: var(--full-height);
+  display: flex;
+  justify-content: right;
+  align-items: center;
+}
+
+.bby-stage {
+  width: 100%;
+  overflow: visible;
+}
+
+.bby-stage > canvas {
+  width: 100% !important;
+  height: 100% !important;
+}

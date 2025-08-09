@@ -17,18 +17,23 @@ interface Bubble {
   duration?: string;
   easing?: string;
   delay?: string;
-  bgColor?: string;
-  borderColor?: string;
+  ghostOpacity1?: number;
+  ghostOpacity2?: number;
+  bgColour?: string;
+  borderColour?: string;
+}
+
+interface UserColour {
+  r: number;
+  g: number;
+  b: number;
 }
 
 const bbyState = reactive({
-  // BBY SERVER
   eyes: 5, mouth: 1, cheeks_on: false, tears_on: false, jumping: false,
   stretch_left: false, stretch_right: false, stretch_up: false, stretch_down: false,
   squish_left: false, squish_right: false, squish_up: false, squish_down: false,
   isSpeaking: false, speechText: '', 
-  
-  // BBY CLIENT
   bubbles: [] as Bubble[],
   graveyardBubbles: [] as Bubble[],
 });
@@ -38,6 +43,13 @@ const currentColour = reactive({ r: 133, g: 239, b: 238 });
 const tintStrength = ref(1.0);
 const author = ref(localStorage.getItem('bbyUsername') || 'kevinonline420');
 function setUsername(name: string) {author.value = name; localStorage.setItem('bbyUsername', name);}
+const userColour = ref<UserColour>(JSON.parse(localStorage.getItem('bbyUserColour') || '{"r":133,"g":239,"b":238}'));
+function setUserColour(r: number, g: number, b: number) {
+  const newColour = { r, g, b };
+  userColour.value = newColour;
+  localStorage.setItem('bbyUserColour', JSON.stringify(newColour));
+}
+
 const bbyFacts = ref<Record<string, { value: string, author: string }>>({});
 let isClientRunning = false;
 
@@ -75,6 +87,7 @@ function startClient() {
       }
     } catch (error) { /* ignore */ }
   }, 50);
+
   setInterval(async () => {
     try {
       const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/chat_history', {
@@ -82,21 +95,28 @@ function startClient() {
       });
       if (!response.ok) return;
       
-      const serverHistory: { id: string; author: string; text: string }[] = await response.json();
+      const serverHistory: { id: string; author: string; text: string; colour: UserColour }[] = await response.json();
       serverHistory.forEach(message => {
         const bubbleExists = bbyState.bubbles.some(b => b.id === message.id);
         const ghostExists = bbyState.graveyardBubbles.some(g => g.id === `ghost-${message.id}`);
         if (!bubbleExists && !ghostExists) {
           const randw = (min: number, max: number) => `${Math.random() * (max - min) + min}vw`;
           const randh = (min: number, max: number) => `${Math.random() * (max - min) + min}vh`;
-          const r = Math.round(currentColour.r);
-          const g = Math.round(currentColour.g);
-          const b = Math.round(currentColour.b);
-          const stampedBgColor = `rgba(${r}, ${g}, ${b}, 0.9)`;
-          const stampedBorderColor = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
-          const baseTime = (Math.random() * 32000);           // 32s
-          const timePerChar = (Math.random() * 3200);         // 3.2s/char
-          const maxTime = (Math.random() * 320000);           // 320s cap
+
+          let bubbleColour: UserColour;
+          if (message.author === 'babyLLM') {
+            bubbleColour = {r: Math.round(currentColour.r), g: Math.round(currentColour.g), b: Math.round(currentColour.b)};
+          } else {
+            bubbleColour = message.colour || { r: 103, g: 209, b: 208 };
+          }
+
+          const { r, g, b } = bubbleColour;
+          const stampedBgColour = `rgba(${r}, ${g}, ${b}, 0.9)`;
+          const stampedBorderColour = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
+          
+          const baseTime = (Math.random() * 32000);
+          const timePerChar = (Math.random() * 3200);
+          const maxTime = (Math.random() * 320000);
           const textLength = message.text.length;
           let timeout = Math.min(baseTime + textLength * timePerChar, maxTime);
           const jitter = Math.random() * 3000 - 1500;
@@ -108,8 +128,10 @@ function startClient() {
             ghostX: randw(-50, 50),
             ghostY: randh(-50, 50),
             ghostR: `${Math.random() * 1440 * (Math.random()>0.5?1:-1)}deg`,
-            bgColor: stampedBgColor,
-            borderColor: stampedBorderColor,
+            ghostOpacity1: Math.random() * 0.5,
+            ghostOpacity2: Math.random() * 0.5,
+            bgColour: stampedBgColour,
+            borderColour: stampedBorderColour,
           };
 
           bbyState.bubbles.push(newBubble);
@@ -139,9 +161,18 @@ async function requestStateChange(updates: object) {
   } catch (error) { console.error("failed to send state change:", error); }
 }
 
-async function say(text: string, author: string) {
+function setBbyTintColour(R: number, G: number, B: number) {
+  targetColour.r = R;
+  targetColour.g = G;
+  targetColour.b = B;
+  requestStateChange({ R, G, B });
+}
+
+async function say(text: string, author: string, colour: UserColour) {
   const trimmed = text.trim();
   if (!trimmed) return;
+  setBbyTintColour(colour.r, colour.g, colour.b);
+
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -149,13 +180,12 @@ async function say(text: string, author: string) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ text: trimmed, author: author}),
+        body: JSON.stringify({ text: trimmed, author: author, colour: colour }),
       });
-
       if (!response.ok) {
         throw new Error(`Server responded with ${response.status}`);
       }
-      return; // success
+      return;
     } catch (error) {
       if (attempt === MAX_ATTEMPTS) {
         console.error("failed to talk to baby:", error);
@@ -180,7 +210,6 @@ function removeBubble(id: string) {
     const easings = ['ease-in-out', 'ease-in', 'ease-out', 'linear', 'cubic-bezier(0.25, 1, 0.5, 1)', 'cubic-bezier(0.4, 0, 0.2, 1)'];
     const easing = easings[Math.floor(Math.random() * easings.length)];
 
-    // this is where all things are copied from main bubbles
     const ghostBubble: Bubble = {
       id: `ghost-${originalBubble.id}`,
       text: originalBubble.text,
@@ -191,12 +220,14 @@ function removeBubble(id: string) {
       ghostX: originalBubble.ghostX,
       ghostY: originalBubble.ghostY,
       ghostR: originalBubble.ghostR,
+      ghostOpacity1: originalBubble.ghostOpacity1,
+      ghostOpacity2: originalBubble.ghostOpacity2,
       author: originalBubble.author,
       duration: `${duration}s`,
       easing: easing,
       delay: `${delay}s`,
-      bgColor: originalBubble.bgColor,
-      borderColor: originalBubble.borderColor,
+      bgColour: originalBubble.bgColour,
+      borderColour: originalBubble.borderColour,
     };
 
     bbyState.graveyardBubbles.push(ghostBubble);
@@ -214,7 +245,7 @@ function clearBubbles() {bbyState.bubbles = []; }
 function sayRandomFact() {
   const factKeys = Object.keys(bbyFacts.value);
   if (factKeys.length === 0) {
-    say("I don't know any facts yet...", author.value);
+    say("I don't know any facts yet...", author.value, userColour.value);
     return;
   }
 
@@ -223,7 +254,7 @@ function sayRandomFact() {
 
   if (fact && fact.value) {
     const message = `hey bby, did you know that ${randomKey} is ${fact.value}?`;
-    say(message, author.value); 
+    say(message, author.value, userColour.value); 
   }
 }
 
@@ -233,7 +264,6 @@ watch(currentColour, (newColour) => {
   const b = Math.round(newColour.b);
 
   const root = document.documentElement;
-  // sets a root style property that changes every time it is watched, allowing fast colour changes on the bubbles etc
   root.style.setProperty('--bby-colour', `rgba(${r}, ${g}, ${b}, 0.9)`);
   
   const borderR = Math.max(0, r - 30);
@@ -242,12 +272,12 @@ watch(currentColour, (newColour) => {
   root.style.setProperty('--bby-colour-dark', `rgb(${borderR}, ${borderG}, ${borderB})`);
 
 }, { 
-  deep: true,      // watch for changes inside an object
-  immediate: true  // runs watcher on component load
+  deep: true,
+  immediate: true
 });
 
 let mouthInterval: ReturnType<typeof setInterval> | null = null;
-  watch(() => bbyState.isSpeaking, (isSpeaking) => {
+watch(() => bbyState.isSpeaking, (isSpeaking) => {
     if (mouthInterval) {clearInterval(mouthInterval); mouthInterval = null;}
     if (!isSpeaking) {bbyState.mouth = 1; return;}
 
@@ -260,7 +290,7 @@ let mouthInterval: ReturnType<typeof setInterval> | null = null;
       }
       bbyState.mouth = 75 + Math.floor(Math.random() * 11);
     }, 120);
-  });
+});
 
 export function bbyUse() {
   startClient();
@@ -269,8 +299,11 @@ export function bbyUse() {
     currentColour: readonly(currentColour),
     tintStrength: readonly(tintStrength),
     author: readonly(author),
+    userColour: readonly(userColour),
     setUsername,
+    setUserColour,
     requestStateChange,
+    setBbyTintColour,
     say,
     removeBubble,
     sayRandomFact,

@@ -1,5 +1,5 @@
 <template>
-  <button @click="say('test bubble', 'kevinonline420')">+ add test bubble</button>
+  <button @click="say('test bubble', 'kevinonline420', userColour)">+ add test bubble</button>
 
   <TransitionGroup tag="div" class="bubble-container" name="bubble-list" appear>
     <div
@@ -10,8 +10,8 @@
       @click="removeBubble(bubble.id)"
       :data-author="bubble.author"
       :style="{
-        'backgroundColor': bubble.bgColor,
-        'borderColor': bubble.borderColor,
+        'backgroundColor': bubble.bgColour,
+        'borderColor': bubble.borderColour,
       }"
     >
       <span v-html="bubble.text"></span>
@@ -24,7 +24,7 @@
 import { onUpdated, nextTick } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 
-const { bbyState, say, removeBubble } = bbyUse();
+const { bbyState, say, removeBubble, userColour } = bbyUse();
 
 onUpdated(async () => {
   await nextTick();

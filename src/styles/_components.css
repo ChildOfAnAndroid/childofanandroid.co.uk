@@ -50,12 +50,12 @@
   margin-bottom: var(--padding);
 }
 
-.text-input, .name-input, .color-input {
+.text-input, .name-input, .colour-input {
   flex-grow: 1;
   background-color: var(--bby-colour);
 }
 
-.text-input, .name-input, .color-input, .action-button {
+.text-input, .name-input, .colour-input, .action-button {
   max-height: var(--line-height)+var(--padding);
   padding: var(--padding);
   border: var(--border);
@@ -77,7 +77,7 @@
   cursor: pointer;
 }
 
-.color-input {
+.colour-input {
   max-width: var(--nav-width);
   cursor: pointer;
 }

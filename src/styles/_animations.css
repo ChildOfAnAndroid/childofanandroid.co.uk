@@ -25,8 +25,8 @@
   line-height: var(--line-height);
   padding: var(--padding);
   transform-origin: center center;
-  animation: ghost-fly-away var(--ghost-duration, 420s) ease-out forwards;
-  animation-delay: var(--ghost-delay, 420s);
+  animation: ghost-fly-away var(--ghost-duration, 420s) var(--ghost-easing, ease-out forwards);
+  animation-delay: var(--ghost-delay, 2s);
 }
 
 @keyframes ghost-fly-away {
@@ -36,25 +36,46 @@
   }
 
   1% {
-    transform: translate(0, 0) rotate(calc(var(--dest-r) * 0.005)) scale(1.1);
+    transform:
+      translate(calc(var(--dest-x) * -0.1), calc(var(--dest-y) * 0.1))
+      rotate(calc(var(--dest-r) * 0.1))
+      scale(1.1);
     opacity: 0.5;
-    filter: blur(3.33px) hue-rotate(-10deg);
+    filter: blur(3.33px) hue-rotate(-50deg);
   }
 
   5% {
-    transform: translate(1px, -1px) rotate(calc(var(--dest-r) * 0.01)) scale(1.5);
-    opacity: 0.3;
-    filter: blur(9.99px) hue-rotate(100deg);
+    transform:
+      translate(calc(var(--dest-x) * 0.2), calc(var(--dest-y) * -0.2))
+      rotate(calc(var(--dest-r) * 0.2))
+      scale(1.5);
+    opacity: var(--ghost-opacity1);
+    filter: blur(9.99px) hue-rotate(90deg);
   }
 
   10% {
-    transform: translate(1px, -1px) rotate(calc(var(--dest-r) * 0.1)) scale(1.1);
-    opacity: 0.2;
-    filter: blur(13.32px) hue-rotate(-90deg);
+    transform:
+      translate(calc(var(--dest-x) * 0.3), calc(var(--dest-y) * 0.3))
+      rotate(calc(var(--dest-r) * 0.3))
+      scale(var(--ghost-delay));
+    opacity: 0.1;
+    filter: blur(3.33px) hue-rotate(-190deg);
+  }
+
+  50% {
+    transform:
+      translate(calc(var(--dest-x) * 0.5), calc(var(--dest-y) * 0.5))
+      rotate(calc(var(--dest-r) * 0.5))
+      scale(1.1);
+    opacity: var(--ghost-opacity2);
+    filter: blur(13.32px) hue-rotate(150deg);
   }
 
   100% {
-    transform: translate(var(--dest-x), var(--dest-y)) rotate(calc(var(--dest-r) + 360deg)) scale(0.4);
+    transform:
+      translate(var(--dest-x), var(--dest-y))
+      rotate(calc(var(--dest-r)))
+      scale(0.4);
     opacity: 0.3;
     filter: blur(6.66px) hue-rotate(360deg);
   }

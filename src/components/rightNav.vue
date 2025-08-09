@@ -26,28 +26,37 @@
 
 a {
   padding: var(--padding);
-  border-radius: var(--border-radius);
+  border: var(--border);
+  border-color: var(--panel-colour);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: var(--border-radius);
+  border-bottom-right-radius: var(--border-radius);
+  padding-left: calc(var(--padding) + var(--border-width));
   font-weight: bold;
   color: var(--font-colour);
   text-decoration: none;
   text-shadow: var(--font-shadow);
-  transition: background-color var(--transition-time) ease-in-out;
+  transition: all var(--transition-time) ease-in-out;
 }
 
 /* special class vue router adds to the link of the page you are currently on */
 a.router-link-exact-active {
   background-color: var(--bg-colour);   /* blend into main page bg */
-  border: var(--border);
+  border-color: var(--border-colour);
   border-left-color: var(--bg-colour);  /* makes it look joined to panel bg */
   margin-left: calc(-1 * var(--border-width));
   padding-left: calc(var(--padding) + var(--border-width));
-  box-shadow: calc(var(--border-width) * -1) 0 var(--bg-colour);
   color: var(--accent-colour);
   z-index: var(--tab-z);
 }
 
-a:hover {background-color: rgba(255, 255, 255, 0.05);}
-
 /* hover */
-.right-nav-column a:hover {border-color: var(--accent-colour);}
+.right-nav-column a:hover {
+  background-color: var(--border-colour);
+  border-color: var(--accent-colour);
+  border-left-color: var(--border-colour);
+  margin-left: calc(-1 * var(--border-width));
+  padding-left: calc(var(--padding) + var(--border-width));
+  }
 </style>

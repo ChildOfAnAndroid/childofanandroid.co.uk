@@ -7,8 +7,8 @@
   --full-width: 100dvw;
 
   --full-vmax: 100vmax;
-  --nav-width: 4vmax;
-  --content-width: 96vmax;
+  --nav-width: 2vmax;
+  --content-width: 98vmax;
   --bubble-width: 100%;
 
   --bby-canvas-size: 68px;
@@ -38,16 +38,16 @@
   --margin: 0;
 
   /* fonts */
-  --line-height: 2.5vmin;
-  --small-line-height: 2.0vmin;
+  --line-height: clamp(1.4rem, 2.5vmin, 2.2rem);
+  --small-line-height: clamp(1.2rem, 2vmin, 1.8rem);
+
+  --font-size: clamp(1rem, 2vmin, 1.6rem);
+  --small-font-size: clamp(0.9rem, 1.5vmin, 1.3rem);
 
   --font: 'Silkscreen', monospace;
-  --font-size: 2.0vmin;
   --font-colour: #e0e0e0;
   --font-shadow: 0 0 var(--padding) 0 var(--shadow-colour);
   --font-align: center;
-
-  --small-font-size: 1.5vmin;
 
   /* shadow */
   --shadow-transparency: 0.1;
@@ -67,6 +67,10 @@
 }
 
 /* BODY */
+html {
+  font-size: 100%; /* user default (usually 16px) */
+}
+
 html, body {
   margin: var(--margin);
   padding: 0;

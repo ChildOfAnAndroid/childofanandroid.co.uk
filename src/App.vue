@@ -26,9 +26,9 @@ src/App.vue
 }
 
 .main-content-area {
-  flex-grow: 1; /* all available space */
-  height: var(--full-height, 100dvh);
+  flex: 1 1 auto;             /* take remaining space */
+  height: var(--full-height);
   position: relative;
-  overflow: hidden; /* contains the pages */
+  overflow: hidden;           /* contains the pages */
 }
 </style>

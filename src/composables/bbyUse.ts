@@ -94,8 +94,13 @@ function startClient() {
           const b = Math.round(currentColour.b);
           const stampedBgColor = `rgba(${r}, ${g}, ${b}, 0.9)`;
           const stampedBorderColor = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
+          const baseTime = (Math.random() * 32000);           // 32s
+          const timePerChar = (Math.random() * 3200);         // 3.2s/char
+          const maxTime = (Math.random() * 320000);           // 320s cap
+          const textLength = message.text.length;
+          let timeout = Math.min(baseTime + textLength * timePerChar, maxTime);
+          const jitter = Math.random() * 3000 - 1500;
 
-          // this is where new bubbles are created
           const newBubble: Bubble = {
             id: message.id,
             text: message.text,
@@ -108,7 +113,7 @@ function startClient() {
           };
 
           bbyState.bubbles.push(newBubble);
-          setTimeout(() => removeBubble(newBubble.id), 155000 + Math.random() * 555000);
+          setTimeout(() => removeBubble(newBubble.id), timeout + jitter);
         }
       });
     } catch (error) {console.error("failed to fetch chat history:", error); }
@@ -170,7 +175,7 @@ function removeBubble(id: string) {
     const rect = bubbleEl.getBoundingClientRect();
     const originalBubble = bbyState.bubbles[bubbleIndex];
     
-    const duration = Math.random() * 1000 + 15;
+    const duration = Math.random() * 8000 + 60;
     const delay = Math.random() * 2;
     const easings = ['ease-in-out', 'ease-in', 'ease-out', 'linear', 'cubic-bezier(0.25, 1, 0.5, 1)', 'cubic-bezier(0.4, 0, 0.2, 1)'];
     const easing = easings[Math.floor(Math.random() * easings.length)];

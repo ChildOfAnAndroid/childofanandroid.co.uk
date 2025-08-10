@@ -176,14 +176,5 @@ watch([bbyState, currentColour, tintStrength], () => {
 </script>
 
 <style scoped>
-canvas {
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-  image-rendering: crisp-edges;
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-}
+
 </style>

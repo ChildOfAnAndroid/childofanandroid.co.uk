@@ -239,7 +239,10 @@ function removeBubble(id: string) {
   }
 }
 
-function clearBubbles() {bbyState.graveyardBubbles = []; }
+function clearBubbles() {
+  bbyState.bubbles = [];
+  bbyState.graveyardBubbles = [];
+}
 
 function sayRandomFact() {
   const factKeys = Object.keys(bbyFacts.value);

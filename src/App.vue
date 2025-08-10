@@ -33,6 +33,5 @@ src/App.vue
   flex: 1 1 auto;             /* take remaining space */
   height: var(--full-height);
   position: relative;
-  overflow: hidden;           /* contains the pages */
 }
 </style>

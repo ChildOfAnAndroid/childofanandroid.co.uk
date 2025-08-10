@@ -19,6 +19,7 @@ interface Bubble {
   delay?: string;
   ghostOpacity1?: number;
   ghostOpacity2?: number;
+  ghostBlur?: number;
   bgColour?: string;
   borderColour?: string;
 }
@@ -102,18 +103,10 @@ function startClient() {
         if (!bubbleExists && !ghostExists) {
           const randw = (min: number, max: number) => `${Math.random() * (max - min) + min}vw`;
           const randh = (min: number, max: number) => `${Math.random() * (max - min) + min}vh`;
-
-          let bubbleColour: UserColour;
-          if (message.author === 'babyLLM') {
-            bubbleColour = {r: Math.round(currentColour.r), g: Math.round(currentColour.g), b: Math.round(currentColour.b)};
-          } else {
-            bubbleColour = message.colour || { r: 103, g: 209, b: 208 };
-          }
-
+          const bubbleColour = message.colour || { r: 103, g: 209, b: 208 };
           const { r, g, b } = bubbleColour;
           const stampedBgColour = `rgba(${r}, ${g}, ${b}, 0.9)`;
           const stampedBorderColour = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
-          
           const baseTime = (Math.random() * 32000);
           const timePerChar = (Math.random() * 3200);
           const maxTime = (Math.random() * 320000);
@@ -127,9 +120,10 @@ function startClient() {
             author: message.author,
             ghostX: randw(-50, 50),
             ghostY: randh(-50, 50),
-            ghostR: `${Math.random() * 1440 * (Math.random()>0.5?1:-1)}deg`,
-            ghostOpacity1: Math.random() * 0.5,
-            ghostOpacity2: Math.random() * 0.5,
+            ghostR: `${Math.random() * jitter * (Math.random()>0.5?1:-1) + 42}deg`,
+            ghostOpacity1: (Math.random() * 0.2),
+            ghostOpacity2: (Math.random() * 0.1),
+            ghostBlur: (Math.random() * 100),
             bgColour: stampedBgColour,
             borderColour: stampedBorderColour,
           };
@@ -142,9 +136,9 @@ function startClient() {
   }, 1500);
 
   function colourAnimationLoop() {
-    currentColour.r += (targetColour.r - currentColour.r) * 0.02;
-    currentColour.g += (targetColour.g - currentColour.g) * 0.01;
-    currentColour.b += (targetColour.b - currentColour.b) * 0.02;
+    currentColour.r += (targetColour.r - currentColour.r) * 0.06;
+    currentColour.g += (targetColour.g - currentColour.g) * 0.03;
+    currentColour.b += (targetColour.b - currentColour.b) * 0.06;
     requestAnimationFrame(colourAnimationLoop);
   }
   requestAnimationFrame(colourAnimationLoop);
@@ -196,7 +190,7 @@ async function say(text: string, author: string, colour: UserColour) {
   }
 }
 
-const MAX_GHOSTS = 1000;
+const MAX_GHOSTS = 100;
 function removeBubble(id: string) {
   const bubbleEl = document.querySelector(`[data-bubble-id="${id}"]`);
   const bubbleIndex = bbyState.bubbles.findIndex(b => b.id === id);
@@ -222,6 +216,7 @@ function removeBubble(id: string) {
       ghostR: originalBubble.ghostR,
       ghostOpacity1: originalBubble.ghostOpacity1,
       ghostOpacity2: originalBubble.ghostOpacity2,
+      ghostBlur: originalBubble.ghostBlur,
       author: originalBubble.author,
       duration: `${duration}s`,
       easing: easing,
@@ -265,13 +260,39 @@ watch(currentColour, (newColour) => {
 
   const root = document.documentElement;
   root.style.setProperty('--bby-colour', `rgba(${r}, ${g}, ${b}, 0.9)`);
+
+  const panelR = Math.max(0, r - 75);
+  const panelG = Math.max(0, g - 100);
+  const panelB = Math.max(0, b - 75);
+  root.style.setProperty('--bby-colour-panel', `rgb(${panelR}, ${panelG}, ${panelB})`);
   
   const borderR = Math.max(0, r - 30);
-  const borderG = Math.max(0, g - 30);
+  const borderG = Math.max(0, g - 40);
   const borderB = Math.max(0, b - 30);
   root.style.setProperty('--bby-colour-dark', `rgb(${borderR}, ${borderG}, ${borderB})`);
 
+  const bgR = Math.max(0, r - 135);
+  const bgG = Math.max(0, g - 180);
+  const bgB = Math.max(0, b - 135);
+  root.style.setProperty('--bby-colour-black', `rgb(${bgR}, ${bgG}, ${bgB})`);
+
 }, { 
+  deep: true,
+  immediate: true
+});
+
+watch(userColour, (newUserColour) => {
+  const { r, g, b } = newUserColour;
+
+  const root = document.documentElement;
+  root.style.setProperty('--user-colour', `rgb(${r}, ${g}, ${b})`);
+
+  const hoverR = Math.max(0, r - 30);
+  const hoverG = Math.max(0, g - 40);
+  const hoverB = Math.max(0, b - 30);
+  root.style.setProperty('--user-colour-dark', `rgb(${hoverR}, ${hoverG}, ${hoverB})`);
+
+}, {
   deep: true,
   immediate: true
 });

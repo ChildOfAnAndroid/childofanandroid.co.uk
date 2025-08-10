@@ -23,6 +23,7 @@ src/pages/bbyIndex.vue
           '--ghost-delay': ghost.delay,
           '--ghost-opacity1': ghost.ghostOpacity1,
           '--ghost-opacity2': ghost.ghostOpacity2,
+          '--ghost-blur': ghost.ghostBlur,
           'backgroundColor': ghost.bgColour,
           'borderColor': ghost.borderColour,
         }"
@@ -42,7 +43,7 @@ src/pages/bbyIndex.vue
             <button @click="handleFactClick" class="action-button">fact</button>
           </div>
           <div class="input-group button-row">
-            <input id="colour-picker" type="colour" v-model="colourInput" @input="updateUserColourAndTint" class="colour-input" />
+            <input id="color-picker" type="color" v-model="colourInput" @input="updateUserColourAndTint" class="colour-input" />
             <button @click="randomiseUserColourAndTint" class="action-button">colour</button>
             <button @click="handleUsernameUpdate" class="action-button" :disabled="!usernameInput">name</button>
             <input v-model="usernameInput" @keyup.enter="handleUsernameUpdate" placeholder="enter username..." class="name-input"/>

@@ -24,6 +24,8 @@ src/App.vue
   height: var(--full-height, 100dvh);
   position: relative;
   background-color: var(--bg-color);
+  transition: background-color var(--transition-time) ease-in-out;
+  transition: border-color var(--transition-time) ease-in-out;
 }
 
 .main-content-area {

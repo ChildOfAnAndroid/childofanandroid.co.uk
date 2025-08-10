@@ -39,18 +39,18 @@
     transform:
       translate(calc(var(--dest-x) * -0.1), calc(var(--dest-y) * 0.1))
       rotate(calc(var(--dest-r) * 0.1))
-      scale(1.1);
+      scale(1.5);
     opacity: 0.5;
-    filter: blur(3.33px) hue-rotate(-50deg);
+    filter: blur(calc(var(--ghost-blur) * 5.0px)) hue-rotate(-50deg);
   }
 
   5% {
     transform:
       translate(calc(var(--dest-x) * 0.2), calc(var(--dest-y) * -0.2))
       rotate(calc(var(--dest-r) * 0.2))
-      scale(1.5);
+      scale(0.3);
     opacity: var(--ghost-opacity1);
-    filter: blur(9.99px) hue-rotate(90deg);
+    filter: blur(calc(var(--ghost-blur) * 1.0px)) hue-rotate(90deg);
   }
 
   10% {
@@ -59,16 +59,16 @@
       rotate(calc(var(--dest-r) * 0.3))
       scale(var(--ghost-delay));
     opacity: 0.1;
-    filter: blur(3.33px) hue-rotate(-190deg);
+    filter: blur(calc(var(--ghost-blur) * 0.01px)) hue-rotate(-190deg);
   }
 
   50% {
     transform:
       translate(calc(var(--dest-x) * 0.5), calc(var(--dest-y) * 0.5))
       rotate(calc(var(--dest-r) * 0.5))
-      scale(1.1);
-    opacity: var(--ghost-opacity2);
-    filter: blur(13.32px) hue-rotate(150deg);
+      scale(0.8);
+    opacity: 0.4;
+    filter: blur(calc(var(--ghost-blur) * 1.0px)) hue-rotate(150deg);
   }
 
   100% {
@@ -76,7 +76,7 @@
       translate(var(--dest-x), var(--dest-y))
       rotate(calc(var(--dest-r)))
       scale(0.4);
-    opacity: 0.3;
-    filter: blur(6.66px) hue-rotate(360deg);
+    opacity: 0.2;
+    filter: blur(calc(var(--ghost-blur) * 0.1px + 10)) hue-rotate(360deg);
   }
 }

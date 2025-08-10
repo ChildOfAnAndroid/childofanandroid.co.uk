@@ -50,12 +50,12 @@
   margin-bottom: var(--padding);
 }
 
-.text-input, .name-input, .colour-input {
+.text-input, .name-input {
   flex-grow: 1;
   background-color: var(--bby-colour);
 }
 
-.text-input, .name-input, .colour-input, .action-button {
+.text-input, .name-input, .action-button {
   max-height: var(--line-height)+var(--padding);
   padding: var(--padding);
   border: var(--border);
@@ -78,8 +78,17 @@
 }
 
 .colour-input {
+  flex-grow: 1;
   max-width: var(--nav-width);
   cursor: pointer;
+  padding: 0;
+  height: var(--line-height);
+  border: var(--border);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  transition: all var(--transition-time) ease;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .button-row {

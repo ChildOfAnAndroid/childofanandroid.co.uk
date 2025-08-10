@@ -53,6 +53,7 @@ function setUserColour(r: number, g: number, b: number) {
 
 const bbyFacts = ref<Record<string, { value: string, author: string }>>({});
 let isClientRunning = false;
+const seenMessageIds = new Set<string>();
 
 async function fetchBbyFacts() {
   try {
@@ -97,10 +98,12 @@ function startClient() {
       if (!response.ok) return;
       
       const serverHistory: { id: string; author: string; text: string; colour: UserColour }[] = await response.json();
+      const serverIds = new Set(serverHistory.map(m => m.id));
+      seenMessageIds.forEach(id => {if (!serverIds.has(id)) seenMessageIds.delete(id);});
       serverHistory.forEach(message => {
         const bubbleExists = bbyState.bubbles.some(b => b.id === message.id);
         const ghostExists = bbyState.graveyardBubbles.some(g => g.id === `ghost-${message.id}`);
-        if (!bubbleExists && !ghostExists) {
+        if (!bubbleExists && !ghostExists && !seenMessageIds.has(message.id)) {
           const randw = (min: number, max: number) => `${Math.random() * (max - min) + min}vw`;
           const randh = (min: number, max: number) => `${Math.random() * (max - min) + min}vh`;
           const bubbleColour = message.colour || { r: 103, g: 209, b: 208 };
@@ -129,6 +132,7 @@ function startClient() {
           };
 
           bbyState.bubbles.push(newBubble);
+          seenMessageIds.add(message.id);
           setTimeout(() => removeBubble(newBubble.id), timeout + jitter);
         }
       });
@@ -235,7 +239,7 @@ function removeBubble(id: string) {
   }
 }
 
-function clearBubbles() {bbyState.bubbles = []; }
+function clearBubbles() {bbyState.graveyardBubbles = []; }
 
 function sayRandomFact() {
   const factKeys = Object.keys(bbyFacts.value);

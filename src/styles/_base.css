@@ -2,106 +2,106 @@
 
 /* ROOT STYLES */
 :root {
-  /* basic */
-  --full-height: 100dvh;
-  --full-width: 100dvw;
+	/* basic */
+	--full-height: 100dvh;
+	--full-width: 100dvw;
 
-  --full-vmax: 100vmax;
-  --nav-width: 2vw;
-  --content-width: 98vw;
-  --bubble-width: 100%;
+	--full-vmax: 100vmax;
+	--nav-width: 2vw;
+	--content-width: 98vw;
+	--bubble-width: 100%;
 
-  --bby-canvas-size: 68px;
-  --bby-size: 64px;
+	--bby-canvas-size: 68px;
+	--bby-size: 64px;
 
-  /* colours */
-  --bby-colour: #0e1735;
-  --bby-colour-panel: #16213e;
-  --bby-colour-dark: #0f3460;
-  --bby-colour-black: #1a1a2e;
+	/* colours */
+	--bby-colour: #0e1735;
+	--bby-colour-panel: #16213e;
+	--bby-colour-dark: #0f3460;
+	--bby-colour-black: #1a1a2e;
 
-  --user-colour: #0e1735;
-  --user-colour-dark: #0f3460;
+	--user-colour: #0e1735;
+	--user-colour-dark: #0f3460;
 
-  --bg-colour: var(--bby-colour-black, #1a1a2e);
-  --panel-colour: var(--bby-colour-panel, #16213e);
+	--bg-colour: var(--bby-colour-black, #1a1a2e);
+	--panel-colour: var(--bby-colour-panel, #16213e);
 
-  --accent-colour: var(--user-colour, #e94560);
-  --accent-hover: var(--user-colour-dark, #c63a50);
+	--accent-colour: var(--user-colour, #e94560);
+	--accent-hover: var(--user-colour-dark, #c63a50);
 
-  /* padding */
-  --padding: 0.5vmin;
-  --spacing: 1.0vmin;
+	/* padding */
+	--padding: 0.5vmin;
+	--spacing: 1.0vmin;
 
-  /* borders */
-  --border-colour: var(--bby-colour-dark);
-  --border-width: var(--padding);
-  --border-radius: var(--spacing);
-  --border: var(--border-width) solid var(--border-colour);
+	/* borders */
+	--border-colour: var(--bby-colour-dark);
+	--border-width: var(--padding);
+	--border-radius: var(--spacing);
+	--border: var(--border-width) solid var(--border-colour);
 
-  /* margins */
-  --margin: 0;
+	/* margins */
+	--margin: 0;
 
-  /* fonts */
-  --line-height: clamp(1.4rem, 2.5vmin, 2.2rem);
-  --small-line-height: clamp(1.2rem, 2vmin, 1.8rem);
+	/* fonts */
+	--line-height: clamp(1.4rem, 2.5vmin, 2.2rem);
+	--small-line-height: clamp(1.2rem, 2vmin, 1.8rem);
 
-  --font-size: clamp(1rem, 2vmin, 1.6rem);
-  --small-font-size: clamp(0.9rem, 1.5vmin, 1.3rem);
+	--font-size: clamp(1rem, 2vmin, 1.6rem);
+	--small-font-size: clamp(0.9rem, 1.5vmin, 1.3rem);
 
-  --font: 'Silkscreen', monospace;
-  --font-colour: #e0e0e0;
-  --font-shadow: 0 0 var(--padding) 0 var(--shadow-colour);
-  --font-align: center;
+	--font: 'Silkscreen', monospace;
+	--font-colour: #e0e0e0;
+	--font-shadow: 0 0 var(--padding) 0 var(--shadow-colour);
+	--font-align: center;
 
-  /* shadow */
-  --shadow-transparency: 0.1;
-  --shadow-colour: rgba(0, 0, 0, var(--shadow-transparency));
-  --box-shadow: 0 var(--padding) var(--spacing) var(--shadow-colour);
+	/* shadow */
+	--shadow-transparency: 0.1;
+	--shadow-colour: rgba(0, 0, 0, var(--shadow-transparency));
+	--box-shadow: 0 var(--padding) var(--spacing) var(--shadow-colour);
 
-  /* z index */
-  --ghost-z: 0;
-  --bby-z: 1;
-  --bubble-z: 2;
-  --nav-z: 3;
-  --tab-z: 4;
+	/* z index */
+	--ghost-z: 0;
+	--bby-z: 1;
+	--bubble-z: 2;
+	--nav-z: 3;
+	--tab-z: 4;
 
-  /* timings */
-  --transition-time: 0.42s;
+	/* timings */
+	--transition-time: 0.42s;
 
 }
 
 /* BODY */
 html {
-  font-size: 100%; /* user default (usually 16px) */
+	font-size: 100%; /* user default (usually 16px) */
 }
 
 html, body {
-  margin: var(--margin);
-  padding: 0;
-  background-color: var(--bg-colour);
-  color: var(--font-colour);
-  font-family: var(--font);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transition: background-color var(--transition-time) ease-in-out;
+	margin: var(--margin);
+	padding: 0;
+	background-color: var(--bg-colour);
+	color: var(--font-colour);
+	font-family: var(--font);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	transition: background-color var(--transition-time) ease-in-out;
 }
 
 *, *::before, *::after {
-  box-sizing: border-box;
+	box-sizing: border-box;
 }
 
 
 /* BUTTON */
 button {
-  border: var(--border);
-  border-radius: var(--border-radius);
-  font-size: var(--font-size);
-  font-family: var(--font);
-  background-color: var(--panel-colour);
-  color: var(--font-colour);
-  cursor: pointer;
-  transition: border-color var(--transition-time);
+	border: var(--border);
+	border-radius: var(--border-radius);
+	font-size: var(--font-size);
+	font-family: var(--font);
+	background-color: var(--panel-colour);
+	color: var(--font-colour);
+	cursor: pointer;
+	transition: border-color var(--transition-time);
 }
 
 button:hover {border-color: var(--accent-colour);}

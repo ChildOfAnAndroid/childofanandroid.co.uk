@@ -1,96 +1,96 @@
 /* --- BUBBLES --- */
 .bubble-area {
-  width: 100%;
-  flex-grow: 1; /* fill vertical space */
-  overflow-y: auto;
-  margin-bottom: 0;
+	width: 100%;
+	flex-grow: 1; /* fill vertical space */
+	overflow-y: auto;
+	margin-bottom: 0;
 }
 
 .speech-bubble {
-  border: var(--border);
-  border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow);
-  color: var(--font-colour);
-  font-family: var(--font);
-  font-size: var(--font-size);
-  line-height: var(--line-height);
-  text-align: var(--font-align);
-  padding: var(--padding);
-  box-sizing: border-box;
-  margin: var(--margin);
-  position: relative;
-  z-index: var(--bubble-z);
+	border: var(--border);
+	border-radius: var(--border-radius);
+	box-shadow: var(--box-shadow);
+	color: var(--font-colour);
+	font-family: var(--font);
+	font-size: var(--font-size);
+	line-height: var(--line-height);
+	text-align: var(--font-align);
+	padding: var(--padding);
+	box-sizing: border-box;
+	margin: var(--margin);
+	position: relative;
+	z-index: var(--bubble-z);
 }
 
 .bubble-author {
-  font-size: var(--small-font-size);
-  color: var(--font-colour);
-  opacity: 0.2;
+	font-size: var(--small-font-size);
+	color: var(--font-colour);
+	opacity: 0.2;
 }
 
 /* --- CONTROL PANEL --- */
 .controls-panel {
-  padding: var(--padding);
-  background-color: var(--panel-colour);
-  border: var(--border);
-  border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow);
-  width: var(--content-width);
-  flex: 1 1 auto;                 /* take remaining space */
-  z-index: var(--nav-z);
+	padding: var(--padding);
+	background-color: var(--panel-colour);
+	border: var(--border);
+	border-radius: var(--border-radius);
+	box-shadow: var(--box-shadow);
+	width: var(--content-width);
+	flex: 1 1 auto;								 /* take remaining space */
+	z-index: var(--nav-z);
 }
 
 .input-group {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing);
+	display: flex;
+	align-items: center;
+	gap: var(--spacing);
 }
 
 .controls-panel > .input-group:not(:last-child) {
-  margin-bottom: var(--padding);
+	margin-bottom: var(--padding);
 }
 
 .text-input, .name-input {
-  flex-grow: 1;
-  background-color: var(--bby-colour);
+	flex-grow: 1;
+	background-color: var(--bby-colour);
 }
 
 .text-input, .name-input, .action-button {
-  max-height: var(--line-height)+var(--padding);
-  padding: var(--padding);
-  border: var(--border);
-  border-radius: var(--border-radius);
-  color: var(--font-colour);
-  font-size: var(--font-size);
-  font-family: var(--font);
-  transition: all var(--transition-time) ease;
-  box-shadow: var(--box-shadow);
+	max-height: var(--line-height)+var(--padding);
+	padding: var(--padding);
+	border: var(--border);
+	border-radius: var(--border-radius);
+	color: var(--font-colour);
+	font-size: var(--font-size);
+	font-family: var(--font);
+	transition: all var(--transition-time) ease;
+	box-shadow: var(--box-shadow);
 }
 
 .name-input {
-  width: 21vmax;
+	width: 21vmax;
 }
 
 .action-button {
-  background-color: var(--accent-colour);
-  font-weight: bold;
-  cursor: pointer;
+	background-color: var(--accent-colour);
+	font-weight: bold;
+	cursor: pointer;
 }
 
 .colour-input {
-  flex-grow: 1;
-  max-width: var(--nav-width);
-  cursor: pointer;
-  padding: 0;
-  height: var(--line-height);
-  border: var(--border);
-  border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow);
-  transition: all var(--transition-time) ease;
-  -webkit-appearance: none;
-  appearance: none;
+	flex-grow: 1;
+	max-width: var(--nav-width);
+	cursor: pointer;
+	padding: 0;
+	height: var(--line-height);
+	border: var(--border);
+	border-radius: var(--border-radius);
+	box-shadow: var(--box-shadow);
+	transition: all var(--transition-time) ease;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
 .button-row {
-  justify-content: space-between;
+	justify-content: space-between;
 }

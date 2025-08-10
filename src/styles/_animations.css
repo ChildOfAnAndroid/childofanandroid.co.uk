@@ -1,87 +1,87 @@
 /* animations css */
 
 .bubble-graveyard-global {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--full-width);
-  height: var(--full-height);
-  pointer-events: none;
-  z-index: var(--ghost-z);
-  overflow: hidden;
-  transition: background-color var(--transition-time) ease-in-out;
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: var(--full-width);
+	height: var(--full-height);
+	pointer-events: none;
+	z-index: var(--ghost-z);
+	overflow: hidden;
+	transition: background-color var(--transition-time) ease-in-out;
 }
 
 .ghost-bubble {
-  position: absolute;
-  word-break: break-word;
-  text-shadow: var(--font-shadow);
-  background: var(--bby-colour);
-  border: var(--border);
-  border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow);
-  color: var(--font-colour);
-  font-family: var(--font);
-  font-size: var(--font-size);
-  line-height: var(--line-height);
-  padding: var(--padding);
-  text-align: var(--font-align);
-  transform-origin: center center;
-  animation: 
-    ghost-fly-away var(--ghost-duration, 420s) 
-    var(--ghost-easing, ease-out) 
-    forwards; /* this allows the object to keep the computed final state from animation */
-  animation-delay: var(--ghost-delay);
+	position: absolute;
+	word-break: break-word;
+	text-shadow: var(--font-shadow);
+	background: var(--bby-colour);
+	border: var(--border);
+	border-radius: var(--border-radius);
+	box-shadow: var(--box-shadow);
+	color: var(--font-colour);
+	font-family: var(--font);
+	font-size: var(--font-size);
+	line-height: var(--line-height);
+	padding: var(--padding);
+	text-align: var(--font-align);
+	transform-origin: center center;
+	animation: 
+		ghost-fly-away var(--ghost-duration, 420s) 
+		var(--ghost-easing, ease-out) 
+		forwards; /* this allows the object to keep the computed final state from animation */
+	animation-delay: var(--ghost-delay);
 }
 
 @keyframes ghost-fly-away {
-  0% {
-    transform: translate(0, 0) rotate(0deg) scale(1);
-    opacity: 0.8;
-  }
+	0% {
+		transform: translate(0, 0) rotate(0deg) scale(1);
+		opacity: 0.8;
+	}
 
-  1% {
-    transform:
-      translate(calc(var(--dest-x) * -0.1), calc(var(--dest-y) * 0.1))
-      rotate(calc(var(--dest-r) * 0.1))
-      scale(1.5);
-    opacity: 0.5;
-    filter: blur(calc(var(--ghost-blur) * 5.0px)) hue-rotate(-50deg);
-  }
+	1% {
+		transform:
+			translate(calc(var(--dest-x) * -0.1), calc(var(--dest-y) * 0.1))
+			rotate(calc(var(--dest-r) * 0.1))
+			scale(1.5);
+		opacity: 0.5;
+		filter: blur(calc(var(--ghost-blur) * 5.0px)) hue-rotate(-50deg);
+	}
 
-  5% {
-    transform:
-      translate(calc(var(--dest-x) * 0.2), calc(var(--dest-y) * -0.2))
-      rotate(calc(var(--dest-r) * 0.2))
-      scale(0.3);
-    opacity: var(--ghost-opacity1);
-    filter: blur(calc(var(--ghost-blur) * 1.0px)) hue-rotate(90deg);
-  }
+	5% {
+		transform:
+			translate(calc(var(--dest-x) * 0.2), calc(var(--dest-y) * -0.2))
+			rotate(calc(var(--dest-r) * 0.2))
+			scale(0.3);
+		opacity: var(--ghost-opacity1);
+		filter: blur(calc(var(--ghost-blur) * 1.0px)) hue-rotate(90deg);
+	}
 
-  10% {
-    transform:
-      translate(calc(var(--dest-x) * 0.3), calc(var(--dest-y) * 0.3))
-      rotate(calc(var(--dest-r) * 0.3))
-      scale(var(--ghost-delay));
-    opacity: 0.1;
-    filter: blur(calc(var(--ghost-blur) * 0.01px)) hue-rotate(-190deg);
-  }
+	10% {
+		transform:
+			translate(calc(var(--dest-x) * 0.3), calc(var(--dest-y) * 0.3))
+			rotate(calc(var(--dest-r) * 0.3))
+			scale(var(--ghost-delay));
+		opacity: 0.1;
+		filter: blur(calc(var(--ghost-blur) * 0.01px)) hue-rotate(-190deg);
+	}
 
-  50% {
-    transform:
-      translate(calc(var(--dest-x) * 0.5), calc(var(--dest-y) * 0.5))
-      rotate(calc(var(--dest-r) * 0.5))
-      scale(0.8);
-    opacity: 0.4;
-    filter: blur(calc(var(--ghost-blur) * 1.0px)) hue-rotate(150deg);
-  }
+	50% {
+		transform:
+			translate(calc(var(--dest-x) * 0.5), calc(var(--dest-y) * 0.5))
+			rotate(calc(var(--dest-r) * 0.5))
+			scale(0.8);
+		opacity: 0.4;
+		filter: blur(calc(var(--ghost-blur) * 1.0px)) hue-rotate(150deg);
+	}
 
-  100% {
-    transform:
-      translate(var(--dest-x), var(--dest-y))
-      rotate(var(--dest-r))
-      scale(0.4);
-    opacity: 0.2;
-    filter: blur(calc(var(--ghost-blur) * 0.1px)) hue-rotate(360deg);
-  }
+	100% {
+		transform:
+			translate(var(--dest-x), var(--dest-y))
+			rotate(var(--dest-r))
+			scale(0.4);
+		opacity: 0.2;
+		filter: blur(calc(var(--ghost-blur) * 0.1px)) hue-rotate(360deg);
+	}
 }

@@ -1,6 +1,6 @@
 /* just imports the other files in order */
 
-@import './styles/_base.css';             /* base styles */
-@import './styles/_bbyLayout.css';        /* navigation etc */
-@import './styles/_components.css';       /* components */
-@import './styles/_animations.css';       /* animations & keyframes */
+@import './styles/_base.css';						 /* base styles */
+@import './styles/_bbyLayout.css';				/* navigation etc */
+@import './styles/_components.css';			 /* components */
+@import './styles/_animations.css';			 /* animations & keyframes */

@@ -44,9 +44,8 @@ src/pages/bbyIndex.vue
           </div>
           <div class="input-group button-row">
             <input id="color-picker" type="color" v-model="colourInput" @input="updateUserColourAndTint" class="colour-input" />
-            <button @click="randomiseUserColourAndTint" class="action-button">colour</button>
-            <button @click="handleUsernameUpdate" class="action-button" :disabled="!usernameInput">name</button>
-            <input v-model="usernameInput" @keyup.enter="handleUsernameUpdate" placeholder="enter username..." class="name-input"/>
+            <input v-model="usernameInput" @keyup="handleUsernameUpdate" placeholder="enter username..." class="name-input"/>
+            <button @click="randomiseUserColourAndTint" class="action-button">random colour</button>
             <button @click="requestStateChange({ jumping: true })" class="action-button">jump</button>
             <button @click="requestStateChange({ cheeks_on: !bbyState.cheeks_on })" class="action-button">blush</button>
             <button @click="requestStateChange({ stretch_up: true })" class="action-button">stretch</button>

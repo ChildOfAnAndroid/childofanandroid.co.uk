@@ -1,8 +1,6 @@
 <template>
   <canvas
     ref="bbyCanvas"
-    :width="canvasSize[0]"
-    :height="canvasSize[1]"
     aria-label="AI baby sprite, somewhere between a ghost and a robot"
     role="img"
     @click="requestStateChange({ jumping: true })"
@@ -19,8 +17,8 @@ import bbyMouthUrl from '@/assets/bbySprites/bbyMOUTH.png';
 
 const { bbyState, currentColour, tintStrength, requestStateChange } = bbyUse();
 
-const spriteSize = { width: 64, height: 64 };
-const canvasSize = [68, 68];
+const SPRITE_W = 64;
+const SPRITE_H = 64;
 const numMouthStyles = 63;
 const bbyBODY_numLayers = 5;
 
@@ -37,73 +35,116 @@ const loadImage = (src: string): Promise<HTMLImageElement> => {
   });
 };
 
+// resize canvas to fit parent, keep ratio, stay crisp
+function fitCanvas() {
+  const canvas = bbyCanvas.value!;
+  const parent = canvas.parentElement!;
+  const dpr = window.devicePixelRatio || 1;
+  const box = parent.getBoundingClientRect();
+
+  // integer scale for pixel-snappy, or remove Math.floor for smooth
+  const s = Math.floor(Math.min(box.width / SPRITE_W, box.height / SPRITE_H)) || 1;
+
+  const cssW = SPRITE_W * s;
+  const cssH = SPRITE_H * s;
+
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+
+  canvas.width  = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+
+  const tx = (box.width  - cssW) / 2;
+  const ty = (box.height - cssH) / 2;
+
+  ctx!.setTransform(s * dpr, 0, 0, s * dpr, tx * dpr, ty * dpr);
+}
+
 const draw = () => {
   if (!ctx || !images.bbyBODY) return;
 
-  ctx.clearRect(0, 0, canvasSize[0], canvasSize[1]);
+  ctx.save();
+  ctx.clearRect(-1e5, -1e5, 2e5, 2e5);
   ctx.imageSmoothingEnabled = false;
 
+  // offscreen base
   const offscreenCanvas = document.createElement('canvas');
-  offscreenCanvas.width = spriteSize.width;
-  offscreenCanvas.height = spriteSize.height;
+  offscreenCanvas.width = SPRITE_W;
+  offscreenCanvas.height = SPRITE_H;
   const offCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
 
-  // draw base
+  // draw base layers
   for (let i = 0; i < bbyBODY_numLayers; i++) {
-    offCtx.drawImage(images.bbyBODY, 0, i * spriteSize.height, spriteSize.width, spriteSize.height, 0, 0, spriteSize.width, spriteSize.height);
+    offCtx.drawImage(
+      images.bbyBODY,
+      0, i * SPRITE_H, SPRITE_W, SPRITE_H,
+      0, 0, SPRITE_W, SPRITE_H
+    );
   }
 
-  // apply pixel tints
-  const imageData = offCtx.getImageData(0, 0, spriteSize.width, spriteSize.height);
+  // tint
+  const imageData = offCtx.getImageData(0, 0, SPRITE_W, SPRITE_H);
   const pixels = imageData.data;
   for (let i = 0; i < pixels.length; i += 4) {
     const r_orig = pixels[i];
     const g_orig = pixels[i + 1];
     const b_orig = pixels[i + 2];
-    
+
     const gray = (r_orig + g_orig + b_orig) / 3;
     const rTint = gray * currentColour.r / 255;
     const gTint = gray * currentColour.g / 255;
     const bTint = gray * currentColour.b / 255;
-    
+
     pixels[i]   = (1 - tintStrength.value) * r_orig + tintStrength.value * rTint;
     pixels[i+1] = (1 - tintStrength.value) * g_orig + tintStrength.value * gTint;
     pixels[i+2] = (1 - tintStrength.value) * b_orig + tintStrength.value * bTint;
   }
   offCtx.putImageData(imageData, 0, 0);
 
-  // final pos
-  const stretch_x = spriteSize.width + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0) - (bbyState.squish_left ? 1 : 0) - (bbyState.squish_right ? 1 : 0);
-  const stretch_y = spriteSize.height + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0) - (bbyState.squish_up ? 1 : 0) - (bbyState.squish_down ? 1 : 0);
-  const offset_x = (canvasSize[0] - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
-  let offset_y = (canvasSize[1] - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0);
-  const jumpset = bbyState.jumping ? -4 : 0;
-  offset_y += jumpset;
-  const baseOffsetX = (canvasSize[0] - spriteSize.width) / 2;
-  const baseOffsetY = (canvasSize[1] - spriteSize.height) / 2 + jumpset;
+  // stretch/squish in SPRITE pixels
+  const stretch_x = SPRITE_W
+    + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0)
+    - (bbyState.squish_left ? 1 : 0)  - (bbyState.squish_right ? 1 : 0);
 
-  // tinted dancy boi
+  const stretch_y = SPRITE_H
+    + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0)
+    - (bbyState.squish_up ? 1 : 0)  - (bbyState.squish_down ? 1 : 0);
+
+  const jumpset = bbyState.jumping ? -4 : 0;
+  const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
+  const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
+
+  const baseOffsetX = (SPRITE_W - SPRITE_W) / 2;
+  const baseOffsetY = (SPRITE_H - SPRITE_H) / 2 + jumpset;
+
+  // draw tinted body
   ctx.drawImage(offscreenCanvas, offset_x, offset_y, stretch_x, stretch_y);
-  
-  // face colour match
+
+  // overlays
   ctx.filter = 'brightness(85%)';
   if (bbyState.cheeks_on) {
-    ctx.drawImage(images.bbyCHEEKS, 0, 0, spriteSize.width, spriteSize.height, baseOffsetX, baseOffsetY, spriteSize.width, spriteSize.height);
+    ctx.drawImage(images.bbyCHEEKS, 0, 0, SPRITE_W, SPRITE_H,
+                  baseOffsetX, baseOffsetY, SPRITE_W, SPRITE_H);
   }
-  const eyeSourceX = bbyState.eyes * spriteSize.width;
+
+  const eyeSourceX = bbyState.eyes * SPRITE_W;
   for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
-     ctx.drawImage(images.bbyEYES, eyeSourceX, i * spriteSize.height, spriteSize.width, spriteSize.height, baseOffsetX, baseOffsetY, spriteSize.width, spriteSize.height);
+    ctx.drawImage(images.bbyEYES, eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H,
+                  baseOffsetX, baseOffsetY, SPRITE_W, SPRITE_H);
   }
-  const mouthSourceX = Math.max(0, Math.min(bbyState.mouth, numMouthStyles - 1)) * spriteSize.width;
-  ctx.drawImage(images.bbyMOUTH, mouthSourceX, 0, spriteSize.width, spriteSize.height, baseOffsetX, baseOffsetY, spriteSize.width, spriteSize.height);
-  
+
+  const mouthSourceX = Math.max(0, Math.min(bbyState.mouth, numMouthStyles - 1)) * SPRITE_W;
+  ctx.drawImage(images.bbyMOUTH, mouthSourceX, 0, SPRITE_W, SPRITE_H,
+                baseOffsetX, baseOffsetY, SPRITE_W, SPRITE_H);
+
   ctx.filter = 'none';
+  ctx.restore();
 };
 
 onMounted(async () => {
   if (!bbyCanvas.value) return;
   ctx = bbyCanvas.value.getContext('2d');
-  
+
   try {
     const [body, cheeks, eyes, mouth] = await Promise.all([
       loadImage(bbyBodyUrl),
@@ -115,13 +156,23 @@ onMounted(async () => {
     images.bbyCHEEKS = cheeks;
     images.bbyEYES = eyes;
     images.bbyMOUTH = mouth;
+
+    fitCanvas();
     draw();
+
+    const ro = new ResizeObserver(() => { fitCanvas(); draw(); });
+    ro.observe(bbyCanvas.value.parentElement!);
+    window.addEventListener('resize', () => { fitCanvas(); draw(); });
+
   } catch (error) {
     console.error("failed to load bby sprites:", error);
   }
 });
 
-watch([bbyState, currentColour, tintStrength], draw, { deep: true });
+watch([bbyState, currentColour, tintStrength], () => {
+  fitCanvas();
+  draw();
+}, { deep: true });
 </script>
 
 <style scoped>
@@ -129,7 +180,10 @@ canvas {
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
-  width: 68px;
-  height: 68px;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
 }
 </style>

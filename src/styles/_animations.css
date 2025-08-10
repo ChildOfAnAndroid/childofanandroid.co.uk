@@ -9,6 +9,7 @@
   pointer-events: none;
   z-index: var(--ghost-z);
   overflow: hidden;
+  transition: background-color var(--transition-time) ease-in-out;
 }
 
 .ghost-bubble {
@@ -25,8 +26,11 @@
   line-height: var(--line-height);
   padding: var(--padding);
   transform-origin: center center;
-  animation: ghost-fly-away var(--ghost-duration, 420s) var(--ghost-easing, ease-out forwards);
-  animation-delay: var(--ghost-delay, 2s);
+  animation: 
+    ghost-fly-away var(--ghost-duration, 420s) 
+    var(--ghost-easing, ease-out) 
+    forwards; /* this allows the object to keep the computed final state from animation */
+  animation-delay: var(--ghost-delay);
 }
 
 @keyframes ghost-fly-away {

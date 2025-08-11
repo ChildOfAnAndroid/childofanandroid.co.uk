@@ -141,18 +141,15 @@ function startClient() {
 			const events: {id: string, pixels: {x:number, y:number, r:number, g:number, b:number, a:number}[]}[] = await response.json();
 			
 			if (events.length > 0) {
-				const existingData = paintOverlayData.value.data;
-				events.forEach(event => {
-					event.pixels.forEach(p => {
-						const i = (p.y * 64 + p.x) * 4;
-						existingData[i] = p.r;
-						existingData[i+1] = p.g;
-						existingData[i+2] = p.b;
-						existingData[i+3] = p.a;
-					});
-				});
-				paintOverlayData.value = { ...paintOverlayData.value };
-				lastPaintEventId.value = events[events.length - 1].id;
+			const data = paintOverlayData.value.data;
+			for (const ev of events) {
+				for (const p of ev.pixels) {
+				const i = (p.y * 64 + p.x) * 4;
+				data[i]   = p.r; data[i+1] = p.g; data[i+2] = p.b; data[i+3] = p.a;
+				}
+			}
+			paintOverlayData.value = new ImageData(data, 64, 64); // <- key change
+			lastPaintEventId.value = events[events.length - 1].id;
 			}
 		} catch (e) { /* ignore */ }
 	}, 250);

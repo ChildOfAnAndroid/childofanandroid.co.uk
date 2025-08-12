@@ -125,7 +125,7 @@ function startClient() {
         targetColour.b = serverState.B;
       }
     } catch (error) { /* ignore */ }
-  }, 50);
+  }, 500);
 
 	setInterval(async () => {
 		if (!paintOverlayData.value) return;
@@ -205,7 +205,7 @@ function startClient() {
 				}
 			});
 		} catch (error) {console.error("failed to fetch chat history:", error); }
-	}, 1500);
+	}, 4200);
 
 	function colourAnimationLoop() {
 		currentColour.r += (targetColour.r - currentColour.r) * 0.06;

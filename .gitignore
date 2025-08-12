@@ -15,3 +15,5 @@ dist/*
 notebook 
 notebook*
 notebook/*
+
+*.zip

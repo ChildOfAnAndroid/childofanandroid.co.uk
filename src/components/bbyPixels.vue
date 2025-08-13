@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, watch, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, computed } from 'vue';
 import { throttle } from 'lodash';
 import BbySprite from '@/components/bbySprite.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
@@ -68,6 +68,17 @@ let paintedPixelsInStroke = new Set<string>();
 
 const localPaintData = ref<ImageData | null>(null);
 const currentPaintData = computed(() => props.isTestCanvas ? localPaintData.value : paintOverlayData.value);
+
+let tmpCanvas: HTMLCanvasElement | null = null;
+let tmpCtx: CanvasRenderingContext2D | null = null;
+function ensureTmpCanvas() {
+  if (!tmpCanvas) {
+    tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = SPRITE_W;
+    tmpCanvas.height = SPRITE_H;
+    tmpCtx = tmpCanvas.getContext('2d');
+  }
+}
 
 /* colour helpers */
 function clampByte(x:number){ return Math.max(0, Math.min(255, Math.round(x))); }
@@ -160,7 +171,11 @@ function redrawOverlay() {
   octx.setTransform(s * dpr, 0, 0, s * dpr, offset_x * dpr, offset_y * dpr);
 
   if (props.isTestCanvas && currentPaintData.value) {
-    octx.putImageData(currentPaintData.value, 0, 0);
+    ensureTmpCanvas();
+    if (tmpCtx && tmpCanvas) {
+      tmpCtx.putImageData(currentPaintData.value, 0, 0);
+      octx.drawImage(tmpCanvas, 0, 0, SPRITE_W, SPRITE_H);
+    }
   }
 
   if (props.isScopeCursorActive && highlightedPixel.value) {
@@ -361,25 +376,35 @@ function paint(e:PointerEvent){
 }
 
 /* mount */
-onMounted(async()=>{ 
-  await nextTick(); 
+onMounted(async () => {
+  await nextTick();
   if (props.isTestCanvas) {
     localPaintData.value = new ImageData(SPRITE_W, SPRITE_H);
   }
   setupOverlay();
-  const elToObserve = props.isTestCanvas ? stack.value : getBabyCanvas();
-  if(elToObserve) { 
-      ro = new ResizeObserver(()=>{ setupOverlay(); redrawOverlay(); }); 
-      ro.observe(elToObserve);
+  const elToObserve = props.isTestCanvas ? stack.value?.parentElement : getBabyCanvas();
+
+  if (elToObserve) {
+    ro = new ResizeObserver(() => {
+      setupOverlay();
+      redrawOverlay();
+    });
+    ro.observe(elToObserve);
   }
-  window.addEventListener('resize', ()=>{ setupOverlay(); redrawOverlay(); });
+
+  window.addEventListener('resize', () => {
+    setupOverlay();
+    redrawOverlay();
+  });
 });
-onBeforeUnmount(()=>{
-  const elToObserve = props.isTestCanvas ? stack.value : getBabyCanvas();
-  if(ro && elToObserve) ro.unobserve(elToObserve); 
-  window.removeEventListener('resize', setupOverlay); 
+
+onBeforeUnmount(() => {
+  const elToObserve = props.isTestCanvas ? stack.value?.parentElement : getBabyCanvas();
+  if (ro && elToObserve) {
+    ro.unobserve(elToObserve);
+  }
+  window.removeEventListener('resize', setupOverlay);
 });
-watch(() => bbyState, ()=>{ if(!props.isTestCanvas) redrawOverlay(); }, {deep:true});
 </script>
 
 <style scoped>

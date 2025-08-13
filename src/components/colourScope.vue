@@ -5,22 +5,6 @@
       <div class="scope-controls">
         <button
           class="action mini"
-          :class="{ active: scopeBase === 3 }"
-          @click="$emit('update:scopeBase', 3)"
-          title="Powers of 3"
-        >
-          ×3
-        </button>
-        <button
-          class="action mini"
-          :class="{ active: scopeBase === 4 }"
-          @click="$emit('update:scopeBase', 4)"
-          title="Powers of 4"
-        >
-          ×4
-        </button>
-        <button
-          class="action mini"
           @click="$emit('update:isScopeMinimized', !isScopeMinimized)"
           :title="isScopeMinimized ? 'Expand' : 'Minimize'"
         >

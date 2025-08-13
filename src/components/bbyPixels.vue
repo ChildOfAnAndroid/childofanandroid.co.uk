@@ -61,6 +61,7 @@ const highlightedPixel = ref<{x:number,y:number}|null>(null);
 let isDown=false; let octx:CanvasRenderingContext2D|null=null;
 const spriteComp = ref<InstanceType<typeof BbySprite>|null>(null);
 const overlay = ref<HTMLCanvasElement|null>(null);
+const stack = ref<HTMLDivElement|null>(null);
 let ro:ResizeObserver|null=null; const dpr = window.devicePixelRatio||1;
 
 let paintedPixelsInStroke = new Set<string>();
@@ -132,7 +133,7 @@ function setPixel(x:number,y:number,r:number,g:number,b:number,a:number){
 
 /* overlay canvas */
 function setupOverlay(){
-  const containerEl = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  const containerEl = props.isTestCanvas ? stack.value : getBabyCanvas();
   if(!containerEl||!overlay.value)return;
 
   const cssW=containerEl.clientWidth, cssH=containerEl.clientHeight;
@@ -145,16 +146,18 @@ function setupOverlay(){
 function redrawOverlay() {
   if (!octx || !overlay.value) return;
 
-  const containerEl = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  const containerEl = props.isTestCanvas ? stack.value : getBabyCanvas();
   if (!containerEl) return;
 
   const cssW = containerEl.clientWidth, cssH = containerEl.clientHeight;
   const s = Math.min(cssW / SPRITE_W, cssH / SPRITE_H) || 1;
+  const offset_x = (cssW - SPRITE_W * s) / 2;
+  const offset_y = (cssH - SPRITE_H * s) / 2;
 
   octx.setTransform(dpr, 0, 0, dpr, 0, 0); // Reset transform for clearing
   octx.clearRect(0, 0, overlay.value.width, overlay.value.height);
-  
-  octx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
+
+  octx.setTransform(s * dpr, 0, 0, s * dpr, offset_x * dpr, offset_y * dpr);
 
   if (props.isTestCanvas && currentPaintData.value) {
     octx.putImageData(currentPaintData.value, 0, 0);
@@ -216,8 +219,13 @@ function cssToPixel(clientX:number, clientY:number){
   let px, py;
 
   if (props.isTestCanvas) {
-      px = Math.floor(lx / rect.width * SPRITE_W);
-      py = Math.floor(ly / rect.height * SPRITE_H);
+      const scale = Math.min(rect.width / SPRITE_W, rect.height / SPRITE_H);
+      const offset_x = (rect.width - SPRITE_W * scale) / 2;
+      const offset_y = (rect.height - SPRITE_H * scale) / 2;
+      const canvas_x = (lx - offset_x) / scale;
+      const canvas_y = (ly - offset_y) / scale;
+      px = Math.floor(canvas_x);
+      py = Math.floor(canvas_y);
   } else {
       const stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
       const stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
@@ -360,7 +368,7 @@ onMounted(async()=>{
     localPaintData.value = new ImageData(SPRITE_W, SPRITE_H);
   }
   setupOverlay();
-  const elToObserve = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  const elToObserve = props.isTestCanvas ? stack.value : getBabyCanvas();
   if(elToObserve) { 
       ro = new ResizeObserver(()=>{ setupOverlay(); redrawOverlay(); }); 
       ro.observe(elToObserve);
@@ -368,7 +376,7 @@ onMounted(async()=>{
   window.addEventListener('resize', ()=>{ setupOverlay(); redrawOverlay(); });
 });
 onBeforeUnmount(()=>{
-  const elToObserve = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  const elToObserve = props.isTestCanvas ? stack.value : getBabyCanvas();
   if(ro && elToObserve) ro.unobserve(elToObserve); 
   window.removeEventListener('resize', setupOverlay); 
 });

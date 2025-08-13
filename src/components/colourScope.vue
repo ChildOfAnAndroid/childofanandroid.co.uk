@@ -5,14 +5,15 @@
       <div class="scope-controls">
         <button
           class="action mini"
-          @click="$emit('update:isScopeMinimized', !isScopeMinimized)"
-          :title="isScopeMinimized ? 'Expand' : 'Minimize'"
+          @click="$emit('update:isScopeMinimized', !props.isScopeMinimized)"
+          :title="props.isScopeMinimized ? 'Expand' : 'Minimize'"
         >
           {{ isScopeMinimized ? '▢' : '≡' }}
+          {{ props.isScopeMinimized ? '▢' : '≡' }}
         </button>
       </div>
     </div>
-    <div class="scope-display" :class="{ minimized: isScopeMinimized }">
+    <div class="scope-display" :class="{ minimized: props.isScopeMinimized }">
       <canvas ref="scopeCanvas" class="scope-layer"></canvas>
     </div>
   </div>
@@ -83,7 +84,8 @@ function hexToRGB(hx: string): RgbColor {
 
 const updateColorScope = throttle(() => {
   if (!scopeCanvas.value) return;
-  const TOTAL_STEPS = 243;
+  const base = props.scopeBase;
+  const TOTAL_STEPS = Math.pow(base, 5);
   const colors: RgbColor[] = [];
   let c = hexToRGB(props.hexColor);
 
@@ -117,9 +119,11 @@ const updateColorScope = throttle(() => {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const resolutions = props.isScopeMinimized ? [3] : [3, 9, 27, 81];
   const topFlex = 0.5;
   let currentY = 0;
+  const resolutions = props.isScopeMinimized
+    ? [base]
+    : Array.from({ length: 4 }, (_, i) => Math.pow(base, i + 1));
   for (let i = 0; i < resolutions.length; i++) {
     const numPixels = resolutions[i];
     let layerHeight = props.isScopeMinimized ? canvas.height : (i === 0) ? canvas.height * topFlex : (canvas.height * (1 - topFlex)) / (resolutions.length - 1);
@@ -160,7 +164,8 @@ watch(
     props.rainbowInfluence,
     props.userColour,
     props.currentColour,
-    props.isScopeMinimized
+    props.isScopeMinimized,
+    props.scopeBase
   ],
   updateColorScope,
   { deep: true, immediate: true }

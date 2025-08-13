@@ -783,14 +783,14 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .fader-label { font-size: 0.7rem; font-weight: bold; writing-mode: vertical-rl; transform: rotate(180deg); color: rgba(255,255,255,0.7); }
 .fader { -webkit-appearance: slider-vertical; appearance: slider-vertical; width: 10px; height: 100%; background: var(--bby-colour-dark); outline: none; border-radius: 5px; cursor: ns-resize; }
 
-.knob-bank { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: var(--spacing); }
+.knob-bank { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: auto; gap: var(--spacing); justify-items: center; }
 .dial-grp { display: flex; flex-direction: column; align-items: center; gap: .25rem; color: rgba(255, 255, 255, 0.4); transition: color 0.2s ease-out; }
 .dial-grp.active { color: #fff; }
 .dial-grp:not(.active) .dial-container, .dial-grp:not(.active) .dial-input-box { pointer-events: none; filter: grayscale(50%); opacity: 0.6; }
 .dial-grp.active .dial-knob { border-color: var(--knob-glow); box-shadow: 0 0 12px var(--knob-glow), inset 0 0 8px rgba(0,0,0,0.5); }
 .dial-grp.active .dial-label { color: var(--knob-glow); text-shadow: 0 0 4px var(--knob-glow); font-weight: bold; }
 
-.dial-container { position: relative; width: 100%; aspect-ratio: 1/1; flex-shrink: 0; border-radius: 50%; }
+.dial-container { position: relative; width: min(100%, 200px); aspect-ratio: 1/1; flex-shrink: 0; border-radius: 50%; }
 .dial-knob { width: 100%; height: 100%; border: 6px solid var(--bby-colour-dark); border-radius: 50%; background-color: var(--bby-colour-black); position: relative; display:flex; align-items:center; justify-content:center; }
 .dial-knob.rainbow-knob { background-image: linear-gradient(to right, #ff5a5a, #ffd25a, #c8ff5a, #5affc8, #5a78ff, #e15aff); }
 .dial-needle { position:absolute; top:6px; left:50%; width:4px; height:12px; background: var(--accent-colour); border-radius:2px; transform-origin: 50% 100%; translate: -50% 0; }

@@ -349,7 +349,7 @@ export async function saveTestGridImage(pngDataUrl: string, author: string) {
 
 export async function fetchTestGridGallery() {
   try {
-    const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/test_grid_gallery', { cache: 'no-store' });
+    const r = await fetch('/gallery.json', { cache: 'no-store' });
     if (!r.ok) return [];
     return await r.json();
   } catch (error) {

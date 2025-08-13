@@ -169,7 +169,7 @@ onMounted(() => {
 <style scoped>
 .section-header { display: flex; justify-content: center; align-items: center; position: relative; gap: .5rem; }
 .scope-controls { position: absolute; right: .25rem; top: 50%; transform: translateY(-50%); display: flex; gap: .25rem; }
-.scope-display { max-height: 100%; width: 16px; height: 100px; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; margin: 0 auto; }
+.scope-display { max-height: 100%; width: 16px; height: 100%; flex: 1 1 auto; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; margin: 0 auto; }
 .scope-display.minimized { width: 0; height: 0; border-width: 0; }
 .scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
 </style>

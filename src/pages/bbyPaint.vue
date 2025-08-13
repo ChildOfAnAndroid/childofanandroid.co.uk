@@ -47,25 +47,25 @@
               :set-swatch-color="setSwatchColor"
             />
           </div>
-          <colourScope
-            v-model:scopeLength="scopeLength"
-            v-model:isScopeMinimized="isScopeMinimized"
-            :hex-color="hexColor"
-            :tempo="tempo"
-            :active-eqs="activeEQs"
-            :user-color-influence="userColorInfluence"
-            :bby-influence="bbyInfluence"
-            :red-influence="redInfluence"
-            :green-influence="greenInfluence"
-            :blue-influence="blueInfluence"
-            :rainbow-influence="rainbowInfluence"
-            :user-colour="userColour"
-            :current-colour="currentColour"
-          />
 
           <!-- tempo + knobs -->
           <div class="grp controls-container">
             <tempoFader v-model="tempo" />
+            <colourScope
+              v-model:scopeLength="scopeLength"
+              v-model:isScopeMinimized="isScopeMinimized"
+              :hex-color="hexColor"
+              :tempo="tempo"
+              :active-eqs="activeEQs"
+              :user-color-influence="userColorInfluence"
+              :bby-influence="bbyInfluence"
+              :red-influence="redInfluence"
+              :green-influence="greenInfluence"
+              :blue-influence="blueInfluence"
+              :rainbow-influence="rainbowInfluence"
+              :user-colour="userColour"
+              :current-colour="currentColour"
+            />
 
             <div class="mixer-column">
               <div class="knob-box">
@@ -477,10 +477,10 @@ const bbyKnobColor = computed(() => `rgb(${Math.round(currentColour.r)},${Math.r
 const userAcronym = computed(() => { const name = author.value || 'USER'; if (name.length > 4) { const words = name.split(/[\s-]+/); return words.map(w => w[0]).join('').toUpperCase().slice(0, 4); } return name.toUpperCase(); });
 
 const toolModeDescription = computed(() => {
-  if (currentMode.value === 'paint') return "EQs control color drift";
+  if (currentMode.value === 'paint') return "EQs control colour drift";
   if (currentMode.value === 'blend') return "EQs & Tempo control blend strength";
   if (currentMode.value === 'erase') return "EQs & Tempo control erase strength";
-  if (currentMode.value === 'eyedropper') return "Hover canvas to sample color";
+  if (currentMode.value === 'eyedropper') return "Hover canvas to sample colour";
   return "";
 });
 

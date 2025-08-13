@@ -126,16 +126,31 @@ function draw() {
   
   // Manually reverse the translation to reset the coordinate system
   ctx.translate(-offset_x, -offset_y);
-  
+
   // 2. Draw the FACE on the now-reset, static context.
   if (bbyState.cheeks_on) {
     ctx.drawImage(images.bbyCHEEKS, 0, 0);
   }
 
   const eyeSourceX = bbyState.eyes * SPRITE_W;
-  for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
-    ctx.drawImage(images.bbyEYES, eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
+  ctx.save();
+  if (bbyState.jumping) {
+    ctx.translate(0, jumpset);
   }
+  for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
+    ctx.drawImage(
+      images.bbyEYES,
+      eyeSourceX,
+      i * SPRITE_H,
+      SPRITE_W,
+      SPRITE_H,
+      0,
+      0,
+      SPRITE_W,
+      SPRITE_H
+    );
+  }
+  ctx.restore();
 
   const mouthIndex = Math.max(0, Math.min(bbyState.mouth, NUM_MOUTH_STYLES - 1));
   const mouthSourceX = mouthIndex * SPRITE_W;

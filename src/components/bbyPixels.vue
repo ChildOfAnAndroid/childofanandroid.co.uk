@@ -105,6 +105,20 @@ function hsvToRgb(h:number,s:number,v:number): RgbColor { const c=v*s, x=c*(1-Ma
   return { r:clampByte((r+m)*255), g:clampByte((g+m)*255), b:clampByte((b+m)*255) };
 }
 
+/**
+ * Linearly blend two RGB colours.
+ * @param base the existing canvas colour
+ * @param blend the colour applied by the brush
+ * @param amount 0..1 representing how much of `blend` to mix in
+ */
+function blendRgbColors(base: RgbColor, blend: RgbColor, amount: number): RgbColor {
+  const inv = 1 - amount;
+  return {
+    r: clampByte(blend.r * amount + base.r * inv),
+    g: clampByte(blend.g * amount + base.g * inv),
+    b: clampByte(blend.b * amount + base.b * inv),
+  };
+}
 
 /* sampling */
 let cachedBase:Uint8ClampedArray|null=null;
@@ -357,21 +371,22 @@ function paint(e:PointerEvent){
       break;
     }
       
-    case 'blend': {
-      let existingColor = readCurrentRGB(x, y);
-      if (existingColor.a === 0) return;
+      case 'blend': {
+        const baseColor = readCurrentRGB(x, y);
+        if (baseColor.a === 0) return;
 
-      const brushColor = hexToRGB(props.hexColor);
-      const opacity = props.blendOpacity / 100 * (props.tempo / 100);
-      
-      const r = brushColor.r * opacity + existingColor.r * (1 - opacity);
-      const g = brushColor.g * opacity + existingColor.g * (1 - opacity);
-      const b = brushColor.b * opacity + existingColor.b * (1 - opacity);
-      
-      setPixel(x, y, r, g, b, existingColor.a);
-      if (!props.isTestCanvas) throttledReactionUpdate(r, g, b);
-      break;
-    }
+        const brushColor = hexToRGB(props.hexColor);
+        const blendAmount = (props.blendOpacity / 100) * (props.tempo / 100);
+        const { r, g, b } = blendRgbColors(
+          { r: baseColor.r, g: baseColor.g, b: baseColor.b },
+          brushColor,
+          blendAmount
+        );
+
+        setPixel(x, y, r, g, b, baseColor.a);
+        if (!props.isTestCanvas) throttledReactionUpdate(r, g, b);
+        break;
+      }
 
     case 'erase': {
       const existingColor = readCurrentRGB(x, y);

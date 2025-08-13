@@ -478,7 +478,7 @@ const userAcronym = computed(() => { const name = author.value || 'USER'; if (na
 
 const toolModeDescription = computed(() => {
   if (currentMode.value === 'paint') return "EQs control colour drift";
-  if (currentMode.value === 'blend') return "EQs & Tempo control blend strength";
+  if (currentMode.value === 'blend') return "Mix brush colour with existing pixel; EQs & Tempo control strength";
   if (currentMode.value === 'erase') return "EQs & Tempo control erase strength";
   if (currentMode.value === 'eyedropper') return "Hover canvas to sample colour";
   return "";

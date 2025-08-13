@@ -87,7 +87,7 @@ function hexToRGB(hx: string): RgbColor {
 }
 
 function getMaxSteps() {
-  if (!scopeCanvas.value) return Infinity;
+  if (!scopeCanvas.value) return 1;
   const fontSize = parseFloat(getComputedStyle(scopeCanvas.value).fontSize) || 16;
   return Math.max(1, Math.floor(scopeCanvas.value.clientHeight / fontSize));
 }
@@ -134,13 +134,14 @@ const updateColorScope = throttle(() => {
   const canvas = scopeCanvas.value;
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
+  const fontSize = parseFloat(getComputedStyle(canvas).fontSize) || 16;
   canvas.width = canvas.clientWidth * dpr;
   canvas.height = canvas.clientHeight * dpr;
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const numPixels = colors.length;
-  const pixelHeight = canvas.height / numPixels;
+  const pixelHeight = Math.max(fontSize * dpr, canvas.height / numPixels);
   for (let y = 0; y < numPixels; y++) {
     const color = colors[y];
     ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
@@ -175,10 +176,45 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.scope-box { flex: 0 0 auto; width: 80px; height: 100%; background: var(--bby-colour-black); padding: var(--spacing); border: var(--border); border-radius: var(--border-radius); display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing)/2); }
-.scope-label { font-size: 0.7rem; font-weight: bold; writing-mode: vertical-rl; transform: rotate(180deg); color: rgba(255,255,255,0.7); }
-.scope-display { flex: 1 1 auto; width: 16px; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-dark); overflow: hidden; }
-.scope-display.minimized { width: 0; border-width: 0; }
-.scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
-.scope-controls { display: flex; gap: .25rem; }
+.scope-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 80px;
+  height: 100%;
+}
+
+.scope-label {
+  margin-bottom: 10px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: rgba(255,255,255,0.7);
+}
+
+.scope-display {
+  flex: 1 1 auto;
+  width: 16px;
+  border: var(--border);
+  border-radius: var(--border-radius);
+  background: var(--bby-colour-dark);
+  overflow: hidden;
+}
+
+.scope-display.minimized {
+  width: 0;
+  border-width: 0;
+}
+
+.scope-layer {
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.scope-controls {
+  margin-top: 10px;
+  display: flex;
+  gap: .25rem;
+}
 </style>

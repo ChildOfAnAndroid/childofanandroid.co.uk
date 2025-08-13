@@ -48,7 +48,7 @@
             />
           </div>
           <colourScope
-            v-model:scopeBase="scopeBase"
+            v-model:scopeLength="scopeLength"
             v-model:isScopeMinimized="isScopeMinimized"
             :hex-color="hexColor"
             :tempo="tempo"
@@ -312,7 +312,11 @@
           <div class="test-canvas-wrapper">
             <bbyPixels
               ref="testSquareRef"
+              :key="testCanvasResolution"
+              :sprite-width="testCanvasResolution"
+              :sprite-height="testCanvasResolution"
               :is-test-canvas="true"
+              :resolution="testCanvasResolution"
               :mode="currentMode"
               :is-scope-cursor-active="isScopeCursorActive"
               :active-e-qs="activeEQs"
@@ -333,6 +337,7 @@
           </div>
           <testCanvasControls
             v-model:size="testCanvasSize"
+            v-model:resolution="testCanvasResolution"
             @clear="handleClearTestSquareClick"
           />
           <button class="action" @click="handleSaveTestSquareClick">Save to Gallery</button>
@@ -369,13 +374,14 @@ const LFO_DURATION_MAX = 4.0;
 
 const isDrawingOnTestCanvas = ref(false);
 const testCanvasSize = ref(80);
+const testCanvasResolution = ref(32);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
 const isScopeMinimized = ref(false);
 const activeEQs = ref(new Set<EQType>());
 
-// Scope base toggle (×3 or ×4). Default: 4 per request.
-const scopeBase = ref<3|4>(4);
+// Number of future pixel colours to preview
+const scopeLength = ref(64);
 
 const hexColor = ref('#88aaff');
 const swatchesOpen = ref(false);

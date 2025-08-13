@@ -5,10 +5,23 @@
       <div class="scope-controls">
         <button
           class="action mini"
+          @click="$emit('update:scopeLength', Math.max(1, props.scopeLength - 1))"
+          title="Show fewer colours"
+        >
+          -
+        </button>
+        <button
+          class="action mini"
+          @click="$emit('update:scopeLength', props.scopeLength + 1)"
+          title="Show more colours"
+        >
+          +
+        </button>
+        <button
+          class="action mini"
           @click="$emit('update:isScopeMinimized', !props.isScopeMinimized)"
           :title="props.isScopeMinimized ? 'Expand' : 'Minimize'"
         >
-          {{ isScopeMinimized ? '▢' : '≡' }}
           {{ props.isScopeMinimized ? '▢' : '≡' }}
         </button>
       </div>
@@ -27,7 +40,7 @@ type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
 type RgbColor = { r: number; g: number; b: number };
 
 const props = defineProps<{
-  scopeBase: 3 | 4;
+  scopeLength: number;
   isScopeMinimized: boolean;
   hexColor: string;
   tempo: number;
@@ -84,8 +97,7 @@ function hexToRGB(hx: string): RgbColor {
 
 const updateColorScope = throttle(() => {
   if (!scopeCanvas.value) return;
-  const base = props.scopeBase;
-  const TOTAL_STEPS = Math.pow(base, 5);
+  const TOTAL_STEPS = Math.max(1, Math.round(props.scopeLength));
   const colors: RgbColor[] = [];
   let c = hexToRGB(props.hexColor);
 
@@ -119,35 +131,12 @@ const updateColorScope = throttle(() => {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const topFlex = 0.5;
-  let currentY = 0;
-  const resolutions = props.isScopeMinimized
-    ? [base]
-    : Array.from({ length: 4 }, (_, i) => Math.pow(base, i + 1));
-  for (let i = 0; i < resolutions.length; i++) {
-    const numPixels = resolutions[i];
-    let layerHeight = props.isScopeMinimized ? canvas.height : (i === 0) ? canvas.height * topFlex : (canvas.height * (1 - topFlex)) / (resolutions.length - 1);
-    const pixelHeight = Math.max(1, Math.floor(layerHeight));
-    let pixelWidth = pixelHeight;
-    const requiredWidth = numPixels * pixelWidth;
-    const xOffset = (canvas.width - requiredWidth) / 2;
-    if (requiredWidth > canvas.width) {
-      pixelWidth = canvas.width / numPixels;
-      for (let x = 0; x < numPixels; x++) {
-        const colorIndex = Math.min(x, colors.length - 1);
-        const color = colors[colorIndex];
-        ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
-        ctx.fillRect(x * pixelWidth, currentY, pixelWidth, pixelHeight);
-      }
-    } else {
-      for (let x = 0; x < numPixels; x++) {
-        const colorIndex = Math.min(x, colors.length - 1);
-        const color = colors[colorIndex];
-        ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
-        ctx.fillRect(xOffset + x * pixelWidth, currentY, pixelWidth, pixelHeight);
-      }
-    }
-    currentY += layerHeight;
+  const numPixels = colors.length;
+  const pixelWidth = canvas.width / numPixels;
+  for (let x = 0; x < numPixels; x++) {
+    const color = colors[x];
+    ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
+    ctx.fillRect(x * pixelWidth, 0, pixelWidth, canvas.height);
   }
 }, 50);
 
@@ -165,7 +154,7 @@ watch(
     props.userColour,
     props.currentColour,
     props.isScopeMinimized,
-    props.scopeBase
+    props.scopeLength
   ],
   updateColorScope,
   { deep: true, immediate: true }
@@ -180,7 +169,7 @@ onMounted(() => {
 <style scoped>
 .section-header { display: flex; justify-content: center; align-items: center; position: relative; gap: .5rem; }
 .scope-controls { position: absolute; right: .25rem; top: 50%; transform: translateY(-50%); display: flex; gap: .25rem; }
-.scope-display { max-width: 100%; width: 100%; display: flex; flex-direction: column; aspect-ratio: 4/3; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; transition: aspect-ratio .3s ease; }
-.scope-display.minimized { aspect-ratio: 4/1; }
+.scope-display { max-width: 100%; width: 100%; height: 16px; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; }
+.scope-display.minimized { height: 0; border-width: 0; }
 .scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
 </style>

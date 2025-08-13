@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, computed, watch } from 'vue';
 import { throttle } from 'lodash';
 import BbySprite from '@/components/bbySprite.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
@@ -45,10 +45,13 @@ const props = defineProps<{
   tempo: number;
   blendOpacity: number;
   isTestCanvas?: boolean;
+  spriteWidth?: number;
+  spriteHeight?: number;
+  resolution?: number;
 }>();
 const emit = defineEmits(['color-picked', 'color-hovered']);
 
-const SPRITE_W = 64, SPRITE_H = 64;
+let SPRITE_W = 64, SPRITE_H = 64;
 defineExpose({ clearOverlay, exportPng });
 
 const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate, tickPaint } = bbyUse();
@@ -71,8 +74,8 @@ const currentPaintData = computed(() => props.isTestCanvas ? localPaintData.valu
 
 let tmpCanvas: HTMLCanvasElement | null = null;
 let tmpCtx: CanvasRenderingContext2D | null = null;
-function ensureTmpCanvas() {
-  if (!tmpCanvas) {
+function ensureTmpCanvas(force=false) {
+  if (!tmpCanvas || force || tmpCanvas.width !== SPRITE_W || tmpCanvas.height !== SPRITE_H) {
     tmpCanvas = document.createElement('canvas');
     tmpCanvas.width = SPRITE_W;
     tmpCanvas.height = SPRITE_H;
@@ -384,12 +387,22 @@ function paint(e:PointerEvent){
 }
 
 /* mount */
+function updateResolution(res:number){
+  SPRITE_W = SPRITE_H = res;
+  if(props.isTestCanvas){
+    localPaintData.value = new ImageData(SPRITE_W, SPRITE_H);
+  }
+  ensureTmpCanvas(true);
+  setupOverlay();
+  redrawOverlay();
+}
+
 onMounted(async () => {
   await nextTick();
   if (props.isTestCanvas) {
-    localPaintData.value = new ImageData(SPRITE_W, SPRITE_H);
-  }
-  setupOverlay();
+    updateResolution(props.resolution ?? 32);
+  } else {
+    setupOverlay();  }
   const elToObserve = props.isTestCanvas ? stack.value?.parentElement : getBabyCanvas();
 
   if (elToObserve) {
@@ -413,6 +426,12 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('resize', setupOverlay);
 });
+
+if(props.isTestCanvas){
+  watch(() => props.resolution, (r) => {
+    if(typeof r === 'number') updateResolution(r);
+  });
+}
 </script>
 
 <style scoped>

@@ -123,9 +123,9 @@ function draw() {
   const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
   const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
 
-  // Face layers stay in place and only move when jumping
-  const faceOffsetX = 0;
-  const faceOffsetY = jumpset;
+  // Face layers follow the body's movement without stretching
+  const faceOffsetX = offset_x;
+  const faceOffsetY = offset_y;
 
   // --- Final Render to main canvas ---
   ctx.drawImage(bodyCanvas, offset_x, offset_y, stretch_x, stretch_y);

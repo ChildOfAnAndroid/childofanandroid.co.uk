@@ -132,11 +132,11 @@ const updateColorScope = throttle(() => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const numPixels = colors.length;
-  const pixelWidth = canvas.width / numPixels;
-  for (let x = 0; x < numPixels; x++) {
-    const color = colors[x];
+  const pixelHeight = canvas.height / numPixels;
+  for (let y = 0; y < numPixels; y++) {
+    const color = colors[y];
     ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
-    ctx.fillRect(x * pixelWidth, 0, pixelWidth, canvas.height);
+    ctx.fillRect(0, y * pixelHeight, canvas.width, pixelHeight);
   }
 }, 50);
 
@@ -169,7 +169,7 @@ onMounted(() => {
 <style scoped>
 .section-header { display: flex; justify-content: center; align-items: center; position: relative; gap: .5rem; }
 .scope-controls { position: absolute; right: .25rem; top: 50%; transform: translateY(-50%); display: flex; gap: .25rem; }
-.scope-display { max-width: 100%; width: 100%; height: 16px; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; }
-.scope-display.minimized { height: 0; border-width: 0; }
+.scope-display { max-height: 100%; width: 16px; height: 100px; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; margin: 0 auto; }
+.scope-display.minimized { width: 0; height: 0; border-width: 0; }
 .scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
 </style>

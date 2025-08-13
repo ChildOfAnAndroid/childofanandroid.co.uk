@@ -335,25 +335,38 @@ export async function saveCompositeToServer(label = "manual") {
   return j.png_url as string;
 }
 
-export async function saveTestGridImage(pngDataUrl: string, author: string) {
-  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/test_grid_snapshot', {
+export async function saveCanvasToGallery(canvas: HTMLCanvasElement, authorName: string, label = 'grid') {
+  const blob: Blob = await new Promise((res, rej) =>
+    canvas.toBlob(b => b ? res(b) : rej(new Error('canvas.toBlob() returned null')), 'image/png', 1)
+  );
+  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery/save', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ author, test_grid_png_b64: pngDataUrl })
+    headers: { 'content-type': 'image/png', 'x-author': authorName, 'x-label': label },
+    body: blob
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j?.error || `test grid snapshot failed: ${r.status}`);
-  if (!j.png_url) throw new Error('test grid saved but no png_url returned');
-  return j.png_url as string;
+  if (!r.ok || !j.ok) throw new Error(j?.error || `gallery save failed: ${r.status}`);
+  return j.url as string;
+}
+
+export async function saveTestGridImage(pngDataUrl: string, authorName: string, label = 'grid') {
+  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ png_b64: pngDataUrl, author: authorName, label })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j?.error || `gallery save failed: ${r.status}`);
+  return j.url as string;
 }
 
 export async function fetchTestGridGallery() {
   try {
-    const r = await fetch('/gallery.json', { cache: 'no-store' });
+    const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery', { cache: 'no-store' });
     if (!r.ok) return [];
     return await r.json();
   } catch (error) {
-    console.error('Could not fetch test grid gallery:', error);
+    console.error('Could not fetch live gallery:', error);
     return [];
   }
 }

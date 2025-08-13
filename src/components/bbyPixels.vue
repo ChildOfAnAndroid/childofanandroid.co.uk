@@ -248,6 +248,12 @@ function redrawOverlay() {
     }
   }
 }
+
+const handleResize = () => {
+  setupOverlay();
+  redrawOverlay();
+};
+
 function cssToPixel(clientX:number, clientY:number){
   const el = overlay.value;
   if(!el) return null;
@@ -428,10 +434,7 @@ onMounted(async () => {
     ro.observe(elToObserve);
   }
 
-  window.addEventListener('resize', () => {
-    setupOverlay();
-    redrawOverlay();
-  });
+  window.addEventListener('resize', handleResize);
 });
 
 onBeforeUnmount(() => {
@@ -439,7 +442,7 @@ onBeforeUnmount(() => {
   if (ro && elToObserve) {
     ro.unobserve(elToObserve);
   }
-  window.removeEventListener('resize', setupOverlay);
+  window.removeEventListener('resize', handleResize);
 });
 
 if(props.isTestCanvas){

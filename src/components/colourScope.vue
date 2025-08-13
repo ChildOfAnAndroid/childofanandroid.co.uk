@@ -143,6 +143,8 @@ const updateColorScope = throttle(() => {
   const height = display.clientHeight;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -176,7 +178,6 @@ watch(
 );
 
 onMounted(() => {
-  new ResizeObserver(updateColorScope).observe(scopeCanvas.value!);
   if (scopeDisplay.value) {
     new ResizeObserver(updateColorScope).observe(scopeDisplay.value);
   }

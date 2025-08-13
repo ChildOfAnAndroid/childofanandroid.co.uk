@@ -25,7 +25,7 @@ const emit = defineEmits<{
   (e: 'clear'): void;
 }>();
 
-const resolutions = [16, 32, 64, 128];
+const resolutions = [2, 4, 6, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 69, 420, 42069];
 
 function onSizeInput(e: Event) {
   const target = e.target as HTMLInputElement;

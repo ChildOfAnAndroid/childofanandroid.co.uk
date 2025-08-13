@@ -1,7 +1,7 @@
 <template>
   <div class="scope-box">
     <label class="scope-label">SCOPE</label>
-    <div class="scope-display" :class="{ minimized: props.isScopeMinimized }">
+    <div ref="scopeDisplay" class="scope-display" :class="{ minimized: props.isScopeMinimized }">
       <canvas ref="scopeCanvas" class="scope-layer"></canvas>
     </div>
     <div class="scope-controls">
@@ -42,6 +42,7 @@ const props = defineProps<{
 }>();
 
 const scopeCanvas = ref<HTMLCanvasElement | null>(null);
+const scopeDisplay = ref<HTMLDivElement | null>(null);
 
 const emit = defineEmits<{
   (e: 'update:scopeLength', v: number): void;
@@ -87,9 +88,9 @@ function hexToRGB(hx: string): RgbColor {
 }
 
 function getMaxSteps() {
-  if (!scopeCanvas.value) return 1;
-  const fontSize = parseFloat(getComputedStyle(scopeCanvas.value).fontSize) || 16;
-  return Math.max(1, Math.floor(scopeCanvas.value.clientHeight / fontSize));
+  if (!scopeDisplay.value) return 1;
+  const fontSize = parseFloat(getComputedStyle(scopeDisplay.value).fontSize) || 16;
+  return Math.max(1, Math.floor(scopeDisplay.value.clientHeight / fontSize));
 }
 
 function decrementScope() {
@@ -102,7 +103,10 @@ function incrementScope() {
 }
 
 const updateColorScope = throttle(() => {
-  if (!scopeCanvas.value) return;
+  if (!scopeCanvas.value || !scopeDisplay.value) return;
+  const canvas = scopeCanvas.value;
+  const parent = canvas.parentElement as HTMLElement | null;
+  if (!parent) return;
   const maxSteps = getMaxSteps();
   if (props.scopeLength > maxSteps) emit('update:scopeLength', maxSteps);
   const TOTAL_STEPS = Math.max(1, Math.min(Math.round(props.scopeLength), maxSteps));  
@@ -131,12 +135,14 @@ const updateColorScope = throttle(() => {
     colors.push(c);
   }
 
-  const canvas = scopeCanvas.value;
+  const display = scopeDisplay.value;
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
-  const fontSize = parseFloat(getComputedStyle(canvas).fontSize) || 16;
-  canvas.width = canvas.clientWidth * dpr;
-  canvas.height = canvas.clientHeight * dpr;
+  const fontSize = parseFloat(getComputedStyle(display).fontSize) || 16;
+  const width = display.clientWidth;
+  const height = display.clientHeight;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -171,50 +177,18 @@ watch(
 
 onMounted(() => {
   new ResizeObserver(updateColorScope).observe(scopeCanvas.value!);
+  if (scopeDisplay.value) {
+    new ResizeObserver(updateColorScope).observe(scopeDisplay.value);
+  }
   updateColorScope();
 });
 </script>
 
 <style scoped>
-.scope-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 80px;
-  height: 100%;
-}
-
-.scope-label {
-  margin-bottom: 10px;
-  font-size: 0.7rem;
-  font-weight: bold;
-  color: rgba(255,255,255,0.7);
-}
-
-.scope-display {
-  flex: 1 1 auto;
-  width: 16px;
-  border: var(--border);
-  border-radius: var(--border-radius);
-  background: var(--bby-colour-dark);
-  overflow: hidden;
-}
-
-.scope-display.minimized {
-  width: 0;
-  border-width: 0;
-}
-
-.scope-layer {
-  width: 100%;
-  height: 100%;
-  image-rendering: crisp-edges;
-  image-rendering: pixelated;
-}
-
-.scope-controls {
-  margin-top: 10px;
-  display: flex;
-  gap: .25rem;
-}
+.scope-box { flex: 0 0 auto; width: 80px; height: 100%; background: var(--bby-colour-black); padding: var(--spacing); border: var(--border); border-radius: var(--border-radius); display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing)/2); }
+.scope-label { font-size: 0.7rem; font-weight: bold; writing-mode: vertical-rl; transform: rotate(180deg); color: rgba(255,255,255,0.7); }
+.scope-display { flex: 1 1 auto; width: 16px; height: 100%; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-dark); overflow: hidden; }
+.scope-display.minimized { width: 0; border-width: 0; }
+.scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
+.scope-controls { display: flex; gap: .25rem; }
 </style>

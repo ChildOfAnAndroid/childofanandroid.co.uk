@@ -2,12 +2,7 @@
 <template>
   <div class="page-container">
     <!-- bubbles -->
-    <div class="bubble-graveyard-global">
-      <div v-for="g in bbyState.graveyardBubbles" :key="g.id" class="ghost-bubble"
-        :style="{ top:g.startY,left:g.startX,width:g.width,'--dest-x':g.ghostX,'--dest-y':g.ghostY,'--dest-r':g.ghostR,'--ghost-duration':g.duration,'--ghost-easing':g.easing,'--ghost-delay':g.delay,'--ghost-opacity1':g.ghostOpacity1,'--ghost-opacity2':g.ghostOpacity2,'--ghost-blur':g.ghostBlur,backgroundColor:g.bgColour,borderColor:g.borderColour }">
-        <span v-html="g.text"></span><strong class="bubble-author">{{ g.author }}</strong>
-      </div>
-    </div>
+    <bubbleGraveyard />
 
     <div class="paint-page-layout">
       <div class="left-column-paint">
@@ -362,7 +357,8 @@ import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount, reactive } 
 import { throttle } from 'lodash';
 import bbyPixels from '@/components/bbyPixels.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
-const { bbyState, currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author } = bbyUse();
+import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
+const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
 type RgbColor = { r: number; g: number; b: number };

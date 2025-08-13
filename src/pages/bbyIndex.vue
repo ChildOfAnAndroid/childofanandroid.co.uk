@@ -6,32 +6,7 @@ src/pages/bbyIndex.vue
 <template>
 	<!-- padding and boundaries -->
 	<div class="page-container">
-		<div class="bubble-graveyard-global">
-			<div
-				v-for="ghost in bbyState.graveyardBubbles"
-				:key="ghost.id"
-				class="ghost-bubble"
-				:style="{
-					top: ghost.startY,
-					left: ghost.startX,
-					width: ghost.width,
-					'--dest-x': ghost.ghostX,
-					'--dest-y': ghost.ghostY,
-					'--dest-r': ghost.ghostR,
-					'--ghost-duration': ghost.duration,
-					'--ghost-easing': ghost.easing,
-					'--ghost-delay': ghost.delay,
-					'--ghost-opacity1': ghost.ghostOpacity1,
-					'--ghost-opacity2': ghost.ghostOpacity2,
-					'--ghost-blur': ghost.ghostBlur,
-					'backgroundColor': ghost.bgColour,
-					'borderColor': ghost.borderColour,
-				}"
-			>
-				<span v-html="ghost.text"></span>
-				<strong class="bubble-author"> {{ ghost.author }}</strong>
-			</div>
-		</div>
+               <bubbleGraveyard />
 
 		<!-- two column layout -->
 		<div class="left-column">
@@ -67,6 +42,7 @@ import { ref } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bbySprite from '@/components/bbySprite.vue';
 import bbyBubble from '@/components/bbyBubble.vue';
+import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 
 const { bbyState, say, requestStateChange, sayRandomFact, author, setUsername, clearBubbles, userColour, setUserColour, setBbyTintColour } = bbyUse();
 

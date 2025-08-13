@@ -385,8 +385,8 @@ watch(() => bbyState, ()=>{ if(!props.isTestCanvas) redrawOverlay(); }, {deep:tr
 
 <style scoped>
 .lab-wrap,.stack{width:100%;height:100%}
-.stack{display:grid;align-items:center;justify-content:center;image-rendering:pixelated}
-.stack>:deep(canvas),.overlay{grid-area:1/1}
+.stack{display:grid;place-items:stretch;image-rendering:pixelated}
+.stack>:deep(canvas),.overlay{grid-area:1/1;width:100%;height:100%}
 .overlay{touch-action:none;cursor:crosshair}
 .overlay:has(canvas[data-scope-active=true]) { cursor: none; }
 </style>

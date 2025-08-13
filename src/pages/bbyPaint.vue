@@ -278,9 +278,9 @@
                           @pointerleave="handleSequencerPointerUp"></canvas>
                 </div>
                 <div class="sequencer-res-toggles">
-                  <button class="action" :class="{active: sequencerResolution === 8}"  @click="setSequencerResolution(8)">8</button>
-                  <button class="action" :class="{active: sequencerResolution === 16}" @click="setSequencerResolution(16)">16</button>
-                  <button class="action" :class="{active: sequencerResolution === 32}" @click="setSequencerResolution(32)">32</button>
+                  <button class="action" :class="{active: sequencerCols === 3 && sequencerRows === 2}"  @click="setSequencerResolution(3,2)">3x2</button>
+                  <button class="action" :class="{active: sequencerCols === 6 && sequencerRows === 4}"  @click="setSequencerResolution(6,4)">6x4</button>
+                  <button class="action" :class="{active: sequencerCols === 12 && sequencerRows === 8}" @click="setSequencerResolution(12,8)">12x8</button>
                 </div>
               </div>
             </div>
@@ -420,8 +420,13 @@ const currentLfo = reactive<{wave: LfoWaveform | null, width: number, height: nu
 const lfoShaper = ref<HTMLDivElement | null>(null);
 
 // Pixel LFO
-const sequencerResolution = ref(16);
-const sequencerGrid = ref(Array.from({ length: 16 }, () => Array(16).fill(0)));
+const sequencerCols = ref(3);
+const sequencerRows = ref(2);
+const sequencerGrid = ref(
+  Array.from({ length: sequencerCols.value }, () =>
+    Array(sequencerRows.value).fill(0)
+  )
+);
 const sequencerCanvas = ref<HTMLCanvasElement | null>(null);
 let isDrawingOnSequencer = false;
 
@@ -615,7 +620,7 @@ function lfoLoop(time: number) {
       let yIndex = -1;
       if (column) { yIndex = column.findIndex(v => v > 0); }
       // top row = 1 → value=1; bottom row = res-1 → value~0
-      lfoValue = yIndex === -1 ? 0.5 : 1 - (yIndex / (sequencerResolution.value - 1));
+      lfoValue = yIndex === -1 ? 0.5 : 1 - (yIndex / (sequencerRows.value - 1));
     } else {
       const phase = (t * config.rate) % 1;
       switch(config.wave) {
@@ -639,22 +644,23 @@ function drawSequencer(totalBeats?: number) {
   const canvas = sequencerCanvas.value; if (!canvas) return;
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
-  const res = sequencerResolution.value;
+  const resX = sequencerCols.value;
+  const resY = sequencerRows.value;
 
   canvas.width = canvas.clientWidth * dpr;
   canvas.height = canvas.clientHeight * dpr;
   ctx.setTransform(dpr,0,0,dpr,0,0);
 
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  const cellW = w / res, cellH = h / res;
+  const cellW = w / resX, cellH = h / resY;
 
   ctx.clearRect(0,0,w,h);
   ctx.strokeStyle = "rgba(255,255,255,0.1)";
-  for(let i=1;i<res;i++){ ctx.beginPath(); ctx.moveTo(i*cellW,0); ctx.lineTo(i*cellW,h); ctx.stroke(); }
-  for(let i=1;i<res;i++){ ctx.beginPath(); ctx.moveTo(0,i*cellH); ctx.lineTo(w,i*cellH); ctx.stroke(); }
+  for(let i=1;i<resX;i++){ ctx.beginPath(); ctx.moveTo(i*cellW,0); ctx.lineTo(i*cellW,h); ctx.stroke(); }
+  for(let i=1;i<resY;i++){ ctx.beginPath(); ctx.moveTo(0,i*cellH); ctx.lineTo(w,i*cellH); ctx.stroke(); }
 
-  for(let x=0;x<res;x++){
-    for(let y=0;y<res;y++){
+  for(let x=0;x<resX;x++){
+    for(let y=0;y<resY;y++){
       const val = sequencerGrid.value[x][y];
       if(val>0){
         ctx.fillStyle="var(--accent-colour)";
@@ -666,43 +672,53 @@ function drawSequencer(totalBeats?: number) {
   ctx.globalAlpha=1;
 
   if (totalBeats !== undefined) {
-    const stepDuration = 4 / res;
+    const stepDuration = 4 / resX;
     const currentStep = Math.floor((totalBeats % 4) / stepDuration);
     ctx.fillStyle = "rgba(255,255,255,0.3)";
     ctx.fillRect(currentStep * cellW, 0, cellW, h);
   }
 }
 function applyPreset(wave: LfoWaveform) {
-  const res = sequencerResolution.value;
-  const grid = Array.from({ length: res }, () => Array(res).fill(0));
-  for(let x=0;x<res;x++){
-    const phase = x/(res-1); let yNorm=0;
+  const resX = sequencerCols.value;
+  const resY = sequencerRows.value;
+  const grid = Array.from({ length: resX }, () => Array(resY).fill(0));
+  for(let x=0;x<resX;x++){
+    const phase = x/(resX-1); let yNorm=0;
     switch(wave){
       case 'sine':     yNorm = (Math.sin(phase*2*Math.PI)*-1+1)/2; break;
       case 'triangle': yNorm = 1 - Math.abs(2*(phase+0.25)-1); break;
       case 'square':   yNorm = (phase<0.5)?0:1; break;
       case 'sawtooth': yNorm = 1-phase; break;
       case 'ramp':     yNorm = phase; break;
-      case 'random':   for(let y=0;y<res;y++) grid[x][y] = Math.random()>0.5?1:0; continue;
+      case 'random':   for(let y=0;y<resY;y++) grid[x][y] = Math.random()>0.5?1:0; continue;
     }
-    const y = Math.floor(yNorm*(res-1));
-    if(y>=0&&y<res) grid[x][y]=1;
+    const y = Math.floor(yNorm*(resY-1));
+    if(y>=0&&y<resY) grid[x][y]=1;
   }
   sequencerGrid.value = grid;
   drawSequencer();
 }
-function clearSequencer(){ const res=sequencerResolution.value; sequencerGrid.value=Array.from({length:res},()=>Array(res).fill(0)); drawSequencer(); }
-function setSequencerResolution(res:number){ sequencerResolution.value=res; clearSequencer(); }
+function clearSequencer(){
+  const cols = sequencerCols.value, rows = sequencerRows.value;
+  sequencerGrid.value = Array.from({length:cols},()=>Array(rows).fill(0));
+  drawSequencer();
+}
+function setSequencerResolution(cols:number, rows:number){
+  sequencerCols.value=cols;
+  sequencerRows.value=rows;
+  clearSequencer();
+}
 function handleSequencerPointerDown(e:PointerEvent){ isDrawingOnSequencer=true; updateSequencerFromPointer(e); }
 function handleSequencerPointerMove(e:PointerEvent){ if(isDrawingOnSequencer) updateSequencerFromPointer(e); }
 function handleSequencerPointerUp(){ isDrawingOnSequencer=false; }
 function updateSequencerFromPointer(e:PointerEvent){
   const canvas = sequencerCanvas.value; if(!canvas) return;
   const rect = canvas.getBoundingClientRect();
-  const res = sequencerResolution.value;
+  const resX = sequencerCols.value;
+  const resY = sequencerRows.value;
   const x = e.clientX-rect.left, y = e.clientY-rect.top;
-  const cellX = clamp(Math.floor(x/(rect.width/res)),0,res-1);
-  const cellY = clamp(Math.floor(y/(rect.height/res)),0,res-1);
+  const cellX = clamp(Math.floor(x/(rect.width/resX)),0,resX-1);
+  const cellY = clamp(Math.floor(y/(rect.height/resY)),0,resY-1);
   sequencerGrid.value[cellX].fill(0);
   sequencerGrid.value[cellX][cellY]=1;
   drawSequencer();

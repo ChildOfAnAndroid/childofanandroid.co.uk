@@ -14,6 +14,13 @@
         <div class="vertical-panel">
           <h1>BBY<br>PAINT</h1>
 
+          <!-- Canvas Toggle -->
+          <div class="grp">
+             <button @click="isDrawingOnTestCanvas = !isDrawingOnTestCanvas" class="action">
+              {{ isDrawingOnTestCanvas ? 'Switch to BBY' : 'Switch to Test Canvas' }}
+            </button>
+          </div>
+
           <!-- tools -->
           <div class="grp">
             <label class="section">Tool</label>
@@ -281,16 +288,17 @@
 
           <div class="flexspacer"></div>
           <div class="grp">
-            <button class="action" @click="onSave" :disabled="saving">
+            <button class="action" @click="onSave" :disabled="saving || isDrawingOnTestCanvas">
               <span v-if="saving">saving…</span><span v-else>save look!</span>
             </button>
-            <button class="action danger" @click="handleClearClick">{{ clearButtonText }}</button>
+            <button v-if="!isDrawingOnTestCanvas" class="action danger" @click="handleClearClick">{{ clearButtonText }}</button>
           </div>
         </div>
       </div>
 
       <div class="right-column-paint">
-        <div class="bby-stage">
+        <!-- BBY Canvas -->
+        <div v-if="!isDrawingOnTestCanvas" class="bby-stage">
           <bbyPixels
             ref="bbyPixelsRef"
             :mode="currentMode"
@@ -310,6 +318,37 @@
             @color-picked="handleColorPicked"
             @color-hovered="handleColorHovered"
           />
+        </div>
+
+        <!-- Test Canvas -->
+        <div v-else class="test-canvas-stage" :style="{ width: testCanvasSize + '%', height: testCanvasSize + '%' }">
+          <div class="test-canvas-wrapper">
+            <bbyPixels
+              ref="testSquareRef"
+              :is-test-canvas="true"
+              :mode="currentMode"
+              :is-scope-cursor-active="isScopeCursorActive"
+              :active-e-qs="activeEQs"
+              :hex-color="hexColor"
+              :user-set-color="userColour"
+              :bby-color="currentColour"
+              :rainbow-influence="rainbowInfluence"
+              :bby-influence="bbyInfluence"
+              :user-color-influence="userColorInfluence"
+              :red-influence="redInfluence"
+              :green-influence="greenInfluence"
+              :blue-influence="blueInfluence"
+              :tempo="tempo"
+              :blend-opacity="blendOpacity"
+              @color-picked="handleColorPicked"
+              @color-hovered="handleColorHovered"
+            />
+          </div>
+           <div class="test-canvas-controls">
+            <label>Size</label>
+            <input type="range" min="25" max="100" v-model="testCanvasSize" class="size-slider" />
+            <button class="action danger" @click="handleClearTestSquareClick">Clear</button>
+          </div>
         </div>
       </div>
     </div>
@@ -332,13 +371,14 @@ type HsvColor = { h: number; s: number; v: number };
 type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
 type LfoWaveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'ramp' | 'random' | 'sequence';
 type InfluenceTarget = 'rainbowInfluence' | 'bbyInfluence' | 'userColorInfluence' | 'redInfluence' | 'greenInfluence' | 'blueInfluence';
-type LfoConfig = { wave: LfoWaveform, rate: number, depth: number } | { sequence: number[][] };
 type ResizeDirection = 'left' | 'right' | 'top' | 'bottom';
 
 let animationFrameId: number | null = null;
 const LFO_DURATION_MIN = 0.1;
 const LFO_DURATION_MAX = 4.0;
 
+const isDrawingOnTestCanvas = ref(false);
+const testCanvasSize = ref(80);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
 const isScopeMinimized = ref(false);
@@ -351,6 +391,7 @@ const hexColor = ref('#88aaff');
 const swatchesOpen = ref(false);
 const swatches = ['#FFFFFF','#C2C2C2','#858585','#474747','#000000','#2E1A47','#FF5A5A','#FF965A','#FFD25A','#FFF05A','#C8FF5A','#78FF5A','#5AFFC8','#5AFFFF','#5AC8FF','#5A78FF','#965AFF','#E15AFF'];
 const bbyPixelsRef = ref<InstanceType<typeof bbyPixels> | null>(null);
+const testSquareRef = ref<InstanceType<typeof bbyPixels> | null>(null);
 const saving = ref(false);
 const toast = ref('');
 const eyedropperHoverColor = ref<string | null>(null);
@@ -364,6 +405,7 @@ const blueInfluence = ref(0);
 const rainbowInfluence = ref(0);
 
 const lfoMode = ref<'shape'|'pixel'>('shape');
+type LfoConfig = { wave: LfoWaveform, rate: number, depth: number } | { sequence: number[][] };
 const lfoAssignments = reactive<Record<InfluenceTarget, LfoConfig | null>>({
   rainbowInfluence: null, bbyInfluence: null, userColorInfluence: null, redInfluence: null, greenInfluence: null, blueInfluence: null
 });
@@ -676,7 +718,7 @@ const updateColorScope = throttle(() => {
     
     for (let i = 0; i < TOTAL_STEPS; i++) {
         let hsv = rgbToHsv(c.r, c.g, c.b);
-        const speed = (tempo.value / 100) * 0.05;
+        const speed = (tempo.value / 100) * 0.002;
         const rVec={r:255-c.r, g:-c.g, b:-c.b}, gVec={r:-c.r, g:255-c.g, b:-c.b}, bVec={r:-c.r, g:-c.g, b:255-c.b};
         const uVec={r:userColour.value.r-c.r, g:userColour.value.g-c.g, b:userColour.value.b-c.b};
         const bbyVec={r:currentColour.r-c.r, g:currentColour.g-c.g, b:currentColour.b-c.b};
@@ -685,7 +727,7 @@ const updateColorScope = throttle(() => {
         let dR=0, dG=0, dB=0;
         if(activeEQs.value.has('user')) { dR+=uVec.r*(userColorInfluence.value/100); dG+=uVec.g*(userColorInfluence.value/100); dB+=uVec.b*(userColorInfluence.value/100); }
         if(activeEQs.value.has('bby')) { dR+=bbyVec.r*(bbyInfluence.value/100); dG+=bbyVec.g*(bbyInfluence.value/100); dB+=bbyVec.b*(bbyInfluence.value/100); }
-        if(activeEQs.value.has('red')) { dR+=rVec.r*(redInfluence.value/100); dG+=gVec.g*(redInfluence.value/100); dB+=rVec.b*(redInfluence.value/100); }
+        if(activeEQs.value.has('red')) { dR+=rVec.r*(redInfluence.value/100); dG+=rVec.g*(redInfluence.value/100); dB+=rVec.b*(redInfluence.value/100); }
         if(activeEQs.value.has('green')) { dR+=gVec.r*(greenInfluence.value/100); dG+=gVec.g*(greenInfluence.value/100); dB+=gVec.b*(greenInfluence.value/100); }
         if(activeEQs.value.has('blue')) { dR+=bVec.r*(blueInfluence.value/100); dG+=bVec.g*(blueInfluence.value/100); dB+=bVec.b*(blueInfluence.value/100); }
         if(activeEQs.value.has('rainbow')) { dR+=rainbowVec.r*(rainbowInfluence.value/100); dG+=rainbowVec.g*(rainbowInfluence.value/100); dB+=rainbowVec.b*(rainbowInfluence.value/100); }
@@ -712,15 +754,15 @@ const updateColorScope = throttle(() => {
         const xOffset = (canvas.width - requiredWidth) / 2;
         if (requiredWidth > canvas.width) {
             pixelWidth = canvas.width / numPixels;
-             for (let x = 0; x < numPixels; x++) {
-                const colorIndex = Math.floor(x * (TOTAL_STEPS / numPixels));
+            for (let x = 0; x < numPixels; x++) {
+                const colorIndex = Math.min(x, colors.length - 1);
                 ctx.fillStyle = `rgb(${colors[colorIndex].r},${colors[colorIndex].g},${colors[colorIndex].b})`;
                 ctx.fillRect(x * pixelWidth, currentY, pixelWidth, pixelHeight);
             }
         } else {
             for (let x = 0; x < numPixels; x++) {
-                const colorIndex = Math.floor(x * (TOTAL_STEPS / numPixels));
-                 ctx.fillStyle = `rgb(${colors[colorIndex].r},${colors[colorIndex].g},${colors[colorIndex].b})`;
+                const colorIndex = Math.min(x, colors.length - 1);
+                ctx.fillStyle = `rgb(${colors[colorIndex].r},${colors[colorIndex].g},${colors[colorIndex].b})`;
                 ctx.fillRect(xOffset + x * pixelWidth, currentY, pixelWidth, pixelHeight);
             }
         }
@@ -728,7 +770,7 @@ const updateColorScope = throttle(() => {
     }
 }, 50);
 
-watch([hexColor, tempo, activeEQs, userColorInfluence, bbyInfluence, redInfluence, greenInfluence, blueInfluence, rainbowInfluence, userColour, currentColour, isScopeMinimized], updateColorScope, { deep: true, immediate: true });
+watch([hexColor, tempo, activeEQs, userColorInfluence, bbyInfluence, redInfluence, greenInfluence, blueInfluence, rainbowInfluence, userColour, currentColour, isScopeMinimized, isDrawingOnTestCanvas], updateColorScope, { deep: true, immediate: true });
 onMounted(() => { new ResizeObserver(updateColorScope).observe(scopeCanvas.value!); nextTick(updateColorScope); animationFrameId = requestAnimationFrame(lfoLoop); drawSequencer(); });
 onBeforeUnmount(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); });
 
@@ -745,6 +787,10 @@ function handleClearClick() {
   if (clearConfirmClicks.value >= 3) { bbyPixelsRef.value?.clearOverlay(); showToast('Canvas Cleared!', 2000); clearConfirmClicks.value = 0; }
   else { showToast(clearConfirmClicks.value === 1 ? 'First click! Are you sure?' : 'SECOND CLICK! One more erases all!', 3000); clearResetTimer = setTimeout(() => { clearConfirmClicks.value = 0; showToast('Clear cancelled.', 1500); }, 3000); }
 }
+function handleClearTestSquareClick() {
+  testSquareRef.value?.clearOverlay();
+  showToast('Test Square Cleared!', 1500);
+}
 function setSwatchColor(c:string){ hexColor.value=c; if (currentMode.value !== 'paint') setMode('paint'); }
 function handleColorPicked(c:string){ hexColor.value=c; if (currentMode.value === 'eyedropper') setMode('paint'); }
 function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0) { eyedropperHoverColor.value = rgbToHex(color.r, color.g, color.b); } else { eyedropperHoverColor.value = null; } }
@@ -756,8 +802,16 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .left-column-paint{flex:0 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
 .vertical-panel{position: relative; width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
 .right-column-paint{flex:1 1 auto;display:flex;align-items:center;justify-content:center;height:100%;min-width:0}
-.bby-stage{display:flex;align-items:center;justify-content:center;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1}
-.bby-stage > *{max-width:100%;max-height:100%}
+
+.bby-stage {display:flex;align-items:center;justify-content:center;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;}
+.test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;height:80%;max-width:100%;max-height:100%;gap:var(--spacing);transition: width .3s ease, height .3s ease;}
+.test-canvas-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
+.bby-stage > *, .test-canvas-wrapper > * {max-width:100%;max-height:100%}
+
+.test-canvas-controls { display: flex; align-items: center; gap: var(--spacing); width: 100%; max-width: 400px; }
+.test-canvas-controls > label { font-size: var(--small-font-size); }
+.test-canvas-controls > .size-slider { flex-grow: 1; }
+
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}

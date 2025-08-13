@@ -2,7 +2,7 @@
 <template>
   <div class="lab-wrap">
     <div ref="stack" class="stack">
-      <BbySprite ref="spriteComp" />
+      <BbySprite v-if="!isTestCanvas" ref="spriteComp" />
       <canvas ref="overlay" class="overlay"
         @pointerdown="onDown" @pointermove="onPointerMove"
         @pointerup="onUp" @pointerleave="onPointerLeave"></canvas>
@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, watch, computed } from 'vue';
 import { throttle } from 'lodash';
 import BbySprite from '@/components/bbySprite.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
@@ -44,6 +44,7 @@ const props = defineProps<{
   blueInfluence: number;
   tempo: number;
   blendOpacity: number;
+  isTestCanvas?: boolean;
 }>();
 const emit = defineEmits(['color-picked', 'color-hovered']);
 
@@ -64,6 +65,9 @@ let ro:ResizeObserver|null=null; const dpr = window.devicePixelRatio||1;
 
 let paintedPixelsInStroke = new Set<string>();
 
+const localPaintData = ref<ImageData | null>(null);
+const currentPaintData = computed(() => props.isTestCanvas ? localPaintData.value : paintOverlayData.value);
+
 /* colour helpers */
 function clampByte(x:number){ return Math.max(0, Math.min(255, Math.round(x))); }
 function idx(x:number,y:number){ return (y*SPRITE_W+x)*4; }
@@ -81,8 +85,9 @@ function hsvToRgb(h:number,s:number,v:number): RgbColor { const c=v*s, x=c*(1-Ma
 
 /* sampling */
 let cachedBase:Uint8ClampedArray|null=null;
-function getBabyCanvas(){ const el = spriteComp.value?.$el as HTMLElement|undefined; return el&&el.tagName==='CANVAS' ? (el as HTMLCanvasElement) : null; }
+function getBabyCanvas(){ if(props.isTestCanvas) return null; const el = spriteComp.value?.$el as HTMLElement|undefined; return el&&el.tagName==='CANVAS' ? (el as HTMLCanvasElement) : null; }
 function cacheBabyAtStrokeStart(){
+  if(props.isTestCanvas) { cachedBase = null; return; }
   const baby=getBabyCanvas(); if(!baby){cachedBase=null;return;}
   const ctx=baby.getContext('2d',{willReadFrequently:true}); if(!ctx){cachedBase=null;return;}
   const img=ctx.getImageData(0,0,baby.width,baby.height).data;
@@ -90,39 +95,70 @@ function cacheBabyAtStrokeStart(){
   for(let y=0;y<SPRITE_H;y++)for(let x=0;x<SPRITE_W;x++){ const sx=Math.floor(x*(baby.width/SPRITE_W)), sy=Math.floor(y*(baby.height/SPRITE_H)); const si=(sy*baby.width+sx)*4, di=idx(x,y); buf[di]=img[si]; buf[di+1]=img[si+1]; buf[di+2]=img[si+2]; buf[di+3]=img[si+3]; }
   cachedBase=buf;
 }
-function readOverlayRGB(x:number,y:number){ if(!paintOverlayData.value)return null; const d=paintOverlayData.value.data,i=idx(x,y),a=d[i+3]; return a>0?{r:d[i],g:d[i+1],b:d[i+2],a}:null; }
-function readBabyBaseRGB(x:number,y:number){ if(!cachedBase)return null; const i=idx(x,y); return { r:cachedBase[i], g:cachedBase[i+1], b:cachedBase[i+2], a:cachedBase[i+3] }; }
-function readCurrentRGB(x:number,y:number): RgbaColor { const overlay = readOverlayRGB(x,y); if(overlay) return overlay; const base = readBabyBaseRGB(x,y); if(base) return base; return {r:0,g:0,b:0,a:0}; }
+function readPaintDataRGB(x:number,y:number){ if(!currentPaintData.value)return null; const d=currentPaintData.value.data,i=idx(x,y),a=d[i+3]; return a>0?{r:d[i],g:d[i+1],b:d[i+2],a}:null; }
+function readBabyBaseRGB(x:number,y:number){ if(!cachedBase || props.isTestCanvas)return null; const i=idx(x,y); return { r:cachedBase[i], g:cachedBase[i+1], b:cachedBase[i+2], a:cachedBase[i+3] }; }
+function readCurrentRGB(x:number,y:number): RgbaColor { const overlay = readPaintDataRGB(x,y); if(overlay) return overlay; const base = readBabyBaseRGB(x,y); if(base) return base; return {r:0,g:0,b:0,a:0}; }
 
 /* overlay buffer */
 function clearOverlay(){
-  if(!paintOverlayData.value) return;
-  const d=paintOverlayData.value.data; for(let i=0;i<d.length;i+=4){ d[i]=d[i+1]=d[i+2]=d[i+3]=0; }
-  tickPaint();
-  const out=[] as {x:number,y:number,r:number,g:number,b:number,a:number}[];
-  for(let y=0;y<SPRITE_H;y++) for(let x=0;x<SPRITE_W;x++) out.push({x,y,r:0,g:0,b:0,a:0});
-  sendPixelUpdate(out);
+  const data = currentPaintData.value;
+  if(!data) return;
+  
+  data.data.fill(0);
+  
+  if (props.isTestCanvas) {
+    redrawOverlay();
+  } else {
+    tickPaint();
+    const out=[] as {x:number,y:number,r:number,g:number,b:number,a:number}[];
+    for(let y=0;y<SPRITE_H;y++) for(let x=0;x<SPRITE_W;x++) out.push({x,y,r:0,g:0,b:0,a:0});
+    sendPixelUpdate(out);
+  }
 }
 function setPixel(x:number,y:number,r:number,g:number,b:number,a:number){
-  if(!paintOverlayData.value) return;
+  const data = currentPaintData.value;
+  if(!data) return;
   if(x<0||y<0||x>=SPRITE_W||y>=SPRITE_H) return;
-  const i=idx(x,y), d=paintOverlayData.value.data;
-  d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a; tickPaint();
-  pixelUpdateBatch.push({x,y,r:clampByte(r),g:clampByte(g),b:clampByte(b),a:clampByte(a)}); throttledSendBatch();
+  const i=idx(x,y), d=data.data;
+  d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a;
+
+  if (props.isTestCanvas) {
+    redrawOverlay();
+  } else {
+    tickPaint();
+    pixelUpdateBatch.push({x,y,r:clampByte(r),g:clampByte(g),b:clampByte(b),a:clampByte(a)}); throttledSendBatch();
+  }
 }
 
 /* overlay canvas */
-function setupOverlay(){ const baby=getBabyCanvas(); if(!baby||!overlay.value)return;
-  const cssW=baby.clientWidth, cssH=baby.clientHeight;
+function setupOverlay(){
+  const containerEl = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  if(!containerEl||!overlay.value)return;
+
+  const cssW=containerEl.clientWidth, cssH=containerEl.clientHeight;
   overlay.value.style.width=cssW+'px'; overlay.value.style.height=cssH+'px';
   overlay.value.width=Math.round(cssW*dpr); overlay.value.height=Math.round(cssH*dpr);
   octx=overlay.value.getContext('2d',{alpha:true}); if(!octx) throw new Error('overlay 2D ctx failed');
   octx.imageSmoothingEnabled=false; redrawOverlay();
 }
-function redrawOverlay(){
-  const baby=getBabyCanvas(); if(!octx||!overlay.value||!baby) return;
-  const cssW=baby.clientWidth, cssH=baby.clientHeight; const s=Math.min(cssW/SPRITE_W, cssH/SPRITE_H)||1;
-  octx.setTransform(s*dpr,0,0,s*dpr,0,0); octx.clearRect(-1e5,-1e5,2e5,2e5);
+
+function redrawOverlay() {
+  if (!octx || !overlay.value) return;
+
+  const containerEl = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  if (!containerEl) return;
+
+  const cssW = containerEl.clientWidth, cssH = containerEl.clientHeight;
+  const s = Math.min(cssW / SPRITE_W, cssH / SPRITE_H) || 1;
+
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0); // Reset transform for clearing
+  octx.clearRect(0, 0, overlay.value.width, overlay.value.height);
+  
+  octx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
+
+  if (props.isTestCanvas && currentPaintData.value) {
+    octx.putImageData(currentPaintData.value, 0, 0);
+  }
 
   if (props.isScopeCursorActive && highlightedPixel.value) {
     const SCOPE_SIZE = 5;
@@ -152,11 +188,16 @@ function redrawOverlay(){
 
   } else if (highlightedPixel.value) {
     const {x,y}=highlightedPixel.value;
-    const stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
-    const stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
-    const jumpset=bbyState.jumping?-4:0;
-    const offset_x=(SPRITE_W-stretch_x)/2-(bbyState.stretch_left?1:0);
-    const offset_y=(SPRITE_H-stretch_y)/2-(bbyState.stretch_up?1:0)+jumpset;
+    let offset_x = 0, offset_y = 0, stretch_x = SPRITE_W, stretch_y = SPRITE_H;
+
+    if (!props.isTestCanvas) {
+      stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
+      stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
+      const jumpset=bbyState.jumping?-4:0;
+      offset_x=(SPRITE_W-stretch_x)/2-(bbyState.stretch_left?1:0);
+      offset_y=(SPRITE_H-stretch_y)/2-(bbyState.stretch_up?1:0)+jumpset;
+    }
+
     const hx=x, hy=y, hw=1;
     if (props.mode !== 'eyedropper') {
         octx.fillStyle = props.mode === 'erase' ? 'rgba(255,255,255,.4)' : props.hexColor+'80';
@@ -165,20 +206,34 @@ function redrawOverlay(){
   }
 }
 function cssToPixel(clientX:number, clientY:number){
-  const baby=getBabyCanvas(); if(!baby)return null;
-  const rect=baby.getBoundingClientRect(); const lx=clientX-rect.left, ly=clientY-rect.top;
-  const stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
-  const stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
-  const jumpset=bbyState.jumping?-4:0;
-  const offset_x=(SPRITE_W-stretch_x)/2-(bbyState.stretch_left?1:0);
-  const offset_y=(SPRITE_H-stretch_y)/2-(bbyState.stretch_up?1:0)+jumpset;
-  const scale_x=rect.width/SPRITE_W, scale_y=rect.height/SPRITE_H;
-  const canvas_x=lx/scale_x, canvas_y=ly/scale_y;
-  const px=Math.floor((canvas_x-offset_x)*(SPRITE_W/stretch_x));
-  const py=Math.floor((canvas_y-offset_y)*(SPRITE_H/stretch_y));
+  const el = overlay.value;
+  if(!el) return null;
+  
+  const rect = el.getBoundingClientRect();
+  const lx = clientX - rect.left;
+  const ly = clientY - rect.top;
+
+  let px, py;
+
+  if (props.isTestCanvas) {
+      px = Math.floor(lx / rect.width * SPRITE_W);
+      py = Math.floor(ly / rect.height * SPRITE_H);
+  } else {
+      const stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
+      const stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
+      const jumpset=bbyState.jumping?-4:0;
+      const offset_x=(SPRITE_W-stretch_x)/2-(bbyState.stretch_left?1:0);
+      const offset_y=(SPRITE_H-stretch_y)/2-(bbyState.stretch_up?1:0)+jumpset;
+      const scale_x=rect.width/SPRITE_W, scale_y=rect.height/SPRITE_H;
+      const canvas_x=lx/scale_x, canvas_y=ly/scale_y;
+      px=Math.floor((canvas_x-offset_x)*(SPRITE_W/stretch_x));
+      py=Math.floor((canvas_y-offset_y)*(SPRITE_H/stretch_y));
+  }
+  
   if(px<0||py<0||px>=SPRITE_W||py>=SPRITE_H) return null;
   return {x:px,y:py};
 }
+
 
 /* input */
 function onDown(e:PointerEvent){
@@ -264,7 +319,7 @@ function paint(e:PointerEvent){
       
       const finalHex = rgbToHex(finalColor.r, finalColor.g, finalColor.b);
       if(props.hexColor !== finalHex) emit('color-picked', finalHex);
-      throttledReactionUpdate(finalColor.r, finalColor.g, finalColor.b);
+      if (!props.isTestCanvas) throttledReactionUpdate(finalColor.r, finalColor.g, finalColor.b);
       break;
     }
       
@@ -280,7 +335,7 @@ function paint(e:PointerEvent){
       const b = brushColor.b * opacity + existingColor.b * (1 - opacity);
       
       setPixel(x, y, r, g, b, existingColor.a);
-      throttledReactionUpdate(r, g, b);
+      if (!props.isTestCanvas) throttledReactionUpdate(r, g, b);
       break;
     }
 
@@ -301,12 +356,23 @@ function paint(e:PointerEvent){
 /* mount */
 onMounted(async()=>{ 
   await nextTick(); 
+  if (props.isTestCanvas) {
+    localPaintData.value = new ImageData(SPRITE_W, SPRITE_H);
+  }
   setupOverlay();
-  const baby=getBabyCanvas(); if(baby){ ro=new ResizeObserver(()=>{ setupOverlay(); redrawOverlay(); }); ro.observe(baby); }
+  const elToObserve = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  if(elToObserve) { 
+      ro = new ResizeObserver(()=>{ setupOverlay(); redrawOverlay(); }); 
+      ro.observe(elToObserve);
+  }
   window.addEventListener('resize', ()=>{ setupOverlay(); redrawOverlay(); });
 });
-onBeforeUnmount(()=>{ const baby=getBabyCanvas(); if(ro&&baby) ro.unobserve(baby); window.removeEventListener('resize', setupOverlay); });
-watch(bbyState, ()=>{ redrawOverlay(); }, {deep:true});
+onBeforeUnmount(()=>{
+  const elToObserve = props.isTestCanvas ? overlay.value : getBabyCanvas();
+  if(ro && elToObserve) ro.unobserve(elToObserve); 
+  window.removeEventListener('resize', setupOverlay); 
+});
+watch(() => bbyState, ()=>{ if(!props.isTestCanvas) redrawOverlay(); }, {deep:true});
 </script>
 
 <style scoped>

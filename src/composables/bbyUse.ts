@@ -335,6 +335,29 @@ export async function saveCompositeToServer(label = "manual") {
   return j.png_url as string;
 }
 
+export async function saveTestGridImage(pngDataUrl: string, author: string) {
+  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/test_grid_snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ author, test_grid_png_b64: pngDataUrl })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `test grid snapshot failed: ${r.status}`);
+  if (!j.png_url) throw new Error('test grid saved but no png_url returned');
+  return j.png_url as string;
+}
+
+export async function fetchTestGridGallery() {
+  try {
+    const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/test_grid_gallery', { cache: 'no-store' });
+    if (!r.ok) return [];
+    return await r.json();
+  } catch (error) {
+    console.error('Could not fetch test grid gallery:', error);
+    return [];
+  }
+}
+
 let lastSeenAutoSnapId: string | null = null;
 
 export async function pollActivityForAutosnap() {
@@ -420,6 +443,8 @@ export function bbyUse() {
     sayRandomFact,
     saveCompositeToServer,
     pollActivityForAutosnap,
+    saveTestGridImage,
+    fetchTestGridGallery,
     clearBubbles,
   };
 }

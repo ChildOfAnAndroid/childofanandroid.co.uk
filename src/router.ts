@@ -6,6 +6,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import bbyIndex from '@/pages/bbyIndex.vue'
 import bbyTest from '@/pages/bbyTest.vue'
 import bbyPaint from '@/pages/bbyPaint.vue'
+import bbyGallery from '@/pages/bbyGallery.vue'
 import rightNav from '@/components/rightNav.vue'
 
 const routes = [
@@ -29,6 +30,15 @@ const routes = [
 			main: bbyPaint,
 			nav: rightNav
 		}
+		
+	},	
+	{
+		path: '/gallery',
+		components: {
+			main: bbyGallery,
+			nav: rightNav
+		}
+		
 	}
 ]
 

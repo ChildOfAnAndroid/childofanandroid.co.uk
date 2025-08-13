@@ -335,6 +335,7 @@
             v-model:size="testCanvasSize"
             @clear="handleClearTestSquareClick"
           />
+          <button class="action" @click="handleSaveTestSquareClick">Save to Gallery</button>
         </div>
       </div>
     </div>
@@ -352,7 +353,7 @@ import colourScope from '@/components/colourScope.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
-const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author } = bbyUse();
+const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
 type RgbColor = { r: number; g: number; b: number };
@@ -729,6 +730,17 @@ function handleClearClick() {
 function handleClearTestSquareClick() {
   testSquareRef.value?.clearOverlay();
   showToast('Test Square Cleared!', 1500);
+}
+async function handleSaveTestSquareClick() {
+  if (!testSquareRef.value) return;
+  try {
+    const dataUrl = testSquareRef.value.exportPng();
+    await saveTestGridImage(dataUrl, author.value);
+    showToast('Saved to gallery!', 2000);
+  } catch (e) {
+    console.error(e);
+    showToast('Save failed :(', 2000);
+  }
 }
 function setSwatchColor(c:string){ hexColor.value=c; if (currentMode.value !== 'paint') setMode('paint'); }
 function handleColorPicked(c:string){ hexColor.value=c; if (currentMode.value === 'eyedropper') setMode('paint'); }

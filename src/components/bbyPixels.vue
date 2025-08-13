@@ -49,7 +49,7 @@ const props = defineProps<{
 const emit = defineEmits(['color-picked', 'color-hovered']);
 
 const SPRITE_W = 64, SPRITE_H = 64;
-defineExpose({ clearOverlay });
+defineExpose({ clearOverlay, exportPng });
 
 const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate, tickPaint } = bbyUse();
 const throttledReactionUpdate = throttle((r:number,g:number,b:number)=>sendBbyPaintColour(r,g,b),300);
@@ -78,6 +78,14 @@ function ensureTmpCanvas() {
     tmpCanvas.height = SPRITE_H;
     tmpCtx = tmpCanvas.getContext('2d');
   }
+}
+
+function exportPng(): string {
+  ensureTmpCanvas();
+  if (!tmpCanvas || !tmpCtx || !currentPaintData.value) return '';
+  tmpCtx.clearRect(0, 0, SPRITE_W, SPRITE_H);
+  tmpCtx.putImageData(currentPaintData.value, 0, 0);
+  return tmpCanvas.toDataURL('image/png');
 }
 
 /* colour helpers */

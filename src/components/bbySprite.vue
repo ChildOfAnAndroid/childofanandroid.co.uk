@@ -128,24 +128,27 @@ function draw() {
   ctx.drawImage(maskedPaintCanvas, offset_x, offset_y, stretch_x, stretch_y);
 
   if (bbyState.cheeks_on) {
-    ctx.drawImage(images.bbyCHEEKS, 0, 0, SPRITE_W, SPRITE_H, offset_x, offset_y, stretch_x, stretch_y);
+    // Draw cheeks at a fixed position so they don't move with body stretches or jumps
+    ctx.drawImage(images.bbyCHEEKS, 0, 0, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
   }
 
   const eyeSourceX = bbyState.eyes * SPRITE_W;
   for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
+    // Render each eye layer at its natural size and position to prevent face distortion
     ctx.drawImage(
       images.bbyEYES,
       eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H,
-      offset_x, offset_y, stretch_x, stretch_y
+      0, 0, SPRITE_W, SPRITE_H
     );
   }
 
   const mouthIndex = Math.max(0, Math.min(bbyState.mouth, NUM_MOUTH_STYLES - 1));
   const mouthSourceX = mouthIndex * SPRITE_W;
+  // Keep the mouth layer static relative to the canvas while the body moves
   ctx.drawImage(
     images.bbyMOUTH,
     mouthSourceX, 0, SPRITE_W, SPRITE_H,
-    offset_x, offset_y, stretch_x, stretch_y
+    0, 0, SPRITE_W, SPRITE_H
   );
 
   ctx.restore();

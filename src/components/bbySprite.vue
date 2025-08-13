@@ -123,13 +123,20 @@ function draw() {
   const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
   const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
 
+  // Face layers stay in place and only move when jumping
+  const faceOffsetX = 0;
+  const faceOffsetY = jumpset;
+
   // --- Final Render to main canvas ---
   ctx.drawImage(bodyCanvas, offset_x, offset_y, stretch_x, stretch_y);
   ctx.drawImage(maskedPaintCanvas, offset_x, offset_y, stretch_x, stretch_y);
 
   if (bbyState.cheeks_on) {
-    // Draw cheeks at a fixed position so they don't move with body stretches or jumps
-    ctx.drawImage(images.bbyCHEEKS, 0, 0, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
+    ctx.drawImage(
+      images.bbyCHEEKS,
+      0, 0, SPRITE_W, SPRITE_H,
+      faceOffsetX, faceOffsetY, SPRITE_W, SPRITE_H
+    );
   }
 
   const eyeSourceX = bbyState.eyes * SPRITE_W;
@@ -138,7 +145,7 @@ function draw() {
     ctx.drawImage(
       images.bbyEYES,
       eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H,
-      0, 0, SPRITE_W, SPRITE_H
+      faceOffsetX, faceOffsetY, SPRITE_W, SPRITE_H
     );
   }
 
@@ -148,7 +155,7 @@ function draw() {
   ctx.drawImage(
     images.bbyMOUTH,
     mouthSourceX, 0, SPRITE_W, SPRITE_H,
-    0, 0, SPRITE_W, SPRITE_H
+    faceOffsetX, faceOffsetY, SPRITE_W, SPRITE_H
   );
 
   ctx.restore();

@@ -1,33 +1,19 @@
 <template>
-  <div class="grp">
-    <div class="section-header">
-      <label class="section">Colour Scope</label>
-      <div class="scope-controls">
-        <button
-          class="action mini"
-          @click="$emit('update:scopeLength', Math.max(1, props.scopeLength - 1))"
-          title="Show fewer colours"
-        >
-          -
-        </button>
-        <button
-          class="action mini"
-          @click="$emit('update:scopeLength', props.scopeLength + 1)"
-          title="Show more colours"
-        >
-          +
-        </button>
-        <button
-          class="action mini"
-          @click="$emit('update:isScopeMinimized', !props.isScopeMinimized)"
-          :title="props.isScopeMinimized ? 'Expand' : 'Minimize'"
-        >
-          {{ props.isScopeMinimized ? '▢' : '≡' }}
-        </button>
-      </div>
-    </div>
+  <div class="scope-box">
+    <label class="scope-label">SCOPE</label>
     <div class="scope-display" :class="{ minimized: props.isScopeMinimized }">
       <canvas ref="scopeCanvas" class="scope-layer"></canvas>
+    </div>
+    <div class="scope-controls">
+      <button class="action mini" @click="decrementScope" title="Show fewer colours">-</button>
+      <button class="action mini" @click="incrementScope" title="Show more colours">+</button>
+      <button
+        class="action mini"
+        @click="emit('update:isScopeMinimized', !props.isScopeMinimized)"
+        :title="props.isScopeMinimized ? 'Expand' : 'Minimize'"
+      >
+        {{ props.isScopeMinimized ? '▢' : '≡' }}
+      </button>
     </div>
   </div>
 </template>
@@ -56,6 +42,11 @@ const props = defineProps<{
 }>();
 
 const scopeCanvas = ref<HTMLCanvasElement | null>(null);
+
+const emit = defineEmits<{
+  (e: 'update:scopeLength', v: number): void;
+  (e: 'update:isScopeMinimized', v: boolean): void;
+}>();
 
 function clampByte(x: number) {
   return Math.max(0, Math.min(255, Math.round(x)));
@@ -95,9 +86,26 @@ function hexToRGB(hx: string): RgbColor {
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
 
+function getMaxSteps() {
+  if (!scopeCanvas.value) return Infinity;
+  const fontSize = parseFloat(getComputedStyle(scopeCanvas.value).fontSize) || 16;
+  return Math.max(1, Math.floor(scopeCanvas.value.clientHeight / fontSize));
+}
+
+function decrementScope() {
+  emit('update:scopeLength', Math.max(1, props.scopeLength - 1));
+}
+
+function incrementScope() {
+  const max = getMaxSteps();
+  emit('update:scopeLength', Math.min(props.scopeLength + 1, max));
+}
+
 const updateColorScope = throttle(() => {
   if (!scopeCanvas.value) return;
-  const TOTAL_STEPS = Math.max(1, Math.round(props.scopeLength));
+  const maxSteps = getMaxSteps();
+  if (props.scopeLength > maxSteps) emit('update:scopeLength', maxSteps);
+  const TOTAL_STEPS = Math.max(1, Math.min(Math.round(props.scopeLength), maxSteps));  
   const colors: RgbColor[] = [];
   let c = hexToRGB(props.hexColor);
 
@@ -167,9 +175,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.section-header { display: flex; justify-content: center; align-items: center; position: relative; gap: .5rem; }
-.scope-controls { position: absolute; right: .25rem; top: 50%; transform: translateY(-50%); display: flex; gap: .25rem; }
-.scope-display { max-height: 100%; width: 16px; height: 100%; flex: 1 1 auto; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; margin: 0 auto; }
-.scope-display.minimized { width: 0; height: 0; border-width: 0; }
+.scope-box { flex: 0 0 auto; width: 80px; height: 100%; background: var(--bby-colour-black); padding: var(--spacing); border: var(--border); border-radius: var(--border-radius); display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing)/2); }
+.scope-label { font-size: 0.7rem; font-weight: bold; writing-mode: vertical-rl; transform: rotate(180deg); color: rgba(255,255,255,0.7); }
+.scope-display { flex: 1 1 auto; width: 16px; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-dark); overflow: hidden; }
+.scope-display.minimized { width: 0; border-width: 0; }
 .scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
+.scope-controls { display: flex; gap: .25rem; }
 </style>

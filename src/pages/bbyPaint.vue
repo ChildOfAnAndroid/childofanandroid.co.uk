@@ -339,11 +339,10 @@
               @color-hovered="handleColorHovered"
             />
           </div>
-           <div class="test-canvas-controls">
-            <label>Size</label>
-            <input type="range" min="25" max="100" v-model="testCanvasSize" class="size-slider" />
-            <button class="action danger" @click="handleClearTestSquareClick">Clear</button>
-          </div>
+          <testCanvasControls
+            v-model:size="testCanvasSize"
+            @clear="handleClearTestSquareClick"
+          />
         </div>
       </div>
     </div>
@@ -356,6 +355,7 @@
 import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount, reactive } from 'vue';
 import { throttle } from 'lodash';
 import bbyPixels from '@/components/bbyPixels.vue';
+import testCanvasControls from '@/components/testCanvasControls.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author } = bbyUse();
@@ -819,10 +819,6 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;height:80%;max-width:100%;max-height:100%;gap:var(--spacing);transition: width .3s ease, height .3s ease;}
 .test-canvas-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
 .bby-stage > *, .test-canvas-wrapper > * {max-width:100%;max-height:100%}
-
-.test-canvas-controls { display: flex; align-items: center; gap: var(--spacing); width: 100%; max-width: 400px; }
-.test-canvas-controls > label { font-size: var(--small-font-size); }
-.test-canvas-controls > .size-slider { flex-grow: 1; }
 
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .grp{display:flex;flex-direction:column;gap:.5rem}

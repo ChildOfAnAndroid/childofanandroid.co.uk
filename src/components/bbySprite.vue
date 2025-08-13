@@ -30,7 +30,6 @@ let onWinResize: (() => void) | null = null;
 const images: Record<string, HTMLImageElement> = {};
 
 // --- Caching Canvases for Performance ---
-// IMPORTANT: These are now declared here but INITIALIZED in onMounted
 let bodyCanvas: HTMLCanvasElement;
 let bctx: CanvasRenderingContext2D;
 let paintCanvas: HTMLCanvasElement;
@@ -80,30 +79,22 @@ function fitCanvas() {
 function draw() {
   if (!ctx || !images.bbyBODY || !bctx || !mctx) return;
 
-  ctx.save();
-  ctx.clearRect(-1e5, -1e5, 2e5, 2e5);
+  ctx.clearRect(0, 0, SPRITE_W * 2, SPRITE_H * 2); // Clear a larger area to be safe
 
-  // --- Tint the Body ---
+  // --- Tint the Body (on an offscreen canvas, this is the most intensive part) ---
   bctx.globalCompositeOperation = 'source-over';
   bctx.clearRect(0,0,SPRITE_W, SPRITE_H);
   for (let i = 0; i < BODY_LAYERS; i++) {
-    bctx.drawImage(
-      images.bbyBODY,
-      0, i * SPRITE_H, SPRITE_W, SPRITE_H,
-      0, 0, SPRITE_W, SPRITE_H
-    );
+    bctx.drawImage(images.bbyBODY, 0, i * SPRITE_H, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
   }
-
   const imageData = bctx.getImageData(0, 0, SPRITE_W, SPRITE_H);
   const px = imageData.data;
   const t = tintStrength.value;
   const { r: tintR, g: tintG, b: tintB } = currentColour;
-
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] === 0) continue;
     const r0 = px[i], g0 = px[i + 1], b0 = px[i + 2];
     const gray = (r0 + g0 + b0) / 3;
-
     px[i]     = (1 - t) * r0 + t * (gray * (tintR / 255));
     px[i + 1] = (1 - t) * g0 + t * (gray * (tintG / 255));
     px[i + 2] = (1 - t) * b0 + t * (gray * (tintB / 255));
@@ -115,100 +106,73 @@ function draw() {
   mctx.drawImage(paintCanvas, 0, 0);
   mctx.globalCompositeOperation = 'destination-in';
   mctx.drawImage(bodyCanvas, 0, 0);
-  mctx.globalCompositeOperation = 'source-over'; // reset
+  mctx.globalCompositeOperation = 'source-over';
 
+  // --- Final Render to main canvas ---
+  
+  // 1. Draw the BODY with transformations.
   const stretch_x = SPRITE_W + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0) - (bbyState.squish_left ? 1 : 0) - (bbyState.squish_right ? 1 : 0);
   const stretch_y = SPRITE_H + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0) - (bbyState.squish_up ? 1 : 0) - (bbyState.squish_down ? 1 : 0);
   const jumpset = bbyState.jumping ? -4 : 0;
   const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
   const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
-
-  // Face layers follow the body's movement without stretching
-  const faceOffsetX = offset_x;
-  const faceOffsetY = offset_y;
-
-  // --- Final Render to main canvas ---
-  ctx.drawImage(bodyCanvas, offset_x, offset_y, stretch_x, stretch_y);
-  ctx.drawImage(maskedPaintCanvas, offset_x, offset_y, stretch_x, stretch_y);
-
+  
+  // Manually move the coordinate system
+  ctx.translate(offset_x, offset_y);
+  
+  // Draw the body parts at the new origin (0,0) of the translated context
+  ctx.drawImage(bodyCanvas, 0, 0, stretch_x, stretch_y);
+  ctx.drawImage(maskedPaintCanvas, 0, 0, stretch_x, stretch_y);
+  
+  // Manually reverse the translation to reset the coordinate system
+  ctx.translate(-offset_x, -offset_y);
+  
+  // 2. Draw the FACE on the now-reset, static context.
   if (bbyState.cheeks_on) {
-    ctx.drawImage(
-      images.bbyCHEEKS,
-      0, 0, SPRITE_W, SPRITE_H,
-      faceOffsetX, faceOffsetY, SPRITE_W, SPRITE_H
-    );
+    ctx.drawImage(images.bbyCHEEKS, 0, 0);
   }
 
   const eyeSourceX = bbyState.eyes * SPRITE_W;
   for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
-    // Render each eye layer at its natural size and position to prevent face distortion
-    ctx.drawImage(
-      images.bbyEYES,
-      eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H,
-      faceOffsetX, faceOffsetY, SPRITE_W, SPRITE_H
-    );
+    ctx.drawImage(images.bbyEYES, eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
   }
 
   const mouthIndex = Math.max(0, Math.min(bbyState.mouth, NUM_MOUTH_STYLES - 1));
   const mouthSourceX = mouthIndex * SPRITE_W;
-  // Keep the mouth layer static relative to the canvas while the body moves
-  ctx.drawImage(
-    images.bbyMOUTH,
-    mouthSourceX, 0, SPRITE_W, SPRITE_H,
-    faceOffsetX, faceOffsetY, SPRITE_W, SPRITE_H
-  );
-
-  ctx.restore();
+  ctx.drawImage(images.bbyMOUTH, mouthSourceX, 0, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
 }
+
 
 onMounted(async () => {
   if (!bbyCanvas.value) return;
 
-  // --- CORRECT INITIALIZATION ---
-  bodyCanvas = document.createElement('canvas');
-  bodyCanvas.width = SPRITE_W;
-  bodyCanvas.height = SPRITE_H;
+  bodyCanvas = document.createElement('canvas'); bodyCanvas.width = SPRITE_W; bodyCanvas.height = SPRITE_H;
   bctx = bodyCanvas.getContext('2d', { willReadFrequently: true })!;
 
-  paintCanvas = document.createElement('canvas');
-  paintCanvas.width = SPRITE_W;
-  paintCanvas.height = SPRITE_H;
+  paintCanvas = document.createElement('canvas'); paintCanvas.width = SPRITE_W; paintCanvas.height = SPRITE_H;
   pctx = paintCanvas.getContext('2d', { willReadFrequently: true })!;
 
-  maskedPaintCanvas = document.createElement('canvas');
-  maskedPaintCanvas.width = SPRITE_W;
-  maskedPaintCanvas.height = SPRITE_H;
+  maskedPaintCanvas = document.createElement('canvas'); maskedPaintCanvas.width = SPRITE_W; maskedPaintCanvas.height = SPRITE_H;
   mctx = maskedPaintCanvas.getContext('2d')!;
-  // ------------------------------
   
   ctx = bbyCanvas.value.getContext('2d');
   if (!ctx) return;
 
   try {
     const [body, cheeks, eyes, mouth] = await Promise.all([
-      loadImage(bbyBodyUrl),
-      loadImage(bbyCheeksUrl),
-      loadImage(bbyEyesUrl),
-      loadImage(bbyMouthUrl),
+      loadImage(bbyBodyUrl), loadImage(bbyCheeksUrl),
+      loadImage(bbyEyesUrl), loadImage(bbyMouthUrl),
     ]);
-    images.bbyBODY = body;
-    images.bbyCHEEKS = cheeks;
-    images.bbyEYES = eyes;
-    images.bbyMOUTH = mouth;
+    images.bbyBODY = body; images.bbyCHEEKS = cheeks;
+    images.bbyEYES = eyes; images.bbyMOUTH = mouth;
 
     fitCanvas();
     draw();
 
-    ro = new ResizeObserver(() => {
-      fitCanvas();
-      draw();
-    });
+    ro = new ResizeObserver(() => { fitCanvas(); draw(); });
     ro.observe(bbyCanvas.value.parentElement!);
 
-  onWinResize = () => {
-      fitCanvas();
-      draw();
-    };
+    onWinResize = () => { fitCanvas(); draw(); };
     window.addEventListener('resize', onWinResize);
   } catch (err) {
     console.error('failed to load bby sprites:', err);
@@ -217,13 +181,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (ro) { try { ro.disconnect(); } catch {} ro = null; }
-  if (onWinResize) {
-    window.removeEventListener('resize', onWinResize);
-    onWinResize = null;
-  }
+  if (onWinResize) { window.removeEventListener('resize', onWinResize); onWinResize = null; }
 });
 
-/** Re-render when state/tint changes */
 watch([bbyState, currentColour, tintStrength], () => {
   draw();
 }, { deep: true });

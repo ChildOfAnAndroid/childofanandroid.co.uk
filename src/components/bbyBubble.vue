@@ -1,28 +1,19 @@
 <template>
 	<button @click="say('test bubble', 'kevinonline420', userColour)">+ add test bubble</button>
-
-	<TransitionGroup tag="div" class="bubble-container" name="bubble-list" appear>
-		<div
-			v-for="bubble in bbyState.bubbles"
-			:key="bubble.id"
-			class="speech-bubble"
-			:data-bubble-id="bubble.id"
-			@click="removeBubble(bubble.id)"
-			:data-author="bubble.author"
-			:style="{
-				'backgroundColor': bubble.bgColour,
-				'borderColor': bubble.borderColour,
-			}"
-		>
-			<span v-html="bubble.text"></span>
-			<strong class="bubble-author"> {{ bubble.author }}</strong>
-		</div>
-	</TransitionGroup>
+        <TransitionGroup tag="div" class="bubble-container" name="bubble-list" appear>
+                <bubbleItem
+                        v-for="bubble in bbyState.bubbles"
+                        :key="bubble.id"
+                        :bubble="bubble"
+                        @remove="removeBubble"
+                />
+        </TransitionGroup>
 </template>
 
 <script setup lang="ts">
 import { onUpdated, nextTick } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
+import bubbleItem from '@/components/bubbleItem.vue';
 
 const { bbyState, say, removeBubble, userColour } = bbyUse();
 
@@ -52,40 +43,5 @@ onUpdated(async () => {
 	-ms-overflow-style: none;
 }
 .bubble-container::-webkit-scrollbar {display: none;}
-
-.bubble-list-move {transition: transform var(--transition-time) cubic-bezier(0.55, 0, 0.1, 1);}
-
-.bubble-list-enter-active {animation: bubbleFadeUp var(--transition-time, 0.2s) ease-out;}
-
-.speech-bubble {
-	position: relative;
-	max-width: var(--bubble-width);
-	padding: var(--padding);
-	border: var(--border);
-	border-radius: var(--border-radius);
-	background-color: var(--bby-colour, rgba(133, 239, 238, 0.9));
-	box-shadow: var(--box-shadow);
-	word-break: break-word;
-	text-align: var(--font-align);
-	z-index: var(--bubble-z);
-}
-
-.bubble-author {
-	display: inline;
-	margin-left: var(--spacing, 0.5vmax);
-	font-size: var(--small-font-size);
-	font-weight: bold;
-}
-
-@keyframes bubbleFadeUp {
-	0% {
-		transform: translateY(var(--nav-width));
-		opacity: 0;
-	}
-	100% {
-		transform: translateY(0);
-		opacity: 0.8;
-	}
-}
  
 </style>

@@ -37,17 +37,15 @@
                 <button @click="swatchesOpen = !swatchesOpen" :class="['action', {active: swatchesOpen}]" title="Swatches">▾</button>
               </div>
             </div>
-            <transition name="swpop">
-              <div v-if="swatchesOpen" class="swatch-drawer">
-                <div class="row2x2">
-                  <button @click="setPickerToBbyColor" :style="bbyButtonStyle">BBY</button>
-                  <button @click="setPickerToUserColor" :style="userButtonStyle">USER</button>
-                </div>
-                <div class="swatch-grid">
-                  <div v-for="s in swatches" :key="s" class="swatch" :style="{backgroundColor:s}" @click="setSwatchColor(s)"/>
-                </div>
-              </div>
-            </transition>
+            <swatchDrawer
+              :swatches-open="swatchesOpen"
+              :swatches="swatches"
+              :bby-button-style="bbyButtonStyle"
+              :user-button-style="userButtonStyle"
+              :set-picker-to-bby-color="setPickerToBbyColor"
+              :set-picker-to-user-color="setPickerToUserColor"
+              :set-swatch-color="setSwatchColor"
+            />
           </div>
 
           <!-- scope -->
@@ -69,11 +67,7 @@
 
           <!-- tempo + knobs -->
           <div class="grp controls-container">
-            <div class="fader-box">
-              <label class="fader-label">TEMPO</label>
-              <div class="fader-value">{{ format2(tempo) }}</div>
-              <input type="range" class="fader" min="30" max="200" v-model.number="tempo" @dblclick="tempo=120"/>
-            </div>
+            <tempoFader v-model="tempo" />
 
             <div class="mixer-column">
               <div class="knob-box">
@@ -356,8 +350,10 @@ import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount, reactive } 
 import { throttle } from 'lodash';
 import bbyPixels from '@/components/bbyPixels.vue';
 import testCanvasControls from '@/components/testCanvasControls.vue';
+import swatchDrawer from '@/components/swatchDrawer.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
+import tempoFader from '@/components/tempoFader.vue';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
@@ -826,7 +822,6 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .section-header { display: flex; justify-content: center; align-items: center; position: relative; gap: .5rem; }
 .scope-controls { position: absolute; right: .25rem; top: 50%; transform: translateY(-50%); display: flex; gap: .25rem; }
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
-.row2x2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
 .action{display:block;width:100%; padding:.4rem .5rem; transition: all 0.2s ease-out; text-align:center;}
 .action.active, .action:active, .action.eyedropper-active {background:var(--accent-hover);border-color:var(--accent-colour) !important}
 .action.eyedropper-active { background-color: v-bind(eyedropperHoverColor); }
@@ -839,11 +834,6 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .scope-display { max-width: 100%; width: 100%; display: flex; flex-direction: column; aspect-ratio: 4/3; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; transition: aspect-ratio .3s ease; }
 .scope-display.minimized { aspect-ratio: 4/1; }
 .scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
-.swatch-drawer{padding:.4rem;border:var(--border);border-radius:calc(var(--border-radius)*.8);background:var(--panel-colour); display: flex; flex-direction: column; gap: .5rem;}
-.swatch-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:.35rem}
-.swatch{width:100%;aspect-ratio:1/1;border-radius:50%;border:var(--border-width) solid var(--bby-colour-dark);cursor:pointer}
-.swpop-enter-active,.swpop-leave-active{transition:opacity .12s ease,transform .12s ease}
-.swpop-enter-from,.swpop-leave-to{opacity:0;transform:translateY(-4px)}
 .flexspacer{flex:1 1 auto}
 .action.danger{background:#e94560;border-color:#fff;color:#fff;font-weight:900}
 @media (max-width:720px){.paint-page-layout{flex-direction:column}.left-column-paint{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.right-column-paint{width:100%}}

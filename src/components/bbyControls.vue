@@ -1,10 +1,6 @@
 <template>
   <div class="controls-panel">
-    <div class="input-group">
-      <input v-model="textToSay" @keyup.enter="handleSayClick" placeholder="type a message..." class="text-input" />
-      <button @click="handleSayClick" class="action-button" :disabled="!textToSay">send</button>
-      <button @click="handleFactClick" class="action-button">fact</button>
-    </div>
+    <chatControls @send="handleSend" @fact="handleFactClick" />
     <div class="input-group button-row">
       <input id="color-picker" type="color" v-model="colourInput" @input="updateUserColourAndTint" class="colour-input" />
       <input v-model="usernameInput" @keyup="handleUsernameUpdate" placeholder="enter username..." class="name-input"/>
@@ -20,20 +16,20 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
+import chatControls from '@/components/chatControls.vue';
 
 const { bbyState, say, requestStateChange, sayRandomFact, author, setUsername, clearBubbles, userColour, setUserColour, setBbyTintColour } = bbyUse();
 
-const textToSay = ref('');
 const toHex = (c: {r: number, g: number, b: number}) => `#${[c.r, c.g, c.b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
 const colourInput = ref(toHex(userColour.value));
 const usernameInput = ref(author.value);
 
-const handleSayClick = () => {
-  say(textToSay.value, usernameInput.value, userColour.value);
-  textToSay.value = '';
-};
 const handleFactClick = () => {
   sayRandomFact();
+};
+
+const handleSend = (message: string) => {
+  say(message, usernameInput.value, userColour.value);
 };
 
 const handleUsernameUpdate = () => {

@@ -360,7 +360,6 @@ function paint(e:PointerEvent){
   }
 }
 
-
 /* mount */
 onMounted(async()=>{ 
   await nextTick(); 

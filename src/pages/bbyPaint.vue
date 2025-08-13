@@ -47,23 +47,21 @@
               :set-swatch-color="setSwatchColor"
             />
           </div>
-
-          <!-- scope -->
-          <div class="grp">
-            <div class="section-header">
-              <label class="section">Colour Scope</label>
-              <div class="scope-controls">
-                <button class="action mini" :class="{active: scopeBase===3}" @click="scopeBase=3" title="Powers of 3">×3</button>
-                <button class="action mini" :class="{active: scopeBase===4}" @click="scopeBase=4" title="Powers of 4">×4</button>
-                <button class="action mini" @click="isScopeMinimized = !isScopeMinimized" :title="isScopeMinimized ? 'Expand' : 'Minimize'">
-                  {{ isScopeMinimized ? '▢' : '≡' }}
-                </button>
-              </div>
-            </div>
-            <div class="scope-display" :class="{minimized: isScopeMinimized}">
-              <canvas ref="scopeCanvas" class="scope-layer"></canvas>
-            </div>
-          </div>
+          <colourScope
+            v-model:scopeBase="scopeBase"
+            v-model:isScopeMinimized="isScopeMinimized"
+            :hex-color="hexColor"
+            :tempo="tempo"
+            :active-eqs="activeEQs"
+            :user-color-influence="userColorInfluence"
+            :bby-influence="bbyInfluence"
+            :red-influence="redInfluence"
+            :green-influence="greenInfluence"
+            :blue-influence="blueInfluence"
+            :rainbow-influence="rainbowInfluence"
+            :user-colour="userColour"
+            :current-colour="currentColour"
+          />
 
           <!-- tempo + knobs -->
           <div class="grp controls-container">
@@ -346,11 +344,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount, reactive } from 'vue';
-import { throttle } from 'lodash';
+import { ref, onMounted, computed, watch, onBeforeUnmount, reactive } from 'vue';
 import bbyPixels from '@/components/bbyPixels.vue';
 import testCanvasControls from '@/components/testCanvasControls.vue';
 import swatchDrawer from '@/components/swatchDrawer.vue';
+import colourScope from '@/components/colourScope.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
@@ -359,7 +357,6 @@ const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColou
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
 type RgbColor = { r: number; g: number; b: number };
 type RgbaColor = { r: number; g: number; b: number; a: number };
-type HsvColor = { h: number; s: number; v: number };
 type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
 type LfoWaveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'ramp' | 'random' | 'sequence';
 type InfluenceTarget = 'rainbowInfluence' | 'bbyInfluence' | 'userColorInfluence' | 'redInfluence' | 'greenInfluence' | 'blueInfluence';
@@ -427,8 +424,6 @@ const clamp = (v:number, mi:number, ma:number)=>Math.max(mi, Math.min(ma, v));
 const clampByte = (x:number)=>Math.max(0, Math.min(255, Math.round(x)));
 const rgbToHex = (r:number,g:number,b:number)=>"#"+[r,g,b].map(x=>{const h=clampByte(x).toString(16);return h.length===1?'0'+h:h;}).join('');
 const hexToRGB = (hx:string): RgbColor => { const h=hx.replace('#',''); return {r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16)}; };
-const rgbToHsv = (r:number,g:number,b:number): HsvColor => { r/=255;g/=255;b/=255; const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn; let h=0; if(d){ if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; } return {h,s:mx===0?0:d/mx,v:mx}; };
-const hsvToRgb = (h:number,s:number,v:number): RgbColor => { const c=v*s, x=c*(1-Math.abs(((h/60)%2)-1)), m=v-c; let r=0,g=0,b=0; h%=360;if(h<0)h+=360; if(0<=h&&h<60)[r,g,b]=[c,x,0]; else if(60<=h&&h<120)[r,g,b]=[x,c,0]; else if(120<=h&&h<180)[r,g,b]=[0,c,x]; else if(180<=h&&h<240)[r,g,b]=[0,x,c]; else if(240<=h&&h<300)[r,g,b]=[x,0,c]; else [r,g,b]=[c,0,x]; return { r:clampByte((r+m)*255), g:clampByte((g+m)*255), b:clampByte((b+m)*255) }; };
 const isColorDark = ({ r, g, b }: RgbColor): boolean => (r * 0.299 + g * 0.587 + b * 0.114) < 128;
 
 // number formatting + controls
@@ -715,71 +710,7 @@ function updateSequencerFromPointer(e:PointerEvent){
   sequencerGrid.value[cellX][cellY]=1;
   drawSequencer();
 }
-
-// SCOPE LOGIC
-const scopeCanvas = ref<HTMLCanvasElement | null>(null);
-const updateColorScope = throttle(() => {
-    if (!scopeCanvas.value) return;
-    const TOTAL_STEPS = 243;
-    const colors: RgbColor[] = [];
-    let c = hexToRGB(hexColor.value);
-    
-    for (let i = 0; i < TOTAL_STEPS; i++) {
-        let hsv = rgbToHsv(c.r, c.g, c.b);
-        const speed = (tempo.value / 100) * 0.002;
-        const rVec={r:255-c.r, g:-c.g, b:-c.b}, gVec={r:-c.r, g:255-c.g, b:-c.b}, bVec={r:-c.r, g:-c.g, b:255-c.b};
-        const uVec={r:userColour.value.r-c.r, g:userColour.value.g-c.g, b:userColour.value.b-c.b};
-        const bbyVec={r:currentColour.r-c.r, g:currentColour.g-c.g, b:currentColour.b-c.b};
-        const rainbowVecTarget = hsvToRgb((hsv.h + 20) % 360, hsv.s, hsv.v);
-        const rainbowVec = {r: rainbowVecTarget.r - c.r, g: rainbowVecTarget.g - c.g, b: rainbowVecTarget.b - c.b };
-        let dR=0, dG=0, dB=0;
-        if(activeEQs.value.has('user')) { dR+=uVec.r*(userColorInfluence.value/100); dG+=uVec.g*(userColorInfluence.value/100); dB+=uVec.b*(userColorInfluence.value/100); }
-        if(activeEQs.value.has('bby')) { dR+=bbyVec.r*(bbyInfluence.value/100); dG+=bbyVec.g*(bbyInfluence.value/100); dB+=bbyVec.b*(bbyInfluence.value/100); }
-        if(activeEQs.value.has('red')) { dR+=rVec.r*(redInfluence.value/100); dG+=rVec.g*(redInfluence.value/100); dB+=rVec.b*(redInfluence.value/100); }
-        if(activeEQs.value.has('green')) { dR+=gVec.r*(greenInfluence.value/100); dG+=gVec.g*(greenInfluence.value/100); dB+=gVec.b*(greenInfluence.value/100); }
-        if(activeEQs.value.has('blue')) { dR+=bVec.r*(blueInfluence.value/100); dG+=bVec.g*(blueInfluence.value/100); dB+=bVec.b*(blueInfluence.value/100); }
-        if(activeEQs.value.has('rainbow')) { dR+=rainbowVec.r*(rainbowInfluence.value/100); dG+=rainbowVec.g*(rainbowInfluence.value/100); dB+=rainbowVec.b*(rainbowInfluence.value/100); }
-        c.r += dR * speed; c.g += dG * speed; c.b += dB * speed;
-        c = {r: clampByte(c.r), g: clampByte(c.g), b: clampByte(c.b)};
-        colors.push(c);
-    }
-    
-    const canvas = scopeCanvas.value; const ctx = canvas.getContext('2d'); if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr;
-    ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    const resolutions = isScopeMinimized.value ? [3] : [3, 9, 27, 81];
-    const topFlex = 0.5;
-    let currentY = 0;
-    
-    for (let i = 0; i < resolutions.length; i++) {
-        const numPixels = resolutions[i];
-        let layerHeight = isScopeMinimized.value ? canvas.height : (i === 0) ? canvas.height * topFlex : (canvas.height * (1-topFlex)) / (resolutions.length - 1);
-        const pixelHeight = Math.max(1, Math.floor(layerHeight));
-        let pixelWidth = pixelHeight;
-        const requiredWidth = numPixels * pixelWidth;
-        const xOffset = (canvas.width - requiredWidth) / 2;
-        if (requiredWidth > canvas.width) {
-            pixelWidth = canvas.width / numPixels;
-            for (let x = 0; x < numPixels; x++) {
-                const colorIndex = Math.min(x, colors.length - 1);
-                ctx.fillStyle = `rgb(${colors[colorIndex].r},${colors[colorIndex].g},${colors[colorIndex].b})`;
-                ctx.fillRect(x * pixelWidth, currentY, pixelWidth, pixelHeight);
-            }
-        } else {
-            for (let x = 0; x < numPixels; x++) {
-                const colorIndex = Math.min(x, colors.length - 1);
-                ctx.fillStyle = `rgb(${colors[colorIndex].r},${colors[colorIndex].g},${colors[colorIndex].b})`;
-                ctx.fillRect(xOffset + x * pixelWidth, currentY, pixelWidth, pixelHeight);
-            }
-        }
-        currentY += layerHeight;
-    }
-}, 50);
-
-watch([hexColor, tempo, activeEQs, userColorInfluence, bbyInfluence, redInfluence, greenInfluence, blueInfluence, rainbowInfluence, userColour, currentColour, isScopeMinimized, isDrawingOnTestCanvas], updateColorScope, { deep: true, immediate: true });
-onMounted(() => { new ResizeObserver(updateColorScope).observe(scopeCanvas.value!); nextTick(updateColorScope); animationFrameId = requestAnimationFrame(lfoLoop); drawSequencer(); });
+onMounted(() => { animationFrameId = requestAnimationFrame(lfoLoop); drawSequencer(); });
 onBeforeUnmount(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); });
 
 // actions
@@ -819,8 +750,6 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}
-.section-header { display: flex; justify-content: center; align-items: center; position: relative; gap: .5rem; }
-.scope-controls { position: absolute; right: .25rem; top: 50%; transform: translateY(-50%); display: flex; gap: .25rem; }
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
 .action{display:block;width:100%; padding:.4rem .5rem; transition: all 0.2s ease-out; text-align:center;}
 .action.active, .action:active, .action.eyedropper-active {background:var(--accent-hover);border-color:var(--accent-colour) !important}
@@ -831,9 +760,6 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .colour-input-main::-webkit-color-swatch-wrapper { padding: 0 }
 .colour-input-main::-webkit-color-swatch { border: none; border-radius: calc(var(--border-radius) * .8) }
 .base-color-tools { display: flex; gap: .5rem; }
-.scope-display { max-width: 100%; width: 100%; display: flex; flex-direction: column; aspect-ratio: 4/3; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-black); overflow: hidden; transition: aspect-ratio .3s ease; }
-.scope-display.minimized { aspect-ratio: 4/1; }
-.scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
 .flexspacer{flex:1 1 auto}
 .action.danger{background:#e94560;border-color:#fff;color:#fff;font-weight:900}
 @media (max-width:720px){.paint-page-layout{flex-direction:column}.left-column-paint{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.right-column-paint{width:100%}}

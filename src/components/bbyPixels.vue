@@ -1,230 +1,318 @@
+<!-- CHARIS CAT // CHILD OF AN ANDROID - 2025 -->
 <template>
-	<div class="lab-wrap">
-		<div ref="stack" class="stack">
-			<BbySprite ref="spriteComp" /> 
-			<canvas
-				ref="overlay"
-				class="overlay"
-				@pointerdown="onDown"
-				@pointermove="onPointerMove"
-				@pointerup="onUp"
-				@pointerleave="onPointerLeave"
-			></canvas>
-		</div>
-	</div>
+  <div class="lab-wrap">
+    <div ref="stack" class="stack">
+      <BbySprite ref="spriteComp" />
+      <canvas ref="overlay" class="overlay"
+        @pointerdown="onDown" @pointermove="onPointerMove"
+        @pointerup="onUp" @pointerleave="onPointerLeave"></canvas>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, watch, defineEmits } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, watch } from 'vue';
 import { throttle } from 'lodash';
 import BbySprite from '@/components/bbySprite.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 
+type RgbColor = { r: number; g: number; b: number };
+type RgbaColor = { r: number; g: number; b: number; a: number };
+type HsvColor = { h: number; s: number; v: number };
+type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
+type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
+
+type StrokeState = {
+    brushColor: RgbColor;
+    brushHsv: HsvColor;
+};
+
+let strokeState: StrokeState | null = null;
+
 const props = defineProps<{
-	hexColor: string;
-	mode: 'paint' | 'erase' | 'eyedropper';
-	brushSize: number;
+  hexColor: string;
+  mode: Mode;
+  isScopeCursorActive: boolean;
+  activeEQs: Set<EQType>;
+  userSetColor: RgbColor;
+  bbyColor: RgbColor;
+  rainbowInfluence: number;
+  userColorInfluence: number;
+  bbyInfluence: number;
+  redInfluence: number;
+  greenInfluence: number;
+  blueInfluence: number;
+  tempo: number;
+  blendOpacity: number;
 }>();
+const emit = defineEmits(['color-picked', 'color-hovered']);
 
-const emit = defineEmits(['color-picked']);
-
-const SPRITE_W = 64
-const SPRITE_H = 64
-
+const SPRITE_W = 64, SPRITE_H = 64;
 defineExpose({ clearOverlay });
 
-const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate } = bbyUse(); 
+const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate, tickPaint } = bbyUse();
+const throttledReactionUpdate = throttle((r:number,g:number,b:number)=>sendBbyPaintColour(r,g,b),300);
 
-const throttledReactionUpdate = throttle((r: number, g: number, b: number) => {
-	sendBbyPaintColour(r, g, b);
-}, 300);
+let pixelUpdateBatch: {x:number,y:number,r:number,g:number,b:number,a:number}[] = [];
+const throttledSendBatch = throttle(()=>{ if(pixelUpdateBatch.length){ sendPixelUpdate(pixelUpdateBatch); pixelUpdateBatch=[]; } },100);
 
-let pixelUpdateBatch: {x:number, y:number, r:number, g:number, b:number, a:number}[] = [];
-const throttledSendBatch = throttle(() => {
-	if (pixelUpdateBatch.length > 0) {
-		sendPixelUpdate(pixelUpdateBatch);
-		pixelUpdateBatch = [];
-	}
-}, 100);
-
-const highlightedPixel = ref<{x: number, y: number} | null>(null);
-let isDown = false;
-let octx: CanvasRenderingContext2D|null = null;
+const highlightedPixel = ref<{x:number,y:number}|null>(null);
+let isDown=false; let octx:CanvasRenderingContext2D|null=null;
 const spriteComp = ref<InstanceType<typeof BbySprite>|null>(null);
 const overlay = ref<HTMLCanvasElement|null>(null);
-let ro: ResizeObserver | null = null;
-const dpr = window.devicePixelRatio || 1;
+let ro:ResizeObserver|null=null; const dpr = window.devicePixelRatio||1;
 
-function clearOverlay() {
-	if (!paintOverlayData.value) return;
+let paintedPixelsInStroke = new Set<string>();
 
-	const pixelsToClear = [];
-	const data = paintOverlayData.value.data;
-	for (let i = 0; i < data.length; i += 4) {
-			data[i] = 0;
-			data[i+1] = 0;
-			data[i+2] = 0;
-			data[i+3] = 0;
-	}
-	for (let y = 0; y < SPRITE_H; y++) {
-		for (let x = 0; x < SPRITE_W; x++) {
-			pixelsToClear.push({ x, y, r: 0, g: 0, b: 0, a: 0 });
-		}
-	}
-	
-	paintOverlayData.value = new ImageData(data, SPRITE_W, SPRITE_H);
-	sendPixelUpdate(pixelsToClear);
+/* colour helpers */
+function clampByte(x:number){ return Math.max(0, Math.min(255, Math.round(x))); }
+function idx(x:number,y:number){ return (y*SPRITE_W+x)*4; }
+function hexToRGB(hx:string): RgbColor { const h=hx.replace('#',''); return {r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16)}; }
+function rgbToHex(r:number,g:number,b:number){ return "#"+[r,g,b].map(x=>{const hex=clampByte(x).toString(16); return hex.length===1?'0'+hex:hex;}).join(''); }
+function rgbToHsv(r:number,g:number,b:number): HsvColor { r/=255;g/=255;b/=255; const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn; let h=0; if(d){ if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; } const s=mx===0?0:d/mx; return {h,s,v:mx}; }
+function hsvToRgb(h:number,s:number,v:number): RgbColor { const c=v*s, x=c*(1-Math.abs(((h/60)%2)-1)), m=v-c; let r=0,g=0,b=0;
+  h = h % 360; if (h < 0) h += 360;
+  if(0<=h&&h<60)[r,g,b]=[c,x,0]; else if(60<=h&&h<120)[r,g,b]=[x,c,0];
+  else if(120<=h&&h<180)[r,g,b]=[0,c,x]; else if(180<=h&&h<240)[r,g,b]=[0,x,c];
+  else if(240<=h&&h<300)[r,g,b]=[x,0,c]; else [r,g,b]=[c,0,x];
+  return { r:clampByte((r+m)*255), g:clampByte((g+m)*255), b:clampByte((b+m)*255) };
 }
 
-function setPixel(x:number, y:number, r:number, g:number, b:number, a:number) {
-	if (!paintOverlayData.value) return;
-	if (x < 0 || y < 0 || x >= SPRITE_W || y >= SPRITE_H) return; // Bounds check
 
-	const i = (y * SPRITE_W + x) * 4;
-	const d = paintOverlayData.value.data;
-	if (d[i] === r && d[i+1] === g && d[i+2] === b && d[i+3] === a) return;
-
-	d[i] = r; d[i+1] = g; d[i+2] = b; d[i+3] = a;
-	
-	pixelUpdateBatch.push({ x, y, r, g, b, a });
-	throttledSendBatch();
+/* sampling */
+let cachedBase:Uint8ClampedArray|null=null;
+function getBabyCanvas(){ const el = spriteComp.value?.$el as HTMLElement|undefined; return el&&el.tagName==='CANVAS' ? (el as HTMLCanvasElement) : null; }
+function cacheBabyAtStrokeStart(){
+  const baby=getBabyCanvas(); if(!baby){cachedBase=null;return;}
+  const ctx=baby.getContext('2d',{willReadFrequently:true}); if(!ctx){cachedBase=null;return;}
+  const img=ctx.getImageData(0,0,baby.width,baby.height).data;
+  const buf=new Uint8ClampedArray(SPRITE_W*SPRITE_H*4);
+  for(let y=0;y<SPRITE_H;y++)for(let x=0;x<SPRITE_W;x++){ const sx=Math.floor(x*(baby.width/SPRITE_W)), sy=Math.floor(y*(baby.height/SPRITE_H)); const si=(sy*baby.width+sx)*4, di=idx(x,y); buf[di]=img[si]; buf[di+1]=img[si+1]; buf[di+2]=img[si+2]; buf[di+3]=img[si+3]; }
+  cachedBase=buf;
 }
+function readOverlayRGB(x:number,y:number){ if(!paintOverlayData.value)return null; const d=paintOverlayData.value.data,i=idx(x,y),a=d[i+3]; return a>0?{r:d[i],g:d[i+1],b:d[i+2],a}:null; }
+function readBabyBaseRGB(x:number,y:number){ if(!cachedBase)return null; const i=idx(x,y); return { r:cachedBase[i], g:cachedBase[i+1], b:cachedBase[i+2], a:cachedBase[i+3] }; }
+function readCurrentRGB(x:number,y:number): RgbaColor { const overlay = readOverlayRGB(x,y); if(overlay) return overlay; const base = readBabyBaseRGB(x,y); if(base) return base; return {r:0,g:0,b:0,a:0}; }
 
-function paint(e: PointerEvent) {
-	const p = cssToPixel(e.clientX, e.clientY);
-	if (!p) return;
-
-	if (props.mode === 'eyedropper') {
-		if (!paintOverlayData.value) return;
-		const i = (p.y * SPRITE_W + p.x) * 4;
-		const d = paintOverlayData.value.data;
-		if (d[i+3] > 0) {
-			const pickedHex = `#${[d[i], d[i+1], d[i+2]].map(x => x.toString(16).padStart(2, '0')).join('')}`;
-			emit('color-picked', pickedHex);
-		}
-		return;
-	}
-
-	const offset = Math.floor((props.brushSize - 1) / 2);
-	for (let dy = -offset; dy <= offset; dy++) {
-		for (let dx = -offset; dx <= offset; dx++) {
-			const targetX = p.x + dx;
-			const targetY = p.y + dy;
-			
-			if (props.mode === 'erase') {
-				setPixel(targetX, targetY, 0, 0, 0, 0);
-			} else {
-				const { r,g,b } = hexToRGB(props.hexColor);
-				setPixel(targetX, targetY, r, g, b, 255);
-				throttledReactionUpdate(r, g, b);
-			}
-		}
-	}
+/* overlay buffer */
+function clearOverlay(){
+  if(!paintOverlayData.value) return;
+  const d=paintOverlayData.value.data; for(let i=0;i<d.length;i+=4){ d[i]=d[i+1]=d[i+2]=d[i+3]=0; }
+  tickPaint();
+  const out=[] as {x:number,y:number,r:number,g:number,b:number,a:number}[];
+  for(let y=0;y<SPRITE_H;y++) for(let x=0;x<SPRITE_W;x++) out.push({x,y,r:0,g:0,b:0,a:0});
+  sendPixelUpdate(out);
+}
+function setPixel(x:number,y:number,r:number,g:number,b:number,a:number){
+  if(!paintOverlayData.value) return;
+  if(x<0||y<0||x>=SPRITE_W||y>=SPRITE_H) return;
+  const i=idx(x,y), d=paintOverlayData.value.data;
+  d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a; tickPaint();
+  pixelUpdateBatch.push({x,y,r:clampByte(r),g:clampByte(g),b:clampByte(b),a:clampByte(a)}); throttledSendBatch();
 }
 
-function getBabyCanvas(): HTMLCanvasElement | null {
-	const el = spriteComp.value?.$el as HTMLElement | undefined;
-	if (!el) return null;
-	return (el.tagName === 'CANVAS' ? (el as HTMLCanvasElement) : null);
+/* overlay canvas */
+function setupOverlay(){ const baby=getBabyCanvas(); if(!baby||!overlay.value)return;
+  const cssW=baby.clientWidth, cssH=baby.clientHeight;
+  overlay.value.style.width=cssW+'px'; overlay.value.style.height=cssH+'px';
+  overlay.value.width=Math.round(cssW*dpr); overlay.value.height=Math.round(cssH*dpr);
+  octx=overlay.value.getContext('2d',{alpha:true}); if(!octx) throw new Error('overlay 2D ctx failed');
+  octx.imageSmoothingEnabled=false; redrawOverlay();
 }
-function setupOverlay() {
-	const baby = getBabyCanvas();
-	if (!baby || !overlay.value) return;
-	const cssW = baby.clientWidth, cssH = baby.clientHeight;
-	overlay.value.style.width = cssW + 'px';
-	overlay.value.style.height = cssH + 'px';
-	overlay.value.width	= Math.round(cssW * dpr);
-	overlay.value.height = Math.round(cssH * dpr);
-	octx = overlay.value.getContext('2d', { alpha: true });
-	if (!octx) throw new Error('overlay 2D ctx failed');
-	octx.imageSmoothingEnabled = false;
-	redrawOverlay();
-}
-function redrawOverlay() {
-	const baby = getBabyCanvas();
-	if (!octx || !overlay.value || !baby) return;
-	const cssW = baby.clientWidth, cssH = baby.clientHeight;
-	const s = Math.min(cssW / SPRITE_W, cssH / SPRITE_H) || 1;
-	octx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
-	octx.clearRect(-1e5, -1e5, 2e5, 2e5);
-	
-	if (highlightedPixel.value) {
-		const { x, y } = highlightedPixel.value;
-		const stretch_x = SPRITE_W + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0) - (bbyState.squish_left ? 1 : 0)	- (bbyState.squish_right ? 1 : 0);
-		const stretch_y = SPRITE_H + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0) - (bbyState.squish_up ? 1 : 0)	- (bbyState.squish_down ? 1 : 0);
-		const jumpset = bbyState.jumping ? -4 : 0;
-		const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
-		const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
-		const offset = Math.floor((props.brushSize - 1) / 2);
-		const hx = x - offset;
-		const hy = y - offset;
-		const hw = props.brushSize;
+function redrawOverlay(){
+  const baby=getBabyCanvas(); if(!octx||!overlay.value||!baby) return;
+  const cssW=baby.clientWidth, cssH=baby.clientHeight; const s=Math.min(cssW/SPRITE_W, cssH/SPRITE_H)||1;
+  octx.setTransform(s*dpr,0,0,s*dpr,0,0); octx.clearRect(-1e5,-1e5,2e5,2e5);
 
-		octx.fillStyle = props.mode === 'eyedropper' 
-			? 'rgba(255, 255, 255, 0.7)' 
-			: props.mode === 'erase' ? 'rgba(255, 255, 255, 0.4)' : props.hexColor + '80';
-		
-		octx.fillRect(
-			offset_x + hx * (stretch_x / SPRITE_W), 
-			offset_y + hy * (stretch_y / SPRITE_H), 
-			hw * (stretch_x / SPRITE_W), 
-			hw * (stretch_y / SPRITE_H)
-		);
-	}
+  if (props.isScopeCursorActive && highlightedPixel.value) {
+    const SCOPE_SIZE = 5;
+    const PIXEL_SIZE = 4;
+    const {x: hx, y: hy} = highlightedPixel.value;
+    const scope_offset_x = (hx / SPRITE_W < 0.5) ? 10 : - (SCOPE_SIZE * PIXEL_SIZE) - 10;
+    const scope_offset_y = (hy / SPRITE_H < 0.5) ? 10 : - (SCOPE_SIZE * PIXEL_SIZE) - 10;
+    
+    octx.save();
+    octx.translate(hx, hy);
+
+    for (let dy = 0; dy < SCOPE_SIZE; dy++) {
+      for (let dx = 0; dx < SCOPE_SIZE; dx++) {
+        const sx = hx - Math.floor(SCOPE_SIZE/2) + dx;
+        const sy = hy - Math.floor(SCOPE_SIZE/2) + dy;
+        const color = readCurrentRGB(sx, sy);
+        octx.fillStyle = `rgba(${color.r},${color.g},${color.b},${color.a/255})`;
+        octx.fillRect(scope_offset_x + dx * PIXEL_SIZE, scope_offset_y + dy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+    octx.strokeStyle = 'rgba(255,255,255,0.7)';
+    octx.lineWidth = 0.5;
+    octx.strokeRect(scope_offset_x - 1, scope_offset_y - 1, SCOPE_SIZE * PIXEL_SIZE + 2, SCOPE_SIZE * PIXEL_SIZE + 2);
+    octx.strokeStyle = 'rgba(0,0,0,0.7)';
+    octx.strokeRect(scope_offset_x + Math.floor(SCOPE_SIZE/2) * PIXEL_SIZE, scope_offset_y + Math.floor(SCOPE_SIZE/2) * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    octx.restore();
+
+  } else if (highlightedPixel.value) {
+    const {x,y}=highlightedPixel.value;
+    const stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
+    const stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
+    const jumpset=bbyState.jumping?-4:0;
+    const offset_x=(SPRITE_W-stretch_x)/2-(bbyState.stretch_left?1:0);
+    const offset_y=(SPRITE_H-stretch_y)/2-(bbyState.stretch_up?1:0)+jumpset;
+    const hx=x, hy=y, hw=1;
+    if (props.mode !== 'eyedropper') {
+        octx.fillStyle = props.mode === 'erase' ? 'rgba(255,255,255,.4)' : props.hexColor+'80';
+        octx.fillRect(offset_x + hx*(stretch_x/SPRITE_W), offset_y + hy*(stretch_y/SPRITE_H), hw*(stretch_x/SPRITE_W), hw*(stretch_y/SPRITE_H));
+    }
+  }
+}
+function cssToPixel(clientX:number, clientY:number){
+  const baby=getBabyCanvas(); if(!baby)return null;
+  const rect=baby.getBoundingClientRect(); const lx=clientX-rect.left, ly=clientY-rect.top;
+  const stretch_x=SPRITE_W+(bbyState.stretch_left?1:0)+(bbyState.stretch_right?1:0)-(bbyState.squish_left?1:0)-(bbyState.squish_right?1:0);
+  const stretch_y=SPRITE_H+(bbyState.stretch_up?1:0)+(bbyState.stretch_down?1:0)-(bbyState.squish_up?1:0)-(bbyState.squish_down?1:0);
+  const jumpset=bbyState.jumping?-4:0;
+  const offset_x=(SPRITE_W-stretch_x)/2-(bbyState.stretch_left?1:0);
+  const offset_y=(SPRITE_H-stretch_y)/2-(bbyState.stretch_up?1:0)+jumpset;
+  const scale_x=rect.width/SPRITE_W, scale_y=rect.height/SPRITE_H;
+  const canvas_x=lx/scale_x, canvas_y=ly/scale_y;
+  const px=Math.floor((canvas_x-offset_x)*(SPRITE_W/stretch_x));
+  const py=Math.floor((canvas_y-offset_y)*(SPRITE_H/stretch_y));
+  if(px<0||py<0||px>=SPRITE_W||py>=SPRITE_H) return null;
+  return {x:px,y:py};
 }
 
-function cssToPixel(clientX:number, clientY:number) {
-		const baby = getBabyCanvas();
-		if (!baby) return null;
-		const rect = baby.getBoundingClientRect();
-		const lx = clientX - rect.left, ly = clientY - rect.top;
-		const stretch_x = SPRITE_W + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0) - (bbyState.squish_left ? 1 : 0) - (bbyState.squish_right ? 1 : 0);
-		const stretch_y = SPRITE_H + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0) - (bbyState.squish_up ? 1 : 0) - (bbyState.squish_down ? 1 : 0);
-		const jumpset = bbyState.jumping ? -4 : 0;
-		const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
-		const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
-		const scale_x = rect.width / SPRITE_W, scale_y = rect.height / SPRITE_H;
-		const canvas_x = lx / scale_x, canvas_y = ly / scale_y;
-		const px = Math.floor((canvas_x - offset_x) * (SPRITE_W / stretch_x));
-		const py = Math.floor((canvas_y - offset_y) * (SPRITE_H / stretch_y));
-		if (px < 0 || py < 0 || px >= SPRITE_W || py >= SPRITE_H) return null;
-		return { x: px, y: py };
+/* input */
+function onDown(e:PointerEvent){
+  overlay.value?.setPointerCapture(e.pointerId);
+  isDown=true;
+  paintedPixelsInStroke.clear();
+  cacheBabyAtStrokeStart();
+  
+  const brushColor = hexToRGB(props.hexColor);
+  strokeState = {
+      brushColor: brushColor,
+      brushHsv: rgbToHsv(brushColor.r, brushColor.g, brushColor.b),
+  };
+  
+  paint(e);
 }
-function onDown(e: PointerEvent) {
-	overlay.value?.setPointerCapture(e.pointerId); isDown = true; paint(e);
+function onPointerMove(e:PointerEvent){ 
+    const p = cssToPixel(e.clientX, e.clientY);
+    highlightedPixel.value = p;
+    if (props.mode === 'eyedropper') {
+        emit('color-hovered', p ? readCurrentRGB(p.x, p.y) : null);
+    }
+    if(isDown) paint(e); 
+    redrawOverlay(); 
 }
-function onPointerMove(e: PointerEvent) {
-	highlightedPixel.value = cssToPixel(e.clientX, e.clientY); if (isDown) { paint(e); } redrawOverlay();
+function onUp(e:PointerEvent){
+  try{overlay.value?.releasePointerCapture(e.pointerId);}catch{}
+  isDown=false;
+  paintedPixelsInStroke.clear();
+  strokeState = null;
 }
-function onUp(e: PointerEvent) {
-	try { overlay.value?.releasePointerCapture(e.pointerId); } catch {} isDown = false;
+function onPointerLeave(){
+  highlightedPixel.value=null;
+  emit('color-hovered', null);
+  redrawOverlay();
 }
-function onPointerLeave() {
-	highlightedPixel.value = null; redrawOverlay();
+
+/* paint */
+function paint(e:PointerEvent){
+  const p=cssToPixel(e.clientX,e.clientY);
+  if(!p || !strokeState) return;
+
+  const pixelKey = `${p.x},${p.y}`;
+  if (isDown && paintedPixelsInStroke.has(pixelKey) && props.mode === 'paint') {
+    return;
+  }
+  paintedPixelsInStroke.add(pixelKey);
+  const { x, y } = p;
+
+  switch (props.mode) {
+    case 'eyedropper': {
+      const c = readCurrentRGB(x,y);
+      if(c) emit('color-picked', rgbToHex(c.r,c.g,c.b));
+      return;
+    }
+    
+    case 'paint': {
+      let c = { ...strokeState.brushColor };
+      let hsv = { ...strokeState.brushHsv };
+      
+      const speed = (props.tempo / 100) * 0.05;
+      const rVec = {r:255-c.r, g:-c.g, b:-c.b}, gVec={r:-c.r, g:255-c.g, b:-c.b}, bVec={r:-c.r, g:-c.g, b:255-c.b};
+      const uVec = {r:props.userSetColor.r-c.r, g:props.userSetColor.g-c.g, b:props.userSetColor.b-c.b};
+      const bbyVec = {r:props.bbyColor.r-c.r, g:props.bbyColor.g-c.g, b:props.bbyColor.b-c.b};
+      const rainbowVecTarget = hsvToRgb((hsv.h + 20) % 360, hsv.s, hsv.v);
+      const rainbowVec = {r: rainbowVecTarget.r - c.r, g: rainbowVecTarget.g - c.g, b: rainbowVecTarget.b - c.b };
+
+      let dR = 0, dG = 0, dB = 0;
+      if(props.activeEQs.has('user')) { dR += uVec.r * (props.userColorInfluence / 100); dG += uVec.g * (props.userColorInfluence / 100); dB += uVec.b * (props.userColorInfluence / 100); }
+      if(props.activeEQs.has('bby')) { dR += bbyVec.r * (props.bbyInfluence / 100); dG += bbyVec.g * (props.bbyInfluence / 100); dB += bbyVec.b * (props.bbyInfluence / 100); }
+      if(props.activeEQs.has('red')) { dR += rVec.r * (props.redInfluence / 100); dG += rVec.g * (props.redInfluence / 100); dB += rVec.b * (props.redInfluence / 100); }
+      if(props.activeEQs.has('green')) { dR += gVec.r * (props.greenInfluence / 100); dG += gVec.g * (props.greenInfluence / 100); dB += gVec.b * (props.greenInfluence / 100); }
+      if(props.activeEQs.has('blue')) { dR += bVec.r * (props.blueInfluence / 100); dG += bVec.g * (props.blueInfluence / 100); dB += bVec.b * (props.blueInfluence / 100); }
+      if(props.activeEQs.has('rainbow')) { dR += rainbowVec.r * (props.rainbowInfluence / 100); dG += rainbowVec.g * (props.rainbowInfluence / 100); dB += rainbowVec.b * (props.rainbowInfluence / 100); }
+
+      c.r += dR * speed; c.g += dG * speed; c.b += dB * speed;
+      
+      const finalColor = { r: clampByte(c.r), g: clampByte(c.g), b: clampByte(c.b) };
+      setPixel(x, y, finalColor.r, finalColor.g, finalColor.b, 255);
+      
+      strokeState.brushColor = finalColor;
+      strokeState.brushHsv = rgbToHsv(finalColor.r, finalColor.g, finalColor.b);
+      
+      const finalHex = rgbToHex(finalColor.r, finalColor.g, finalColor.b);
+      if(props.hexColor !== finalHex) emit('color-picked', finalHex);
+      throttledReactionUpdate(finalColor.r, finalColor.g, finalColor.b);
+      break;
+    }
+      
+    case 'blend': {
+      let existingColor = readCurrentRGB(x, y);
+      if (existingColor.a === 0) return;
+
+      const brushColor = hexToRGB(props.hexColor);
+      const opacity = props.blendOpacity / 100 * (props.tempo / 100);
+      
+      const r = brushColor.r * opacity + existingColor.r * (1 - opacity);
+      const g = brushColor.g * opacity + existingColor.g * (1 - opacity);
+      const b = brushColor.b * opacity + existingColor.b * (1 - opacity);
+      
+      setPixel(x, y, r, g, b, existingColor.a);
+      throttledReactionUpdate(r, g, b);
+      break;
+    }
+
+    case 'erase': {
+      const existingColor = readCurrentRGB(x, y);
+      if (existingColor.a === 0) return;
+      
+      const opacity = props.blendOpacity / 100 * (props.tempo / 100);
+      const finalAlpha = existingColor.a * (1 - opacity);
+      
+      setPixel(x, y, existingColor.r, existingColor.g, existingColor.b, finalAlpha);
+      break;
+    }
+  }
 }
-function hexToRGB(hex:string) {
-	const h = hex.replace('#','');
-	return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
-}
-onMounted(async () => {
-	await nextTick();
-	setupOverlay();
-	const baby = getBabyCanvas();
-	if (baby) { ro = new ResizeObserver(() => { setupOverlay(); redrawOverlay(); }); ro.observe(baby); }
-	window.addEventListener('resize', () => { setupOverlay(); redrawOverlay(); });
+
+
+/* mount */
+onMounted(async()=>{ 
+  await nextTick(); 
+  setupOverlay();
+  const baby=getBabyCanvas(); if(baby){ ro=new ResizeObserver(()=>{ setupOverlay(); redrawOverlay(); }); ro.observe(baby); }
+  window.addEventListener('resize', ()=>{ setupOverlay(); redrawOverlay(); });
 });
-onBeforeUnmount(() => {
-	const baby = getBabyCanvas();
-	if (ro && baby) ro.unobserve(baby);
-	window.removeEventListener('resize', setupOverlay);
-});
-watch(bbyState, () => { redrawOverlay(); }, { deep: true });
-
+onBeforeUnmount(()=>{ const baby=getBabyCanvas(); if(ro&&baby) ro.unobserve(baby); window.removeEventListener('resize', setupOverlay); });
+watch(bbyState, ()=>{ redrawOverlay(); }, {deep:true});
 </script>
 
 <style scoped>
-.lab-wrap, .stack { width: 100%; height: 100%; }
-.stack { display: grid; align-items: center; justify-content: center; image-rendering: pixelated; }
-.stack > :deep(canvas), .overlay { grid-area: 1 / 1; }
-.overlay { touch-action: none; cursor: crosshair; }
+.lab-wrap,.stack{width:100%;height:100%}
+.stack{display:grid;align-items:center;justify-content:center;image-rendering:pixelated}
+.stack>:deep(canvas),.overlay{grid-area:1/1}
+.overlay{touch-action:none;cursor:crosshair}
+.overlay:has(canvas[data-scope-active=true]) { cursor: none; }
 </style>

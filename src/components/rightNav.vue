@@ -1,8 +1,8 @@
 <template>
 	<nav class="right-nav-column">
 		<router-link to="/">index</router-link>
-		<router-link to="/test">test</router-link>
 		<router-link to="/paint">paint</router-link>
+		<router-link to="/test">test</router-link>
 	</nav>
 </template>
 

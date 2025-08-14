@@ -2,7 +2,9 @@
 
 import { reactive, readonly, ref, watch } from 'vue';
 import _ from 'lodash';
+import { api } from '@/api'; // <-- Import the new API module
 
+// ... (interfaces remain the same) ...
 interface Bubble {
   id: string;
   text: string;
@@ -25,6 +27,7 @@ interface Bubble {
 }
 
 interface UserColour { r: number; g: number; b: number; }
+
 
 const bbyState = reactive({
   eyes: 5, mouth: 1, cheeks_on: false, tears_on: false, jumping: false,
@@ -55,26 +58,21 @@ const seenMessageIds = new Set<string>();
 
 async function fetchBbyFacts() {
   try {
-    const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/bbybook', { cache: 'no-store' });
-    if (!response.ok) return;
-    bbyFacts.value = await response.json();
+    bbyFacts.value = await api.getBbyBook();
     console.log(`Loaded ${Object.keys(bbyFacts.value).length} bbyfacts!`);
   } catch (error) { console.error("Could not fetch bbybook:", error); }
 }
 
-// --- shared paint buffer + version tick for redraws ---
 const paintOverlayData = ref<ImageData | null>(null);
-const paintVersion = ref(0); // bump to trigger redraws without reallocating ImageData
+const paintVersion = ref(0);
 const bumpPaintVersion = _.throttle(() => { paintVersion.value++; }, 16, { trailing: true });
-export function tickPaint() { bumpPaintVersion(); } // optional: for components to call after local writes
+export function tickPaint() { bumpPaintVersion(); }
 
 const lastPaintEventId = ref<string | null>(null);
 
 async function fetchInitialPaintCanvas() {
   try {
-    const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/get_paint_canvas');
-    if (!response.ok) return;
-    const data = await response.json();
+    const data = await api.getPaintCanvas();
     if (data.paintOverlayData_b64) {
       const str = atob(data.paintOverlayData_b64);
       const len = str.length;
@@ -82,7 +80,7 @@ async function fetchInitialPaintCanvas() {
       for (let i = 0; i < len; i++) bytes[i] = str.charCodeAt(i);
       const clampedBytes = new Uint8ClampedArray(bytes.buffer);
       paintOverlayData.value = new ImageData(clampedBytes, 64, 64);
-      bumpPaintVersion(); // redraw once loaded
+      bumpPaintVersion();
       console.log("Initial paint canvas loaded.");
     }
   } catch (error) { console.error("Could not fetch initial paint canvas:", error); }
@@ -90,11 +88,7 @@ async function fetchInitialPaintCanvas() {
 
 async function sendPixelUpdate(pixels: {x:number, y:number, r:number, g:number, b:number, a:number}[]) {
   try {
-    await fetch('https://bbyapi.childofanandroid.co.uk/api/paint_pixel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pixels }),
-    });
+    await api.postPixelUpdate({ pixels });
   } catch (error) { console.error("Failed to send pixel update:", error); }
 }
 
@@ -105,12 +99,9 @@ function startClient() {
   fetchBbyFacts();
   fetchInitialPaintCanvas();
 
-  // state poll
   setInterval(async () => {
     try {
-      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/state');
-      if (!response.ok) return;
-      const serverState = await response.json();
+      const serverState = await api.getState();
       Object.assign(bbyState, serverState);
 
       if (serverState.R !== undefined) {
@@ -118,50 +109,43 @@ function startClient() {
         targetColour.g = serverState.G;
         targetColour.b = serverState.B;
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore poll errors */ }
   }, 500);
 
-  // paint event poll (in-place buffer writes + version tick)
   setInterval(async () => {
     if (!paintOverlayData.value) return;
     try {
+      // This endpoint is unique; keep direct fetch for URL searchParams.
       const url = new URL('https://bbyapi.childofanandroid.co.uk/api/paint_events');
       if (lastPaintEventId.value) url.searchParams.append('since', lastPaintEventId.value);
-
       const response = await fetch(url.toString());
       if (!response.ok) return;
 
       const events: {id: string, pixels: {x:number, y:number, r:number, g:number, b:number, a:number}[]}[] = await response.json();
-
       if (events.length > 0) {
-        const img = paintOverlayData.value;
-        const data = img.data; // Uint8ClampedArray
+        const data = paintOverlayData.value.data;
         for (const ev of events) {
           for (const p of ev.pixels) {
             const i = (p.y * 64 + p.x) * 4;
             data[i] = p.r; data[i+1] = p.g; data[i+2] = p.b; data[i+3] = p.a;
           }
         }
-        bumpPaintVersion(); // trigger redraw with no heavy allocations
+        bumpPaintVersion();
         lastPaintEventId.value = events[events.length - 1].id;
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore poll errors */ }
   }, 250);
 
-  // occasional full refresh (keeps late joiners correct)
-  setInterval(async () => { await fetchInitialPaintCanvas(); }, 60000);
+  setInterval(fetchInitialPaintCanvas, 60000);
 
-  // chat history poll
   setInterval(async () => {
     try {
-      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/chat_history', { cache: 'no-store' });
-      if (!response.ok) return;
-
-      const serverHistory: { id: string; author: string; text: string; colour: UserColour }[] = await response.json();
+      const serverHistory: { id: string; author: string; text: string; colour: UserColour }[] = await api.getChatHistory();
       const serverIds = new Set(serverHistory.map(m => m.id));
       seenMessageIds.forEach(id => { if (!serverIds.has(id)) seenMessageIds.delete(id); });
 
       serverHistory.forEach(message => {
+        // ... (bubble creation logic is unchanged) ...
         const bubbleExists = bbyState.bubbles.some(b => b.id === message.id);
         const ghostExists = bbyState.graveyardBubbles.some(g => g.id === `ghost-${message.id}`);
         if (!bubbleExists && !ghostExists && !seenMessageIds.has(message.id)) {
@@ -180,17 +164,11 @@ function startClient() {
           const jitter = Math.random() * 3000 - 1500;
 
           const newBubble: Bubble = {
-            id: message.id,
-            text: message.text,
-            author: message.author,
-            ghostX: randw(-50, 50),
-            ghostY: randh(-50, 50),
+            id: message.id, text: message.text, author: message.author,
+            ghostX: randw(-50, 50), ghostY: randh(-50, 50),
             ghostR: `${Math.random() * jitter * (Math.random() > 0.5 ? 1 : -1) + 42}deg`,
-            ghostOpacity1: (Math.random() * 0.2),
-            ghostOpacity2: (Math.random() * 0.1),
-            ghostBlur: (Math.random() * 100),
-            bgColour: stampedBgColour,
-            borderColour: stampedBorderColour,
+            ghostOpacity1: (Math.random() * 0.2), ghostOpacity2: (Math.random() * 0.1),
+            ghostBlur: (Math.random() * 100), bgColour: stampedBgColour, borderColour: stampedBorderColour,
           };
 
           bbyState.bubbles.push(newBubble);
@@ -201,7 +179,6 @@ function startClient() {
     } catch (error) { console.error("failed to fetch chat history:", error); }
   }, 4200);
 
-  // gentle colour easing
   function colourAnimationLoop() {
     currentColour.r += (targetColour.r - currentColour.r) * 0.06;
     currentColour.g += (targetColour.g - currentColour.g) * 0.03;
@@ -211,15 +188,9 @@ function startClient() {
   requestAnimationFrame(colourAnimationLoop);
 }
 
-// --- misc actions ---
 async function requestStateChange(updates: object) {
   try {
-    await fetch('https://bbyapi.childofanandroid.co.uk/api/set', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify(updates),
-    });
+    await api.postStateChange(updates);
   } catch (error) { console.error("failed to send state change:", error); }
 }
 
@@ -235,25 +206,12 @@ async function say(text: string, author: string, colour: UserColour) {
   const trimmed = text.trim();
   if (!trimmed) return;
   setBbyTintColour(colour.r, colour.g, colour.b);
-
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const response = await fetch('https://bbyapi.childofanandroid.co.uk/api/say', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({ text: trimmed, author: author, colour: colour }),
-      });
-      if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-      return;
-    } catch (error) {
-      if (attempt === MAX_ATTEMPTS) console.error("failed to talk to baby:", error);
-      else await new Promise(resolve => setTimeout(resolve, attempt * 1000));
-    }
-  }
+  try {
+    await api.postSay({ text: trimmed, author, colour });
+  } catch (error) { console.error("failed to talk to baby:", error); }
 }
 
+// ... (removeBubble, clearBubbles, sayRandomFact are unchanged) ...
 const MAX_GHOSTS = 100;
 function removeBubble(id: string) {
   const bubbleEl = document.querySelector(`[data-bubble-id="${id}"]`);
@@ -269,24 +227,13 @@ function removeBubble(id: string) {
     const easing = easings[Math.floor(Math.random() * easings.length)];
 
     const ghostBubble: Bubble = {
-      id: `ghost-${originalBubble.id}`,
-      text: originalBubble.text,
-      startX: `${rect.left + window.scrollX}px`,
-      startY: `${rect.top + window.scrollY}px`,
-      width: `${rect.width}px`,
-      height: `${rect.height}px`,
-      ghostX: originalBubble.ghostX,
-      ghostY: originalBubble.ghostY,
-      ghostR: originalBubble.ghostR,
-      ghostOpacity1: originalBubble.ghostOpacity1,
-      ghostOpacity2: originalBubble.ghostOpacity2,
-      ghostBlur: originalBubble.ghostBlur,
-      author: originalBubble.author,
-      duration: `${duration}s`,
-      easing: easing,
-      delay: `${delay}s`,
-      bgColour: originalBubble.bgColour,
-      borderColour: originalBubble.borderColour,
+      id: `ghost-${originalBubble.id}`, text: originalBubble.text,
+      startX: `${rect.left + window.scrollX}px`, startY: `${rect.top + window.scrollY}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`,
+      ghostX: originalBubble.ghostX, ghostY: originalBubble.ghostY, ghostR: originalBubble.ghostR,
+      ghostOpacity1: originalBubble.ghostOpacity1, ghostOpacity2: originalBubble.ghostOpacity2, ghostBlur: originalBubble.ghostBlur,
+      author: originalBubble.author, duration: `${duration}s`, easing: easing, delay: `${delay}s`,
+      bgColour: originalBubble.bgColour, borderColour: originalBubble.borderColour,
     };
 
     bbyState.graveyardBubbles.push(ghostBubble);
@@ -296,18 +243,10 @@ function removeBubble(id: string) {
     bbyState.bubbles.splice(bubbleIndex, 1);
   }
 }
-
-function clearBubbles() {
-  bbyState.bubbles = [];
-  bbyState.graveyardBubbles = [];
-}
-
+function clearBubbles() { bbyState.bubbles = []; bbyState.graveyardBubbles = []; }
 function sayRandomFact() {
   const factKeys = Object.keys(bbyFacts.value);
-  if (factKeys.length === 0) {
-    say("I don't know any facts yet...", author.value, userColour.value);
-    return;
-  }
+  if (factKeys.length === 0) { say("I don't know any facts yet...", author.value, userColour.value); return; }
   const randomKey = factKeys[Math.floor(Math.random() * factKeys.length)];
   const fact = bbyFacts.value[randomKey];
   if (fact && fact.value) {
@@ -316,22 +255,14 @@ function sayRandomFact() {
   }
 }
 
-// --- save & autosnap helpers ---
 export async function saveCompositeToServer(label = "manual") {
-  const canvas = document.querySelector(
-    '[aria-label="AI baby sprite, somewhere between a ghost and a robot"]'
-  ) as HTMLCanvasElement | null;
+  const canvas = document.querySelector('[aria-label="AI baby sprite, somewhere between a ghost and a robot"]') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('no canvas');
-
   const dataUrl = canvas.toDataURL('image/png');
-  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/snapshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label, composite_png_b64: dataUrl })
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j?.error || `snapshot failed: ${r.status}`);
+  
+  const j = await api.postSnapshot({ label, composite_png_b64: dataUrl });
   if (!j.png_url) throw new Error('snapshot saved but no png_url returned');
+
   try {
     await saveCanvasToGallery(canvas, author.value, label);
   } catch (e: any) {
@@ -341,126 +272,100 @@ export async function saveCompositeToServer(label = "manual") {
 }
 
 export async function saveCanvasToGallery(canvas: HTMLCanvasElement, authorName: string, label = 'grid') {
-  const blob: Blob = await new Promise((res, rej) =>
-    canvas.toBlob(b => b ? res(b) : rej(new Error('canvas.toBlob() returned null')), 'image/png', 1)
-  );
-  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery/save', {
-    method: 'POST',
-    headers: { 'content-type': 'image/png', 'x-author': authorName, 'x-label': label },
-    body: blob
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw new Error(j?.error || `gallery save failed: ${r.status}`);
+  const blob: Blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('canvas.toBlob() returned null')), 'image/png', 1));
+  const j = await api.postSaveToGallery(blob, authorName, label);
   return j.url as string;
 }
 
-export async function saveTestGridImage(
-  canvas: HTMLCanvasElement,
-  authorName: string,
-  label = 'grid'
-) {
+export async function saveTestGridImage(canvas: HTMLCanvasElement, authorName: string, label = 'grid') {
   return saveCanvasToGallery(canvas, authorName, label);
 }
 
 export async function fetchTestGridGallery() {
   try {
-    const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery', { cache: 'no-store' });
-    if (!r.ok) return [];
-    return await r.json() as { url: string; author?: string; label?: string }[];
+    return await api.getGallery() as { url: string; author?: string; label?: string }[];
   } catch (error) {
     console.error('Could not fetch live gallery:', error);
     return [];
   }
 }
 
-let lastSeenAutoSnapId: string | null = null;
+export async function fetchBbyBookGallery() {
+  try {
+    const [gallery, book] = await Promise.all([
+      api.getGallery() as Promise<{ url: string; author?: string; label?: string }[]>,
+      api.getBbyBook() as Promise<Record<string, {
+        value: string;
+        author: string;
+        timestamp: number;
+        teach_bonus: number;
+        num_produced: number;
+        id: number;
+      }>>
+    ]);
 
+    return gallery
+      // The filter remains the same: it only includes gallery items
+      // that have a label which is a key in the bbybook.
+      .filter((item): item is { url: string; author?: string; label: string } =>
+        !!item.label && !!book[item.label]
+      )
+      // This part is updated to return ALL the data we need for the styled card.
+      .map(item => ({
+        url: item.url,
+        imageAuthor: item.author,
+        factName: item.label,      // The name of the fact (e.g., "cat")
+        factData: book[item.label] // The full object with all details
+      }));
+  } catch (error) {
+    console.error('Could not fetch bbybook gallery:', error);
+    return [];
+  }
+}
+
+let lastSeenAutoSnapId: string | null = null;
 export async function pollActivityForAutosnap() {
   try {
-    const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/activity', { cache: 'no-store' });
-    if (!r.ok) return;
-    const a = await r.json();
+    const a = await api.getActivity();
     if (a.last_autosnap_id && a.last_autosnap_id !== lastSeenAutoSnapId) {
-      const canvas = document.querySelector(
-        '[aria-label="AI baby sprite, somewhere between a ghost and a robot"]'
-      ) as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[aria-label="AI baby sprite, somewhere between a ghost and a robot"]') as HTMLCanvasElement | null;
       if (canvas) {
         const dataUrl = canvas.toDataURL('image/png');
-        await fetch(`https://bbyapi.childofanandroid.co.uk/api/snapshot_attach_png/${a.last_autosnap_id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ composite_png_b64: dataUrl })
-        });
+        await api.postAttachPng(a.last_autosnap_id, { composite_png_b64: dataUrl });
       }
       lastSeenAutoSnapId = a.last_autosnap_id;
     }
-  } catch { /* ignore */ }
-  setTimeout(pollActivityForAutosnap, 7000); // 5–10s is chill
+  } catch { /* ignore poll errors */ }
+  setTimeout(pollActivityForAutosnap, 7000);
 }
 
-// --- theme CSS syncing ---
+// ... (watchers for CSS variables are unchanged) ...
 watch(currentColour, (newColour) => {
-  const r = Math.round(newColour.r);
-  const g = Math.round(newColour.g);
-  const b = Math.round(newColour.b);
-
+  const r = Math.round(newColour.r); const g = Math.round(newColour.g); const b = Math.round(newColour.b);
   const root = document.documentElement;
   root.style.setProperty('--bby-colour', `rgba(${r}, ${g}, ${b}, 0.9)`);
-
-  const panelR = Math.max(0, r - 75);
-  const panelG = Math.max(0, g - 100);
-  const panelB = Math.max(0, b - 75);
+  const panelR = Math.max(0, r - 75); const panelG = Math.max(0, g - 100); const panelB = Math.max(0, b - 75);
   root.style.setProperty('--bby-colour-panel', `rgb(${panelR}, ${panelG}, ${panelB})`);
-
-  const borderR = Math.max(0, r - 30);
-  const borderG = Math.max(0, g - 40);
-  const borderB = Math.max(0, b - 30);
+  const borderR = Math.max(0, r - 30); const borderG = Math.max(0, g - 40); const borderB = Math.max(0, b - 30);
   root.style.setProperty('--bby-colour-dark', `rgb(${borderR}, ${borderG}, ${borderB})`);
-
-  const bgR = Math.max(0, r - 135);
-  const bgG = Math.max(0, g - 180);
-  const bgB = Math.max(0, b - 135);
+  const bgR = Math.max(0, r - 135); const bgG = Math.max(0, g - 180); const bgB = Math.max(0, b - 135);
   root.style.setProperty('--bby-colour-black', `rgb(${bgR}, ${bgG}, ${bgB})`);
 }, { deep: true, immediate: true });
-
 watch(userColour, (newUserColour) => {
   const { r, g, b } = newUserColour;
-
   const root = document.documentElement;
   root.style.setProperty('--user-colour', `rgb(${r}, ${g}, ${b})`);
-
-  const hoverR = Math.max(0, r - 30);
-  const hoverG = Math.max(0, g - 40);
-  const hoverB = Math.max(0, b - 30);
+  const hoverR = Math.max(0, r - 30); const hoverG = Math.max(0, g - 40); const hoverB = Math.max(0, b - 30);
   root.style.setProperty('--user-colour-dark', `rgb(${hoverR}, ${hoverG}, ${hoverB})`);
 }, { deep: true, immediate: true });
 
-// --- exported API ---
 export function bbyUse() {
   startClient();
   return {
-    bbyState: readonly(bbyState),
-    currentColour: readonly(currentColour),
-    tintStrength: readonly(tintStrength),
-    author: readonly(author),
-    userColour: readonly(userColour),
-    paintOverlayData,
-    paintVersion,
-    tickPaint,
-    sendPixelUpdate,
-    setUsername,
-    setUserColour,
-    requestStateChange,
-    setBbyTintColour,
-    sendBbyPaintColour,
-    say,
-    removeBubble,
-    sayRandomFact,
-    saveCompositeToServer,
-    pollActivityForAutosnap,
-    saveTestGridImage,
-    fetchTestGridGallery,
-    clearBubbles,
-    bbyFacts: readonly(bbyFacts),
+    bbyState: readonly(bbyState), currentColour: readonly(currentColour), tintStrength: readonly(tintStrength),
+    author: readonly(author), userColour: readonly(userColour), paintOverlayData, paintVersion, tickPaint,
+    sendPixelUpdate, setUsername, setUserColour, requestStateChange, setBbyTintColour, sendBbyPaintColour, say,
+    removeBubble, sayRandomFact, saveCompositeToServer, pollActivityForAutosnap, saveTestGridImage, fetchTestGridGallery,
+    fetchBbyBookGallery, clearBubbles, bbyFacts: readonly(bbyFacts),
   };
 }

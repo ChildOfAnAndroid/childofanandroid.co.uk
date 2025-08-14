@@ -764,7 +764,7 @@ async function handleSaveTestSquareClick() {
     const url = await saveTestGridImage(
       canvas,
       author.value,
-      `test-${testCanvasResolution.value}x${testCanvasResolution.value}`
+      saveLabel.value || `test-${testCanvasResolution.value}x${testCanvasResolution.value}` // Use the input, with a fallback
     );
     showToast('Saved to gallery!', 2000);
     window.open(url, '_blank');

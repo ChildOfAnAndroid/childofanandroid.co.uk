@@ -47,7 +47,7 @@ const props = defineProps<{
 const emit = defineEmits(['color-picked', 'color-hovered']);
 
 let SPRITE_W = 64, SPRITE_H = 64;
-defineExpose({ clearOverlay, exportPng });
+defineExpose({ clearOverlay, exportCanvas });
 
 const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate, tickPaint } = bbyUse();
 const throttledReactionUpdate = throttle((r:number,g:number,b:number)=>sendBbyPaintColour(r,g,b),300);
@@ -78,12 +78,20 @@ function ensureTmpCanvas(force=false) {
   }
 }
 
-function exportPng(): string {
+function exportCanvas(): HTMLCanvasElement | null {
   ensureTmpCanvas();
-  if (!tmpCanvas || !tmpCtx || !currentPaintData.value) return '';
+  if (!tmpCanvas || !tmpCtx || !currentPaintData.value) return null;
   tmpCtx.clearRect(0, 0, SPRITE_W, SPRITE_H);
   tmpCtx.putImageData(currentPaintData.value, 0, 0);
-  return tmpCanvas.toDataURL('image/png');
+  const scale = overlay.value ? Math.round(overlay.value.width / SPRITE_W) : 1;
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = SPRITE_W * scale;
+  outCanvas.height = SPRITE_H * scale;
+  const outCtx = outCanvas.getContext('2d');
+  if (!outCtx) return null;
+  outCtx.imageSmoothingEnabled = false;
+  outCtx.drawImage(tmpCanvas, 0, 0, outCanvas.width, outCanvas.height);
+  return outCanvas;
 }
 
 /* colour helpers */

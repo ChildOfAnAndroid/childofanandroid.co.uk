@@ -355,30 +355,18 @@ export async function saveCanvasToGallery(canvas: HTMLCanvasElement, authorName:
 }
 
 export async function saveTestGridImage(
-  pngDataUrl: string,
+  canvas: HTMLCanvasElement,
   authorName: string,
   label = 'grid'
 ) {
-  const blob = await (await fetch(pngDataUrl)).blob();
-  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery/save', {
-    method: 'POST',
-    headers: {
-      'content-type': 'image/png',
-      'x-author': authorName,
-      'x-label': label,
-    },
-    body: blob,
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw new Error(j?.error || `gallery save failed: ${r.status}`);
-  return j.url as string;
+  return saveCanvasToGallery(canvas, authorName, label);
 }
 
 export async function fetchTestGridGallery() {
   try {
     const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery', { cache: 'no-store' });
     if (!r.ok) return [];
-    return await r.json();
+    return await r.json() as { url: string; author?: string; label?: string }[];
   } catch (error) {
     console.error('Could not fetch live gallery:', error);
     return [];
@@ -473,5 +461,6 @@ export function bbyUse() {
     saveTestGridImage,
     fetchTestGridGallery,
     clearBubbles,
+    bbyFacts: readonly(bbyFacts),
   };
 }

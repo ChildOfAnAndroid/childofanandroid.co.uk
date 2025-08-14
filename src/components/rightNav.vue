@@ -4,6 +4,7 @@
 		<router-link to="/paint">paint</router-link>
 		<router-link to="/gallery">gallery</router-link>
 		<router-link to="/test">test</router-link>
+		<router-link to="/bbybook">test</router-link>
 	</nav>
 </template>
 

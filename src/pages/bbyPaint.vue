@@ -340,7 +340,16 @@
             v-model:resolution="testCanvasResolution"
             @clear="handleClearTestSquareClick"
           />
-          <button class="action" @click="handleSaveTestSquareClick">Save to Gallery</button>
+          <div class="save-group">
+            <input
+              v-if="saveConfirmClicks > 0"
+              v-model="saveLabel"
+              placeholder="name (optional)"
+            />
+            <button class="action" @click="handleSaveTestSquareClick">
+              {{ saveButtonText }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -390,6 +399,11 @@ const bbyPixelsRef = ref<InstanceType<typeof bbyPixels> | null>(null);
 const testSquareRef = ref<InstanceType<typeof bbyPixels> | null>(null);
 const saving = ref(false);
 const toast = ref('');
+const saveLabel = ref('');
+const saveConfirmClicks = ref(0);
+const saveButtonText = computed(() =>
+  saveConfirmClicks.value === 0 ? 'Save to Gallery' : 'Click again to save'
+);
 const eyedropperHoverColor = ref<string | null>(null);
 
 const tempo = ref(120);
@@ -739,19 +753,27 @@ function handleClearTestSquareClick() {
 }
 async function handleSaveTestSquareClick() {
   if (!testSquareRef.value) return;
+  if (saveConfirmClicks.value === 0) {
+    saveConfirmClicks.value = 1;
+    showToast('Add a name and click again to save', 3000);
+    return;
+  }
   try {
-    const dataUrl = testSquareRef.value.exportPng(); // data:image/png;base64,...
+    const canvas = testSquareRef.value.exportCanvas();
+    if (!canvas) return;
     const url = await saveTestGridImage(
-      dataUrl,
+      canvas,
       author.value,
       `test-${testCanvasResolution.value}x${testCanvasResolution.value}`
     );
     showToast('Saved to gallery!', 2000);
-    // optional: open the image
     window.open(url, '_blank');
-  } catch (e:any) {
+  } catch (e: any) {
     console.error('[gallery/save] failed:', e?.message || e);
     showToast('Save failed :(  (check console)', 2500);
+  } finally {
+    saveConfirmClicks.value = 0;
+    saveLabel.value = '';
   }
 }
 
@@ -774,6 +796,8 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .grp{display:flex;flex-direction:column;gap:.5rem}
+.save-group{display:flex;flex-direction:column;gap:.5rem}
+.save-group input{padding:.4rem;border:var(--border);border-radius:var(--border-radius);}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
 .action{display:block;width:100%; padding:.4rem .5rem; transition: all 0.2s ease-out; text-align:center;}

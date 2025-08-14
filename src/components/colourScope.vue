@@ -1,7 +1,8 @@
+<!-- src/components/colourScope.vue -->
 <template>
   <div class="scope-box">
     <label class="scope-label">SCOPE</label>
-    <div ref="scopeDisplay" class="scope-display" :class="{ minimized: props.isScopeMinimized }">
+    <div ref="scopeDisplay" class="scope-display" :class="{ minimized: props.isScopeMinimized }" title="Next brush colours">
       <canvas ref="scopeCanvas" class="scope-layer"></canvas>
     </div>
     <div class="scope-controls">
@@ -11,9 +12,7 @@
         class="action mini"
         @click="emit('update:isScopeMinimized', !props.isScopeMinimized)"
         :title="props.isScopeMinimized ? 'Expand' : 'Minimize'"
-      >
-        {{ props.isScopeMinimized ? '▢' : '≡' }}
-      </button>
+      >{{ props.isScopeMinimized ? '▢' : '≡' }}</button>
     </div>
   </div>
 </template>
@@ -21,9 +20,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
 import { throttle } from 'lodash';
-
-type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
-type RgbColor = { r: number; g: number; b: number };
+import { computeNextColours } from '@/utils/colourEngine';
+import type { EQType, RgbColor } from '@/utils/colourEngine';
 
 const props = defineProps<{
   scopeLength: number;
@@ -41,155 +39,205 @@ const props = defineProps<{
   currentColour: RgbColor;
 }>();
 
-const scopeCanvas = ref<HTMLCanvasElement | null>(null);
-const scopeDisplay = ref<HTMLDivElement | null>(null);
-
 const emit = defineEmits<{
   (e: 'update:scopeLength', v: number): void;
   (e: 'update:isScopeMinimized', v: boolean): void;
 }>();
 
-function clampByte(x: number) {
-  return Math.max(0, Math.min(255, Math.round(x)));
-}
-function rgbToHsv(r: number, g: number, b: number) {
-  r /= 255; g /= 255; b /= 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-  let h = 0;
-  if (d) {
-    if (mx === r) h = ((g - b) / d) % 6;
-    else if (mx === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
-    if (h < 0) h += 360;
-  }
-  const s = mx === 0 ? 0 : d / mx;
-  return { h, s, v: mx };
-}
-function hsvToRgb(h: number, s: number, v: number) {
-  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
-  let r = 0, g = 0, b = 0;
-  h %= 360; if (h < 0) h += 360;
-  if (0 <= h && h < 60) [r, g, b] = [c, x, 0];
-  else if (60 <= h && h < 120) [r, g, b] = [x, c, 0];
-  else if (120 <= h && h < 180) [r, g, b] = [0, c, x];
-  else if (180 <= h && h < 240) [r, g, b] = [0, x, c];
-  else if (240 <= h && h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  return {
-    r: clampByte((r + m) * 255),
-    g: clampByte((g + m) * 255),
-    b: clampByte((b + m) * 255)
-  };
-}
-function hexToRGB(hx: string): RgbColor {
-  const h = hx.replace('#', '');
-  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
-}
+const scopeCanvas = ref<HTMLCanvasElement | null>(null);
+const scopeDisplay = ref<HTMLDivElement | null>(null);
 
 function getMaxSteps() {
   if (!scopeDisplay.value) return 1;
-  const fontSize = parseFloat(getComputedStyle(scopeDisplay.value).fontSize) || 16;
-  return Math.max(1, Math.floor(scopeDisplay.value.clientHeight / fontSize));
+  // Aim for chunky rows
+  const minRow = 16; // px
+  return Math.max(1, Math.floor(scopeDisplay.value.clientHeight / minRow));
+}
+function decrementScope() { emit('update:scopeLength', Math.max(1, props.scopeLength - 1)); }
+function incrementScope() { emit('update:scopeLength', Math.min(props.scopeLength + 1, getMaxSteps())); }
+
+// rounded-rect helper
+function rr(ctx: CanvasRenderingContext2D, x:number, y:number, w:number, h:number, r:number){
+  const rad = Math.min(r, h*0.5, w*0.5);
+  ctx.beginPath();
+  ctx.moveTo(x+rad, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, rad);
+  ctx.arcTo(x+w, y+h, x,   y+h, rad);
+  ctx.arcTo(x,   y+h, x,   y,   rad);
+  ctx.arcTo(x,   y,   x+w, y,   rad);
+  ctx.closePath();
 }
 
-function decrementScope() {
-  emit('update:scopeLength', Math.max(1, props.scopeLength - 1));
-}
-
-function incrementScope() {
-  const max = getMaxSteps();
-  emit('update:scopeLength', Math.min(props.scopeLength + 1, max));
-}
-
-const updateColorScope = throttle(() => {
+const draw = throttle(() => {
   if (!scopeCanvas.value || !scopeDisplay.value) return;
-  const canvas = scopeCanvas.value;
-  const parent = canvas.parentElement as HTMLElement | null;
-  if (!parent) return;
+
+  // 1) Build colour steps with the SAME math as the brush
   const maxSteps = getMaxSteps();
   if (props.scopeLength > maxSteps) emit('update:scopeLength', maxSteps);
-  const TOTAL_STEPS = Math.max(1, Math.min(Math.round(props.scopeLength), maxSteps));  
-  const colors: RgbColor[] = [];
-  let c = hexToRGB(props.hexColor);
+  const TOTAL = Math.max(1, Math.min(Math.round(props.scopeLength), maxSteps));
 
-  for (let i = 0; i < TOTAL_STEPS; i++) {
-    let hsv = rgbToHsv(c.r, c.g, c.b);
-    const speed = (props.tempo / 100) * 0.002;
-    const rVec = { r: 255 - c.r, g: -c.g, b: -c.b };
-    const gVec = { r: -c.r, g: 255 - c.g, b: -c.b };
-    const bVec = { r: -c.r, g: -c.g, b: 255 - c.b };
-    const uVec = { r: props.userColour.r - c.r, g: props.userColour.g - c.g, b: props.userColour.b - c.b };
-    const bbyVec = { r: props.currentColour.r - c.r, g: props.currentColour.g - c.g, b: props.currentColour.b - c.b };
-    const rainbowVecTarget = hsvToRgb((hsv.h + 20) % 360, hsv.s, hsv.v);
-    const rainbowVec = { r: rainbowVecTarget.r - c.r, g: rainbowVecTarget.g - c.g, b: rainbowVecTarget.b - c.b };
-    let dR = 0, dG = 0, dB = 0;
-    if (props.activeEqs.has('user')) { dR += uVec.r * (props.userColorInfluence / 100); dG += uVec.g * (props.userColorInfluence / 100); dB += uVec.b * (props.userColorInfluence / 100); }
-    if (props.activeEqs.has('bby')) { dR += bbyVec.r * (props.bbyInfluence / 100); dG += bbyVec.g * (props.bbyInfluence / 100); dB += bbyVec.b * (props.bbyInfluence / 100); }
-    if (props.activeEqs.has('red')) { dR += rVec.r * (props.redInfluence / 100); dG += rVec.g * (props.redInfluence / 100); dB += rVec.b * (props.redInfluence / 100); }
-    if (props.activeEqs.has('green')) { dR += gVec.r * (props.greenInfluence / 100); dG += gVec.g * (props.greenInfluence / 100); dB += gVec.b * (props.greenInfluence / 100); }
-    if (props.activeEqs.has('blue')) { dR += bVec.r * (props.blueInfluence / 100); dG += bVec.g * (props.blueInfluence / 100); dB += bVec.b * (props.blueInfluence / 100); }
-    if (props.activeEqs.has('rainbow')) { dR += rainbowVec.r * (props.rainbowInfluence / 100); dG += rainbowVec.g * (props.rainbowInfluence / 100); dB += rainbowVec.b * (props.rainbowInfluence / 100); }
-    c.r += dR * speed; c.g += dG * speed; c.b += dB * speed;
-    c = { r: clampByte(c.r), g: clampByte(c.g), b: clampByte(c.b) };
-    colors.push(c);
-  }
+  const colours = computeNextColours(TOTAL, props.hexColor, {
+    activeEqs: props.activeEqs,
+    userColour: props.userColour,
+    bbyColour: props.currentColour,
+    tempo: props.tempo,
+    userColorInfluence: props.userColorInfluence,
+    bbyInfluence: props.bbyInfluence,
+    redInfluence: props.redInfluence,
+    greenInfluence: props.greenInfluence,
+    blueInfluence: props.blueInfluence,
+    rainbowInfluence: props.rainbowInfluence,
+    // keep these in lock-step with the brush engine:
+    baseStep: 0.05,
+    rainbowHueStep: 20,
+  });
 
+  // 2) Render thicc “radio display” bars
+  const canvas = scopeCanvas.value;
   const display = scopeDisplay.value;
-  const ctx = canvas.getContext('2d'); if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
-  const fontSize = parseFloat(getComputedStyle(display).fontSize) || 16;
-  const width = display.clientWidth;
-  const height = display.clientHeight;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  const width = Math.max(1, display.clientWidth);
+  const height = Math.max(1, display.clientHeight);
+
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const numPixels = colors.length;
-  const pixelHeight = Math.max(fontSize * dpr, canvas.height / numPixels);
-  for (let y = 0; y < numPixels; y++) {
-    const color = colors[y];
-    ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
-    ctx.fillRect(0, y * pixelHeight, canvas.width, pixelHeight);
+  const ctx = canvas.getContext('2d'); if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+
+  // backglass
+  ctx.clearRect(0, 0, width, height);
+  const glass = ctx.createLinearGradient(0, 0, 0, height);
+  glass.addColorStop(0,   'rgba(255,255,255,0.03)');
+  glass.addColorStop(0.1, 'rgba(255,255,255,0.06)');
+  glass.addColorStop(0.5, 'rgba(0,0,0,0.00)');
+  glass.addColorStop(1,   'rgba(0,0,0,0.20)');
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = glass;
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = 'source-over';
+
+  // geometry
+  const pitch = height / colours.length;
+  const gap   = Math.max(2, Math.floor(pitch * 0.2));
+  const rowH  = Math.max(10, pitch - gap);
+  const padX  = Math.round(Math.min(8, width * 0.18));
+  const rowW  = Math.max(8, width - padX * 2);
+  const rad   = Math.min(6, Math.floor(rowH * 0.35));
+
+  for (let i = 0; i < colours.length; i++) {
+    const { r, g, b } = colours[i];
+    const y = i * pitch + gap / 2;
+
+    // base
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    rr(ctx, padX, y, rowW, rowH, rad);
+    ctx.fill();
+
+    // glow
+    ctx.save();
+    ctx.shadowColor = `rgba(${r},${g},${b},0.65)`;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = `rgba(${r},${g},${b},0.45)`;
+    rr(ctx, padX, y, rowW, rowH, rad);
+    ctx.fill();
+    ctx.restore();
+
+    // core
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    rr(ctx, padX, y, rowW, rowH, rad);
+    ctx.fill();
+
+    // bevel
+    const bevel = ctx.createLinearGradient(0, y, 0, y + rowH);
+    bevel.addColorStop(0.0, 'rgba(255,255,255,0.22)');
+    bevel.addColorStop(0.25,'rgba(255,255,255,0.10)');
+    bevel.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+    bevel.addColorStop(0.75,'rgba(0,0,0,0.15)');
+    bevel.addColorStop(1.0, 'rgba(0,0,0,0.25)');
+    ctx.globalCompositeOperation = 'overlay';
+    rr(ctx, padX, y, rowW, rowH, rad);
+    ctx.fillStyle = bevel;
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // edge
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 1;
+    rr(ctx, padX + 0.5, y + 0.5, rowW - 1, rowH - 1, Math.max(0, rad - 1));
+    ctx.stroke();
   }
+
+  // scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  for (let sy = 0; sy < height; sy += 2) ctx.fillRect(0, sy, width, 1);
 }, 50);
 
+// Re-draw when inputs change.
+// NOTE: Sets aren’t deeply reactive → convert to a string signature.
 watch(
   () => [
     props.hexColor,
     props.tempo,
-    props.activeEqs,
+    Array.from(props.activeEqs.values()).sort().join(','), // <- track membership
     props.userColorInfluence,
     props.bbyInfluence,
     props.redInfluence,
     props.greenInfluence,
     props.blueInfluence,
     props.rainbowInfluence,
-    props.userColour,
-    props.currentColour,
+    props.userColour.r, props.userColour.g, props.userColour.b,
+    props.currentColour.r, props.currentColour.g, props.currentColour.b,
     props.isScopeMinimized,
-    props.scopeLength
+    props.scopeLength,
   ],
-  updateColorScope,
-  { deep: true, immediate: true }
+  () => draw(),
+  { deep: false, immediate: true }
 );
 
 onMounted(() => {
-  if (scopeDisplay.value) {
-    new ResizeObserver(updateColorScope).observe(scopeDisplay.value);
-  }
-  updateColorScope();
+  if (scopeDisplay.value) new ResizeObserver(() => draw()).observe(scopeDisplay.value);
+  draw();
 });
 </script>
 
 <style scoped>
-.scope-box { flex: 0 0 auto; width: 80px; height: 100%; background: var(--bby-colour-black); padding: var(--spacing); border: var(--border); border-radius: var(--border-radius); display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing)/2); }
-.scope-label { font-size: 0.7rem; font-weight: bold; writing-mode: vertical-rl; transform: rotate(180deg); color: rgba(255,255,255,0.7); }
-.scope-display { flex: 1 1 auto; width: 16px; height: 100%; border: var(--border); border-radius: var(--border-radius); background: var(--bby-colour-dark); overflow: hidden; }
-.scope-display.minimized { width: 0; border-width: 0; }
-.scope-layer { width: 100%; height: 100%; image-rendering: crisp-edges; image-rendering: pixelated; }
+.scope-box{
+  flex: 0 0 auto;
+  width: 140px;
+  height: 100%;
+  background: var(--bby-colour-black);
+  padding: var(--spacing);
+  border: var(--border);
+  border-radius: var(--border-radius);
+  display: flex; flex-direction: column; align-items: center;
+  gap: calc(var(--spacing)/2);
+}
+.scope-label { font-size: 0.7rem; font-weight: bold; color: rgba(255,255,255,0.7); }
+
+.scope-display{
+  flex: 1 1 auto;
+  width: 84px;
+  height: 100%;
+  border-radius: 8px;
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(255,255,255,0.08), rgba(255,255,255,0) 50%),
+    linear-gradient(180deg, rgba(0,0,0,0.95), rgba(0,0,0,0.85));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow:
+    inset 0 2px 8px rgba(255,255,255,0.05),
+    inset 0 -4px 14px rgba(0,0,0,0.6), 
+    0 4px 18px rgba(0,0,0,0.45);
+  overflow: hidden;
+}
+.scope-display.minimized{ width: 0; border-width: 0; }
+.scope-layer{ width:100%; height:100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+
 .scope-controls { display: flex; gap: .25rem; }
+.action.mini{ padding:2px 6px; font-size:.65rem; }
 </style>

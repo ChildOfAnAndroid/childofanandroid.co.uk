@@ -332,6 +332,11 @@ export async function saveCompositeToServer(label = "manual") {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j?.error || `snapshot failed: ${r.status}`);
   if (!j.png_url) throw new Error('snapshot saved but no png_url returned');
+  try {
+    await saveCanvasToGallery(canvas, author.value, label);
+  } catch (e: any) {
+    console.error('[gallery/save] failed:', e?.message || e);
+  }
   return j.png_url as string;
 }
 
@@ -349,11 +354,20 @@ export async function saveCanvasToGallery(canvas: HTMLCanvasElement, authorName:
   return j.url as string;
 }
 
-export async function saveTestGridImage(pngDataUrl: string, authorName: string, label = 'grid') {
+export async function saveTestGridImage(
+  pngDataUrl: string,
+  authorName: string,
+  label = 'grid'
+) {
+  const blob = await (await fetch(pngDataUrl)).blob();
   const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery/save', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ png_b64: pngDataUrl, author: authorName, label })
+    headers: {
+      'content-type': 'image/png',
+      'x-author': authorName,
+      'x-label': label,
+    },
+    body: blob,
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.ok) throw new Error(j?.error || `gallery save failed: ${r.status}`);

@@ -358,7 +358,7 @@ import colourScope from '@/components/colourScope.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
-const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author } = bbyUse();
+const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
 type RgbColor = { r: number; g: number; b: number };
@@ -381,7 +381,7 @@ const isScopeMinimized = ref(false);
 const activeEQs = ref(new Set<EQType>());
 
 // Number of future pixel colours to preview
-const scopeLength = ref(4);
+const scopeLength = ref(32);
 
 const hexColor = ref('#88aaff');
 const swatchesOpen = ref(false);
@@ -740,8 +740,12 @@ function handleClearTestSquareClick() {
 async function handleSaveTestSquareClick() {
   if (!testSquareRef.value) return;
   try {
-    const dataUrl = testSquareRef.value.exportPng(); // should be data:image/png;base64,...
-    const url = await uploadToGallery(dataUrl, author.value, `test-${testCanvasResolution.value}x${testCanvasResolution.value}`);
+    const dataUrl = testSquareRef.value.exportPng(); // data:image/png;base64,...
+    const url = await saveTestGridImage(
+      dataUrl,
+      author.value,
+      `test-${testCanvasResolution.value}x${testCanvasResolution.value}`
+    );
     showToast('Saved to gallery!', 2000);
     // optional: open the image
     window.open(url, '_blank');
@@ -749,20 +753,6 @@ async function handleSaveTestSquareClick() {
     console.error('[gallery/save] failed:', e?.message || e);
     showToast('Save failed :(  (check console)', 2500);
   }
-}
-async function uploadToGallery(dataUrl: string, authorName: string, label = 'grid') {
-  const r = await fetch('https://bbyapi.childofanandroid.co.uk/api/gallery/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ png_b64: dataUrl, author: authorName, label })
-  });
-  // Read body even on non-2xx so you see the real reason
-  const j = await r.json().catch(() => ({} as any));
-  if (!r.ok || !j.ok) {
-    const why = j?.error || `HTTP ${r.status}`;
-    throw new Error(`gallery save failed: ${why}`);
-  }
-  return j.url as string;
 }
 
 function setSwatchColor(c:string){ hexColor.value=c; if (currentMode.value !== 'paint') setMode('paint'); }
@@ -798,7 +788,7 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .flexspacer{flex:1 1 auto}
 .action.danger{background:#e94560;border-color:#fff;color:#fff;font-weight:900}
 @media (max-width:720px){.paint-page-layout{flex-direction:column}.left-column-paint{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.right-column-paint{width:100%;max-width:none;flex:0 0 auto}}
-.controls-container { display: flex; gap: var(--spacing); flex-direction: row; max-height: 50vh;}
+.controls-container { display: flex; gap: var(--spacing); flex-direction: row; max-height: 60vh;}
 .fader-box { flex: 0 0 auto; background: var(--bby-colour-black); padding: var(--spacing); border-radius: var(--border-radius); border: var(--border); display: flex; flex-direction: column; align-items: center; gap: calc(var(--spacing)/2); }
 .fader-value { font-size: 0.7rem; background: var(--bby-colour-dark); padding: 2px 4px; border-radius: 4px; }
 .mixer-column { display: flex; flex-direction: column; gap: var(--spacing); flex: 1 1 auto; min-width: 0; }

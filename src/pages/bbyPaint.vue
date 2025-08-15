@@ -756,26 +756,26 @@ onBeforeUnmount(() => { if (animationFrameId) cancelAnimationFrame(animationFram
 
 // actions
 function showToast(msg:string, ms=1500){ toast.value=msg; setTimeout(()=>toast.value='', ms); }
-async function onSave(){ if(saving.value) return; saving.value=true; try{ const label=prompt('Label for this look? (optional)','')||'manual'; const url=await saveCompositeToServer(label); showToast('saved — opening…'); window.open(url,'_blank'); }catch(e){console.error(e); showToast('not saved :(',2000);} finally{saving.value=false;} }
+async function onSave(){ if(saving.value) return; saving.value=true; try{ const label=prompt('title? (optional)','')||'manual'; const url=await saveCompositeToServer(label); showToast('saved! opening…'); window.open(url,'_blank'); }catch(e){console.error(e); showToast('not saved :(',2000);} finally{saving.value=false;} }
 onMounted(()=>{ pollActivityForAutosnap(); });
 let clearResetTimer: ReturnType<typeof setTimeout> | null = null;
 const clearConfirmClicks = ref(0);
-const clearButtonText = computed(() => { switch (clearConfirmClicks.value) { case 0: return 'Clear canvas'; case 1: return 'Are you sure?'; case 2: return 'Final click to clear!'; default: return 'Clear canvas'; } });
+const clearButtonText = computed(() => { switch (clearConfirmClicks.value) { case 0: return 'remove everyones pixels!'; case 1: return 'are you sure, i look that bad!?'; case 2: return '... click again for noods ig :('; default: return 'remove everyones pixels!'; } });
 function handleClearClick() {
   if (clearResetTimer) clearTimeout(clearResetTimer);
   clearConfirmClicks.value++;
-  if (clearConfirmClicks.value >= 3) { bbyPixelsRef.value?.clearOverlay(); showToast('Canvas Cleared!', 2000); clearConfirmClicks.value = 0; }
-  else { showToast(clearConfirmClicks.value === 1 ? 'First click! Are you sure?' : 'SECOND CLICK! One more erases all!', 3000); clearResetTimer = setTimeout(() => { clearConfirmClicks.value = 0; showToast('Clear cancelled.', 1500); }, 3000); }
+  if (clearConfirmClicks.value >= 3) { bbyPixelsRef.value?.clearOverlay(); showToast('cleared canvas!', 2000); clearConfirmClicks.value = 0; }
+  else { showToast(clearConfirmClicks.value === 1 ? 'are you sure, i look that bad!?' : '... click again for noods ig :(', 3000); clearResetTimer = setTimeout(() => { clearConfirmClicks.value = 0; showToast('you left bbys paint alone!', 1500); }, 3000); }
 }
 function handleClearTestSquareClick() {
   testSquareRef.value?.clearOverlay();
-  showToast('Test Square Cleared!', 1500);
+  showToast('cleared your painting', 1500);
 }
 async function handleSaveTestSquareClick() {
   if (!testSquareRef.value) return;
   if (saveConfirmClicks.value === 0) {
     saveConfirmClicks.value = 1;
-    showToast('Add a name and click again to save', 3000);
+    showToast('type a name for the bbybook, then hit save', 3000);
     return;
   }
   try {
@@ -786,11 +786,11 @@ async function handleSaveTestSquareClick() {
       author.value,
       saveLabel.value || `test-${testCanvasResolution.value}x${testCanvasResolution.value}` // Use the input, with a fallback
     );
-    showToast('Saved to gallery!', 2000);
+    showToast('saved to bbyGallery! (your picture might be in a pop up)', 2000);
     window.open(url, '_blank');
   } catch (e: any) {
     console.error('[gallery/save] failed:', e?.message || e);
-    showToast('Save failed :(  (check console)', 2500);
+    showToast('save failed :(', 2500);
   } finally {
     saveConfirmClicks.value = 0;
     saveLabel.value = '';

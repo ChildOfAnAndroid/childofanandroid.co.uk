@@ -287,7 +287,7 @@
         </div>
       </div>
 
-      <div class="right-column-paint">
+      <div class="right-column-paint" ref="rightColumnRef">
         <!-- BBY Canvas -->
         <div v-if="!isDrawingOnTestCanvas" class="bby-stage">
           <bbyPixels
@@ -312,8 +312,8 @@
         </div>
 
         <!-- Test Canvas -->
-        <div v-else class="test-canvas-stage" :style="{ width: testCanvasSize + '%' }">
-          <div class="test-canvas-wrapper">
+        <div v-else class="test-canvas-stage" ref="testStageRef" :style="{ width: testCanvasDimension + 'px' }">
+          <div class="test-canvas-wrapper" ref="testWrapperRef" :style="{ width: testCanvasDimension + 'px', height: testCanvasDimension + 'px' }">
             <bbyPixels
               ref="testSquareRef"
               :key="testCanvasResolution"
@@ -370,7 +370,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, onBeforeUnmount, reactive } from 'vue';
+import { ref, onMounted, computed, watch, onBeforeUnmount, reactive, nextTick } from 'vue';
 import bbyPixels from '@/components/bbyPixels.vue';
 import testCanvasControls from '@/components/testCanvasControls.vue';
 import swatchDrawer from '@/components/swatchDrawer.vue';
@@ -396,6 +396,10 @@ const isDrawingOnTestCanvas = ref(false);
 const testCanvasSize = ref(80);
 const testCanvasResolution = ref(32);
 const testControlsMinimized = ref(false);
+const rightColumnRef = ref<HTMLElement | null>(null);
+const testStageRef = ref<HTMLDivElement | null>(null);
+const testWrapperRef = ref<HTMLDivElement | null>(null);
+const testCanvasDimension = ref(0);
 const leftControlsMinimized = ref(false);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
@@ -418,6 +422,29 @@ const saveButtonText = computed(() =>
   saveConfirmClicks.value === 0 ? 'Save to Gallery' : 'Click again to save'
 );
 const eyedropperHoverColor = ref<string | null>(null);
+
+let testResizeObserver: ResizeObserver | null = null;
+function updateTestCanvasSize() {
+  if (!rightColumnRef.value || !testWrapperRef.value || !testStageRef.value) return;
+  const controls = testStageRef.value.querySelector('.test-controls-bar') as HTMLElement | null;
+  const gap = parseFloat(getComputedStyle(testStageRef.value).gap || '0');
+  const controlsHeight = controls ? controls.offsetHeight + gap : 0;
+  const maxWidth = rightColumnRef.value.clientWidth;
+  const maxHeight = rightColumnRef.value.clientHeight - controlsHeight;
+  const available = Math.min(maxWidth, maxHeight);
+  testCanvasDimension.value = available * (testCanvasSize.value / 100);
+}
+
+onMounted(() => {
+  updateTestCanvasSize();
+  if (rightColumnRef.value) {
+    testResizeObserver = new ResizeObserver(updateTestCanvasSize);
+    testResizeObserver.observe(rightColumnRef.value);
+  }
+});
+onBeforeUnmount(() => { testResizeObserver?.disconnect(); });
+
+watch([testCanvasSize, testControlsMinimized, isDrawingOnTestCanvas], () => nextTick(updateTestCanvasSize));
 
 const tempo = ref(120);
 const userColorInfluence = ref(0);
@@ -805,8 +832,8 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .right-column-paint{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0}
 
 .bby-stage {display:flex;align-items:center;justify-content:center;width:100%;height:auto;max-width:100%;max-height:100%;aspect-ratio:1/1;}
-.test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;max-width:100%;max-height:100%;gap:var(--spacing);aspect-ratio:1/1;transition: width .3s ease;}
-.test-canvas-wrapper { width: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
+.test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--spacing);}
+.test-canvas-wrapper { border: var(--border); border-radius: var(--border-radius); overflow: hidden; aspect-ratio:1/1; }
 .test-controls-bar{display:flex;align-items:center;gap:.5rem;width:100%;flex-wrap:nowrap;justify-content:center;}
 .bby-stage > *, .test-canvas-wrapper > * {max-width:100%;max-height:100%}
 

@@ -292,26 +292,21 @@
             <button v-if="!isDrawingOnTestCanvas" class="action danger" @click="handleClearClick">{{ clearButtonText }}</button>
           </div>
           <div v-if="isDrawingOnTestCanvas" class="test-controls-bar">
-            <button class="action mini" @click="testControlsMinimized = !testControlsMinimized">
-              {{ testControlsMinimized ? 'Show Controls' : 'Hide Controls' }}
-            </button>
-            <template v-if="!testControlsMinimized">
-              <testCanvasControls
-                v-model:size="testCanvasSize"
-                v-model:resolution="testCanvasResolution"
-                @clear="handleClearTestSquareClick"
+            <testCanvasControls
+              v-model:size="testCanvasSize"
+              v-model:resolution="testCanvasResolution"
+              @clear="handleClearTestSquareClick"
+            />
+            <div class="save-group">
+              <input
+                v-if="saveConfirmClicks > 0"
+                v-model="saveLabel"
+                placeholder="name (optional)"
               />
-              <div class="save-group">
-                <input
-                  v-if="saveConfirmClicks > 0"
-                  v-model="saveLabel"
-                  placeholder="name (optional)"
-                />
-                <button class="action" @click="handleSaveTestSquareClick">
-                  {{ saveButtonText }}
-                </button>
-              </div>
-            </template>
+              <button class="action" @click="handleSaveTestSquareClick">
+                {{ saveButtonText }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -402,7 +397,6 @@ const LFO_DURATION_MAX = 4.0;
 const isDrawingOnTestCanvas = ref(false);
 const testCanvasSize = ref(80);
 const testCanvasResolution = ref(32);
-const testControlsMinimized = ref(false);
 const modsMinimized = ref(false);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
@@ -812,7 +806,7 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .bby-stage {display:flex;align-items:center;justify-content:center;width:100%;height:auto;max-width:100%;max-height:100%;aspect-ratio:1/1;}
 .test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;max-width:100%;max-height:100%;gap:var(--spacing);aspect-ratio:1/1;transition: width .3s ease;}
 .test-canvas-wrapper { width: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
-.test-controls-bar{display:flex;align-items:center;gap:.5rem;width:100%;flex-wrap:nowrap;justify-content:center;}
+.test-controls-bar{display:flex;align-items:center;gap:.5rem;width:100%;flex-wrap:wrap;justify-content:center;}
 .bby-stage > *, .test-canvas-wrapper > * {max-width:100%;max-height:100%}
 
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}

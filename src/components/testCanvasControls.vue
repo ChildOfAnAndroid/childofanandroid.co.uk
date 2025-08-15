@@ -113,7 +113,7 @@ function setPreset(p: number) {
   align-items: center;
   gap: calc(var(--spacing) * .5);
   flex: 1;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0; /* allow children to shrink */
 }
 

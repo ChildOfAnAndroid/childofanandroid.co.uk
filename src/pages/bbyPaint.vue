@@ -308,7 +308,7 @@
         </div>
 
         <!-- Test Canvas -->
-        <div v-else class="test-canvas-stage" :style="{ width: testCanvasSize + '%', height: testCanvasSize + '%' }">
+        <div v-else class="test-canvas-stage" :style="{ width: testCanvasSize + '%' }">
           <div class="test-canvas-wrapper">
             <bbyPixels
               ref="testSquareRef"
@@ -790,8 +790,8 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .right-column-paint{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0}
 
 .bby-stage {display:flex;align-items:center;justify-content:center;width:100%;height:auto;max-width:100%;max-height:100%;aspect-ratio:1/1;}
-.test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;height:80%;max-width:100%;max-height:100%;gap:var(--spacing);transition: width .3s ease, height .3s ease;}
-.test-canvas-wrapper { width: 100%; height: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
+.test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;max-width:100%;max-height:100%;gap:var(--spacing);aspect-ratio:1/1;transition: width .3s ease;}
+.test-canvas-wrapper { width: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
 .bby-stage > *, .test-canvas-wrapper > * {max-width:100%;max-height:100%}
 
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}

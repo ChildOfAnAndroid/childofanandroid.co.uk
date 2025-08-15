@@ -39,7 +39,7 @@ function onResolutionChange(e: Event) {
 </script>
 
 <style scoped>
-.test-canvas-controls { display: flex; align-items: center; gap: var(--spacing); width: 100%; max-width: 400px; flex-wrap: wrap; }
+.test-canvas-controls { display: flex; align-items: center; gap: calc(var(--spacing) * .5); width: 100%; max-width: 320px; flex-wrap: wrap; }
 .test-canvas-controls > label { font-size: var(--small-font-size); }
 .test-canvas-controls > .size-slider { flex-grow: 1; }
 .test-canvas-controls > .res-select { min-width: 80px; }

@@ -335,20 +335,27 @@
               @color-hovered="handleColorHovered"
             />
           </div>
-          <testCanvasControls
-            v-model:size="testCanvasSize"
-            v-model:resolution="testCanvasResolution"
-            @clear="handleClearTestSquareClick"
-          />
-          <div class="save-group">
-            <input
-              v-if="saveConfirmClicks > 0"
-              v-model="saveLabel"
-              placeholder="name (optional)"
-            />
-            <button class="action" @click="handleSaveTestSquareClick">
-              {{ saveButtonText }}
+          <div class="test-controls-bar">
+            <button class="action mini" @click="testControlsMinimized = !testControlsMinimized">
+              {{ testControlsMinimized ? 'Show Controls' : 'Hide Controls' }}
             </button>
+            <template v-if="!testControlsMinimized">
+              <testCanvasControls
+                v-model:size="testCanvasSize"
+                v-model:resolution="testCanvasResolution"
+                @clear="handleClearTestSquareClick"
+              />
+              <div class="save-group">
+                <input
+                  v-if="saveConfirmClicks > 0"
+                  v-model="saveLabel"
+                  placeholder="name (optional)"
+                />
+                <button class="action" @click="handleSaveTestSquareClick">
+                  {{ saveButtonText }}
+                </button>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -384,6 +391,7 @@ const LFO_DURATION_MAX = 4.0;
 const isDrawingOnTestCanvas = ref(false);
 const testCanvasSize = ref(80);
 const testCanvasResolution = ref(32);
+const testControlsMinimized = ref(false);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
 const isScopeMinimized = ref(false);
@@ -792,11 +800,12 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .bby-stage {display:flex;align-items:center;justify-content:center;width:100%;height:auto;max-width:100%;max-height:100%;aspect-ratio:1/1;}
 .test-canvas-stage {display:flex;flex-direction:column;align-items:center;justify-content:center;width:80%;max-width:100%;max-height:100%;gap:var(--spacing);aspect-ratio:1/1;transition: width .3s ease;}
 .test-canvas-wrapper { width: 100%; aspect-ratio: 1/1; border: var(--border); border-radius: var(--border-radius); overflow: hidden; }
+.test-controls-bar{display:flex;align-items:center;gap:.5rem;width:100%;flex-wrap:nowrap;justify-content:center;}
 .bby-stage > *, .test-canvas-wrapper > * {max-width:100%;max-height:100%}
 
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .grp{display:flex;flex-direction:column;gap:.5rem}
-.save-group{display:flex;flex-direction:column;gap:.5rem}
+.save-group{display:flex;align-items:center;gap:.5rem}
 .save-group input{padding:.4rem;border:var(--border);border-radius:var(--border-radius);}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}

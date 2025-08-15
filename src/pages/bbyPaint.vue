@@ -5,8 +5,12 @@
     <bubbleGraveyard />
 
     <div class="paint-page-layout">
-      <div class="left-column-paint">
-        <div class="vertical-panel">
+      <div class="left-column-paint" :class="{ minimized: leftControlsMinimized }">
+        <div v-if="leftControlsMinimized" class="vertical-panel collapsed-panel">
+          <button class="action mini" @click="leftControlsMinimized = false">Show Controls</button>
+        </div>
+        <div v-else class="vertical-panel">
+          <button class="action mini" @click="leftControlsMinimized = true">Hide Controls</button>
           <h1>BBY<br>PAINT</h1>
 
           <!-- Canvas Toggle -->
@@ -392,6 +396,7 @@ const isDrawingOnTestCanvas = ref(false);
 const testCanvasSize = ref(80);
 const testCanvasResolution = ref(32);
 const testControlsMinimized = ref(false);
+const leftControlsMinimized = ref(false);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
 const isScopeMinimized = ref(false);
@@ -794,7 +799,9 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .page-container{display:flex;width:100%;height:var(--full-height);box-sizing:border-box;padding:var(--padding)}
 .paint-page-layout{display:flex;flex-direction:row;width:100%;height:100%;gap:var(--spacing);overflow:hidden}
 .left-column-paint{flex:1 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
+.left-column-paint.minimized{flex:0 0 auto;min-width:0}
 .vertical-panel{position: relative; width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
+.vertical-panel.collapsed-panel{width:auto;height:auto}
 .right-column-paint{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0}
 
 .bby-stage {display:flex;align-items:center;justify-content:center;width:100%;height:auto;max-width:100%;max-height:100%;aspect-ratio:1/1;}

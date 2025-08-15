@@ -397,7 +397,7 @@ const LFO_DURATION_MAX = 4.0;
 const isDrawingOnTestCanvas = ref(false);
 const testCanvasSize = ref(80);
 const testCanvasResolution = ref(32);
-const modsMinimized = ref(false);
+const modsMinimized = ref(true);
 const currentMode = ref<Mode>('paint');
 const isScopeCursorActive = ref(false);
 const isScopeMinimized = ref(false);
@@ -407,7 +407,7 @@ const activeEQs = ref(new Set<EQType>());
 const scopeLength = ref(32);
 
 const hexColor = ref('#88aaff');
-const swatchesOpen = ref(false);
+const swatchesOpen = ref(true);
 const swatches = ['#FFFFFF','#C2C2C2','#858585','#474747','#000000','#2E1A47','#FF5A5A','#FF965A','#FFD25A','#FFF05A','#C8FF5A','#78FF5A','#5AFFC8','#5AFFFF','#5AC8FF','#5A78FF','#965AFF','#E15AFF'];
 const bbyPixelsRef = ref<InstanceType<typeof bbyPixels> | null>(null);
 const testSquareRef = ref<InstanceType<typeof bbyPixels> | null>(null);

@@ -291,6 +291,28 @@
             </button>
             <button v-if="!isDrawingOnTestCanvas" class="action danger" @click="handleClearClick">{{ clearButtonText }}</button>
           </div>
+          <div v-if="isDrawingOnTestCanvas" class="test-controls-bar">
+            <button class="action mini" @click="testControlsMinimized = !testControlsMinimized">
+              {{ testControlsMinimized ? 'Show Controls' : 'Hide Controls' }}
+            </button>
+            <template v-if="!testControlsMinimized">
+              <testCanvasControls
+                v-model:size="testCanvasSize"
+                v-model:resolution="testCanvasResolution"
+                @clear="handleClearTestSquareClick"
+              />
+              <div class="save-group">
+                <input
+                  v-if="saveConfirmClicks > 0"
+                  v-model="saveLabel"
+                  placeholder="name (optional)"
+                />
+                <button class="action" @click="handleSaveTestSquareClick">
+                  {{ saveButtonText }}
+                </button>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
 
@@ -345,28 +367,6 @@
               @color-picked="handleColorPicked"
               @color-hovered="handleColorHovered"
             />
-          </div>
-          <div class="test-controls-bar">
-            <button class="action mini" @click="testControlsMinimized = !testControlsMinimized">
-              {{ testControlsMinimized ? 'Show Controls' : 'Hide Controls' }}
-            </button>
-            <template v-if="!testControlsMinimized">
-              <testCanvasControls
-                v-model:size="testCanvasSize"
-                v-model:resolution="testCanvasResolution"
-                @clear="handleClearTestSquareClick"
-              />
-              <div class="save-group">
-                <input
-                  v-if="saveConfirmClicks > 0"
-                  v-model="saveLabel"
-                  placeholder="name (optional)"
-                />
-                <button class="action" @click="handleSaveTestSquareClick">
-                  {{ saveButtonText }}
-                </button>
-              </div>
-            </template>
           </div>
         </div>
       </div>

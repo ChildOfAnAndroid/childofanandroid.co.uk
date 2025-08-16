@@ -7,8 +7,9 @@
   ></canvas>
 </template>
 
+<!-- In your bbySprite.vue file -->
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount, defineExpose } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bbyBodyUrl from '@/assets/bbySprites/bbyBODY.png';
 import bbyCheeksUrl from '@/assets/bbySprites/bbyCHEEKS.png';
@@ -29,14 +30,14 @@ let onWinResize: (() => void) | null = null;
 
 const images: Record<string, HTMLImageElement> = {};
 
-// --- Caching Canvases for Performance ---
 let bodyCanvas: HTMLCanvasElement;
 let bctx: CanvasRenderingContext2D;
 let paintCanvas: HTMLCanvasElement;
 let pctx: CanvasRenderingContext2D;
 let maskedPaintCanvas: HTMLCanvasElement;
 let mctx: CanvasRenderingContext2D;
-// -----------------------------------------
+
+defineExpose({ bbyCanvas });
 
 const loadImage = (src: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -75,13 +76,9 @@ function fitCanvas() {
   ctx.imageSmoothingEnabled = false;
 }
 
-/** Main draw */
 function draw() {
   if (!ctx || !images.bbyBODY || !bctx || !mctx) return;
-
-  ctx.clearRect(0, 0, SPRITE_W * 2, SPRITE_H * 2); // Clear a larger area to be safe
-
-  // --- Tint the Body (on an offscreen canvas, this is the most intensive part) ---
+  ctx.clearRect(0, 0, SPRITE_W * 2, SPRITE_H * 2);
   bctx.globalCompositeOperation = 'source-over';
   bctx.clearRect(0,0,SPRITE_W, SPRITE_H);
   for (let i = 0; i < BODY_LAYERS; i++) {
@@ -100,93 +97,54 @@ function draw() {
     px[i + 2] = (1 - t) * b0 + t * (gray * (tintB / 255));
   }
   bctx.putImageData(imageData, 0, 0);
-
-  // --- Prepare Paint Overlay Mask ---
   mctx.clearRect(0, 0, SPRITE_W, SPRITE_H);
   mctx.drawImage(paintCanvas, 0, 0);
   mctx.globalCompositeOperation = 'destination-in';
   mctx.drawImage(bodyCanvas, 0, 0);
   mctx.globalCompositeOperation = 'source-over';
-
-  // --- Final Render to main canvas ---
-  
-  // 1. Draw the BODY with transformations.
   const stretch_x = SPRITE_W + (bbyState.stretch_left ? 1 : 0) + (bbyState.stretch_right ? 1 : 0) - (bbyState.squish_left ? 1 : 0) - (bbyState.squish_right ? 1 : 0);
   const stretch_y = SPRITE_H + (bbyState.stretch_up ? 1 : 0) + (bbyState.stretch_down ? 1 : 0) - (bbyState.squish_up ? 1 : 0) - (bbyState.squish_down ? 1 : 0);
   const jumpset = bbyState.jumping ? -4 : 0;
   const offset_x = (SPRITE_W - stretch_x) / 2 - (bbyState.stretch_left ? 1 : 0);
   const offset_y = (SPRITE_H - stretch_y) / 2 - (bbyState.stretch_up ? 1 : 0) + jumpset;
-  
-  // Manually move the coordinate system
   ctx.translate(offset_x, offset_y);
-  
-  // Draw the body parts at the new origin (0,0) of the translated context
   ctx.drawImage(bodyCanvas, 0, 0, stretch_x, stretch_y);
   ctx.drawImage(maskedPaintCanvas, 0, 0, stretch_x, stretch_y);
-  
-  // Manually reverse the translation to reset the coordinate system
   ctx.translate(-offset_x, -offset_y);
-
-  // 2. Draw the FACE on the now-reset, static context.
   if (bbyState.cheeks_on) {
     ctx.drawImage(images.bbyCHEEKS, 0, 0);
   }
-
   const eyeSourceX = bbyState.eyes * SPRITE_W;
   ctx.save();
   if (bbyState.jumping) {
     ctx.translate(0, jumpset);
   }
   for (let i = 0; i < 3 + (bbyState.tears_on ? 1 : 0); i++) {
-    ctx.drawImage(
-      images.bbyEYES,
-      eyeSourceX,
-      i * SPRITE_H,
-      SPRITE_W,
-      SPRITE_H,
-      0,
-      0,
-      SPRITE_W,
-      SPRITE_H
-    );
+    ctx.drawImage(images.bbyEYES, eyeSourceX, i * SPRITE_H, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
   }
   ctx.restore();
-
   const mouthIndex = Math.max(0, Math.min(bbyState.mouth, NUM_MOUTH_STYLES - 1));
   const mouthSourceX = mouthIndex * SPRITE_W;
   ctx.drawImage(images.bbyMOUTH, mouthSourceX, 0, SPRITE_W, SPRITE_H, 0, 0, SPRITE_W, SPRITE_H);
 }
 
-
 onMounted(async () => {
   if (!bbyCanvas.value) return;
-
   bodyCanvas = document.createElement('canvas'); bodyCanvas.width = SPRITE_W; bodyCanvas.height = SPRITE_H;
   bctx = bodyCanvas.getContext('2d', { willReadFrequently: true })!;
-
   paintCanvas = document.createElement('canvas'); paintCanvas.width = SPRITE_W; paintCanvas.height = SPRITE_H;
   pctx = paintCanvas.getContext('2d', { willReadFrequently: true })!;
-
   maskedPaintCanvas = document.createElement('canvas'); maskedPaintCanvas.width = SPRITE_W; maskedPaintCanvas.height = SPRITE_H;
   mctx = maskedPaintCanvas.getContext('2d')!;
-  
   ctx = bbyCanvas.value.getContext('2d');
   if (!ctx) return;
-
   try {
-    const [body, cheeks, eyes, mouth] = await Promise.all([
-      loadImage(bbyBodyUrl), loadImage(bbyCheeksUrl),
-      loadImage(bbyEyesUrl), loadImage(bbyMouthUrl),
-    ]);
-    images.bbyBODY = body; images.bbyCHEEKS = cheeks;
-    images.bbyEYES = eyes; images.bbyMOUTH = mouth;
-
+    const [body, cheeks, eyes, mouth] = await Promise.all([ loadImage(bbyBodyUrl), loadImage(bbyCheeksUrl), loadImage(bbyEyesUrl), loadImage(bbyMouthUrl) ]);
+    images.bbyBODY = body; images.bbyCHEEKS = cheeks; images.bbyEYES = eyes; images.bbyMOUTH = mouth;
     fitCanvas();
     draw();
-
     ro = new ResizeObserver(() => { fitCanvas(); draw(); });
     ro.observe(bbyCanvas.value.parentElement!);
-
     onWinResize = () => { fitCanvas(); draw(); };
     window.addEventListener('resize', onWinResize);
   } catch (err) {
@@ -199,11 +157,5 @@ onBeforeUnmount(() => {
   if (onWinResize) { window.removeEventListener('resize', onWinResize); onWinResize = null; }
 });
 
-watch([bbyState, currentColour, tintStrength], () => {
-  draw();
-}, { deep: true });
+watch([bbyState, currentColour, tintStrength], () => { draw(); }, { deep: true });
 </script>
-
-<style scoped>
-/* canvas is sized by fitCanvas; no extra styles needed */
-</style>

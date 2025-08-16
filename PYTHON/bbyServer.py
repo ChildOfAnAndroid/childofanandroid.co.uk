@@ -5,7 +5,11 @@ from collections import deque
 import requests
 
 # ========= CONFIG =========
-LLM_SERVER_URL = os.environ.get("LLM_SERVER_URL", "").strip()  # e.g. https://abc123.tunnel.app
+LLM_SERVER_URL = os.environ.get("LLM_SERVER_URL", "").strip()
+if not LLM_SERVER_URL:
+    print("\n[FATAL] LLM_SERVER_URL environment variable is not set!")
+    print("This server cannot function without knowing where the brain server is.")
+    print("Please set it and restart.\n")
 PORT = int(os.environ.get("BBY_PORT", "8420"))
 PAINT_W, PAINT_H = 64, 64
 MAX_UPLOAD_MB = 8
@@ -13,7 +17,7 @@ FADE_TICK_SECONDS = 60          # how often the fade loop runs
 AUTOSNAP_IDLE_AFTER = 60        # seconds after last paint to autosnap if a burst was active
 BURST_WINDOW = 30               # seconds to count burst
 BURST_THRESHOLD_PX = 200        # pixels in window to mark a burst
-STATE_SYNC_HZ = 2.0             # pull remote /api/state this many times per second (if available)
+STATE_SYNC_HZ = 10.0            # pull remote /api/state this many times per second (if available)
 # ====== FADE PROBABILITIES (tuned) ======
 P_SHORT  = 0.001    # ~0.1%
 P_MEDIUM = 0.899    # ~89.9%
@@ -83,52 +87,38 @@ def _split_linger_fade(total_seconds: float):
     return float(start), float(end)
 
 # ========= RUNTIME STATE =========
-chat_lock = threading.Lock()
+state_lock = threading.Lock()
 paint_lock = threading.Lock()
 events_lock = threading.Lock()
-state_lock = threading.Lock()
 activity_lock = threading.Lock()
+chat_lock = threading.Lock()
 
-chat_history   = _load_json(CHAT_FILE, [])
 snapshot_index = _load_json(SNAP_IDX, [])
 gallery_index  = _load_json(GALL_IDX, [])
+chat_history   = _load_json(CHAT_FILE, [])
 
-babyState = {
-    "eyes": 5, "mouth": 1,
-    "cheeks_on": False, "tears_on": False, "jumping": False,
-    "stretch_left": False, "stretch_right": False, "stretch_up": False, "stretch_down": False,
-    "squish_left": False, "squish_right": False, "squish_up": False, "squish_down": False,
-    "isSpeaking": False, "speechText": "",
-    "R": 133, "G": 239, "B": 238,
-    "cerebralLoad": 0.0, "dreamIntensity": 0.0, "memoryFlux": 0.0, "learningStability": 0.0,
-    "metabolicRate": 0.0,
-}
+# This is a *cached* copy of the state from the brain server.
+babyState = { "eyes": 5, "mouth": 1, "isSpeaking": False, "R": 133, "G": 239, "B": 238 }
 
 PIX_COUNT = PAINT_W * PAINT_H
-RGBA_SIZE = PIX_COUNT * 4
-paint_rgba   = bytearray(RGBA_SIZE)
+paint_rgba   = bytearray(PIX_COUNT * 4)
 paint_ts     = array.array('L', [0] * PIX_COUNT)
 paint_life   = array.array('f', [0.0] * (PIX_COUNT * 2))
 paint_alpha0 = array.array('B', [0] * PIX_COUNT)
 
-# load persisted buffers
-try:
+try: # Load persisted paint buffers
     if os.path.exists(PAINT_STATE_FILE):
-        with open(PAINT_STATE_FILE, "rb") as f: paint_rgba[:] = f.read()
+        with open(PAINT_STATE_FILE, "rb") as f: paint_rgba[:] = f.read(PIX_COUNT * 4)
     if os.path.exists(PAINT_TS_FILE):
         with open(PAINT_TS_FILE, "rb") as f: paint_ts.fromfile(f, PIX_COUNT)
     if os.path.exists(PAINT_LIFE_FILE):
         with open(PAINT_LIFE_FILE, "rb") as f: paint_life.fromfile(f, PIX_COUNT*2)
     if os.path.exists(PAINT_ALPHA0_FILE):
         with open(PAINT_ALPHA0_FILE, "rb") as f: paint_alpha0.fromfile(f, PIX_COUNT)
-except Exception as e:
-    print("[WARN] could not load paint buffers:", e)
+except Exception as e: print("[WARN] could not load paint buffers:", e)
 
-# incremental paint events
-paint_events = deque(maxlen=2000)  # {id, ts, pixels:[{x,y,r,g,b,a}]}
-
-# activity for autosnapshots
-recent_paints = deque()   # (ts, count)
+paint_events = deque(maxlen=2000)
+recent_paints = deque()
 last_paint_ts = 0.0
 burst_active = False
 burst_start_ts = 0.0
@@ -137,23 +127,35 @@ last_autosnap_id = None
 
 # ========= SNAPSHOTS/GALLERY HELPERS =========
 def _save_snapshot(label=""):
-    snap_id = str(uuid.uuid4())
-    ts = int(time.time())
-    raw_path   = os.path.join(SNAP_DIR, f"{snap_id}.raw")
+    snap_id, ts = str(uuid.uuid4()), int(time.time())
+    raw_path = os.path.join(SNAP_DIR, f"{snap_id}.raw")
     state_path = os.path.join(SNAP_DIR, f"{snap_id}.state.json")
+    print(f"[_save_snapshot] Attempting to save snapshot {snap_id}...")
     with paint_lock, state_lock:
-        paint_bytes = bytes(paint_rgba)
-        state_json  = json.dumps(dict(babyState), ensure_ascii=False).encode("utf-8")
+        paint_bytes = bytes(paint_rgba); state_json  = json.dumps(dict(babyState), ensure_ascii=False).encode("utf-8")
     try:
         with open(raw_path, "wb") as f: f.write(paint_bytes)
         with open(state_path, "wb") as f: f.write(state_json)
     except Exception as e:
-        print("[ERROR] snapshot write:", e)
+        print(f"[_save_snapshot][FATAL] FAILED TO WRITE SNAPSHOT FILES for {snap_id}: {e}")
+        print("[_save_snapshot] This might be a file permissions issue on the server!")
         return None
-    meta = {"id": snap_id, "ts": ts, "label": label, "has_png": False}
-    snapshot_index.append(meta)
-    _save_json(SNAP_IDX, snapshot_index)
+    meta = {"id": snap_id, "ts": ts, "label": label, "has_png": False}; snapshot_index.append(meta); _save_json(SNAP_IDX, snapshot_index)
+    print(f"[_save_snapshot] Successfully saved snapshot {snap_id}.")
     return meta
+
+def _attach_png(snap_id: str, png_bytes: bytes):
+    png_path = os.path.join(SNAP_DIR, f"{snap_id}.png")
+    print(f"[_attach_png] Attempting to attach PNG to snapshot {snap_id} at {png_path}")
+    try:
+        with open(png_path, "wb") as f: f.write(png_bytes)
+        for m in snapshot_index:
+            if m["id"] == snap_id: m["has_png"] = True; break
+        _save_json(SNAP_IDX, snapshot_index)
+        print(f"[_attach_png] Successfully attached PNG for {snap_id}.")
+    except Exception as e:
+        print(f"[_attach_png][FATAL] FAILED TO WRITE PNG FILE for {snap_id}: {e}")
+        print("[_attach_png] This is very likely a file permissions issue on the server!")
 
 def _attach_png(snap_id: str, png_bytes: bytes):
     png_path = os.path.join(SNAP_DIR, f"{snap_id}.png")
@@ -268,20 +270,16 @@ def pixel_aging_loop():
         time.sleep(FADE_TICK_SECONDS)
 
 def state_sync_loop():
-    if not LLM_SERVER_URL:
-        print("[STATE_SYNC] skipped (no LLM_SERVER_URL)")
-        return
-    print("[STATE_SYNC] active")
-    period = 1.0 / max(STATE_SYNC_HZ, 0.1)
+    if not LLM_SERVER_URL: print("[STATE_SYNC] FATAL: loop cannot run as LLM_SERVER_URL is not set."); return
+    print(f"[STATE_SYNC] active, polling {LLM_SERVER_URL} at {STATE_SYNC_HZ}Hz"); period = 1.0 / max(STATE_SYNC_HZ, 0.1)
     while True:
         try:
-            r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/state", timeout=3)
+            r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/state", timeout=2)
             if r.ok:
-                s = r.json()
-                with state_lock:
-                    babyState.update(s)
-        except Exception:
-            pass
+                with state_lock: babyState.update(r.json())
+            elif random.randint(0, 50) == 0: print(f"[STATE_SYNC][WARN] Failed to sync state, brain returned status: {r.status_code}")
+        except requests.exceptions.RequestException:
+            if random.randint(0, 50) == 0: print(f"[STATE_SYNC][WARN] Could not connect to brain server at {LLM_SERVER_URL}.")
         time.sleep(period)
 
 threading.Thread(target=pixel_aging_loop, daemon=True).start()
@@ -297,20 +295,6 @@ def get_state():
     with state_lock:
         return jsonify(babyState)
 
-@app.post("/api/state")
-def set_state():
-    data = request.json or {}
-    allow = ("R","G","B","eyes","mouth","cheeks_on","tears_on","jumping",
-             "stretch_left","stretch_right","stretch_up","stretch_down",
-             "squish_left","squish_right","squish_up","squish_down")
-    with state_lock:
-        for k in allow:
-            if k in data:
-                v = data[k]
-                if k in ("R","G","B","eyes","mouth"): v = int(v)
-                babyState[k] = v
-    return jsonify(ok=True)
-
 @app.get("/api/chat_history")
 def api_chat_history():
     with chat_lock:
@@ -318,59 +302,60 @@ def api_chat_history():
 
 @app.post("/api/say")
 def api_say():
+    """Proxies the chat message to the brain server and records history."""
     data = request.json or {}
     text = (data.get("text") or "").strip()
     author = (data.get("author") or "anon").strip()
-    if not text:
-        return jsonify(status="error", reply="no text :("), 400
+    if not text: return jsonify(status="error", reply="no text :("), 400
+
     user_msg = {"id": str(uuid.uuid4()), "author": author, "text": text, "timestamp": time.time()}
     with chat_lock:
         chat_history.append(user_msg)
         if len(chat_history) > 500: chat_history[:] = chat_history[-500:]
         _save_json(CHAT_FILE, chat_history)
-    # proxy to LLM
-    reply = "... (no response)"
-    try:
-        if LLM_SERVER_URL:
-            r = requests.post(f"{LLM_SERVER_URL.rstrip('/')}/api/say",
-                              json={"text": text, "author": author}, timeout=180)
+
+    reply = "... (brain is offline)"
+    status_code = 503
+    if LLM_SERVER_URL:
+        try:
+            r = requests.post(
+                f"{LLM_SERVER_URL.rstrip('/')}/api/say",
+                json={"text": text, "author": author},
+                timeout=185 # Slightly longer than brain timeout
+            )
+            status_code = r.status_code
             if r.ok:
-                reply = r.json().get("reply", reply)
-    except Exception as e:
-        print("[ERR] say proxy:", e)
-    # refresh state from LLM (to pick up colour)
-    try:
-        if LLM_SERVER_URL:
-            r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/state", timeout=5)
-            if r.ok:
-                with state_lock:
-                    babyState.update(r.json())
-    except Exception:
-        pass
-    bot_msg = {"id": str(uuid.uuid4()), "author": "babyLLM", "text": reply, "timestamp": time.time(),
-               "colour": {"r": babyState.get("R",133), "g": babyState.get("G",239), "b": babyState.get("B",238)}}
+                reply = r.json().get("reply", "... (brain gave empty reply)")
+            else:
+                reply = f"... (brain error: {r.status_code})"
+        except requests.exceptions.RequestException as e:
+            print("[ERROR] /api/say proxy failed:", e)
+            reply = "... (could not reach brain)"
+            status_code = 504 # Gateway timeout
+
+    # The brain server now handles its own color, so we just get the latest state
+    with state_lock:
+        bot_color = {"r": babyState.get("R",133), "g": babyState.get("G",239), "b": babyState.get("B",238)}
+    
+    bot_msg = {"id": str(uuid.uuid4()), "author": "babyLLM", "text": reply, "timestamp": time.time(), "colour": bot_color}
     with chat_lock:
         chat_history.append(bot_msg)
         if len(chat_history) > 500: chat_history[:] = chat_history[-500:]
         _save_json(CHAT_FILE, chat_history)
-    return jsonify(status="ok", reply=reply)
+    
+    return jsonify(status="ok" if status_code == 200 else "error", reply=reply), status_code
 
 @app.get("/api/bbybook")
 def api_bbybook():
-    # Prefer remote (freshest), else local file if present
+    """Always gets the bbybook from the brain server, as it's the source of truth."""
     if LLM_SERVER_URL:
         try:
             r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/bbybook", timeout=5)
             if r.ok:
                 return jsonify(r.json())
-        except Exception:
-            pass
-    if os.path.exists(BBYBOOK_LOCAL):
-        try:
-            return jsonify(_load_json(BBYBOOK_LOCAL, {}))
-        except Exception as e:
-            print("[WARN] local bbybook:", e)
-    return jsonify({})
+        except requests.exceptions.RequestException as e:
+            return jsonify(error=f"Could not reach brain server: {e}"), 504
+    return jsonify(error="Brain server URL not configured"), 503
 
 # ---- Pixels ----
 @app.get("/api/get_paint_canvas")
@@ -592,6 +577,6 @@ def api_activity():
 
 # ========= RUN =========
 if __name__ == "__main__":
-    print(f"=== VPS bbyServer on 127.0.0.1:{PORT} (LLM at {LLM_SERVER_URL or 'none'}) ===")
-    app.run(host="127.0.0.1", port=PORT)
+    print(f"=== bby_public_server on 127.0.0.1:{PORT} (Brain at {LLM_SERVER_URL or 'NOT SET!'}) ===")
+    app.run(host="0.0.0.0", port=PORT)
 

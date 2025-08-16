@@ -1,6 +1,6 @@
 // src/api.ts
 
-const API_BASE = 'https://bbyapi.childofanandroid.co.uk/api';
+const API_BASE = 'https://childofanandroid.co.uk/api';
 
 /**
  * A centralized fetch wrapper for the bbyAPI.
@@ -48,7 +48,7 @@ export const api = {
 
   postSay: (body: { text: string; author: string; colour: object }) => request('/say', { method: 'POST', body: JSON.stringify(body) }),
   postPixelUpdate: (body: { pixels: object[] }) => request('/paint_pixel', { method: 'POST', body: JSON.stringify(body) }),
-  postStateChange: (body: object) => request('/set', { method: 'POST', body: JSON.stringify(body) }),
+  postStateChange: (body: object) => request('/state', { method: 'POST', body: JSON.stringify(body) }),
   postSnapshot: (body: { label: string; composite_png_b64: string }) => request('/snapshot', { method: 'POST', body: JSON.stringify(body) }),
   postAttachPng: (snap_id: string, body: { composite_png_b64: string }) => request(`/snapshot_attach_png/${snap_id}`, { method: 'POST', body: JSON.stringify(body) }),
 

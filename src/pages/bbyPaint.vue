@@ -16,6 +16,17 @@
             </button>
           </div>
 
+          <!-- bbyfact challenge -->
+          <div class="grp">
+            <label class="section">Bbyfact Challenge</label>
+            <div class="fact-prompt-box">
+              <div v-if="factPrompt" class="fact-prompt">{{ factPrompt.value }}</div>
+              <button @click="loadFactPrompt" class="action">
+                {{ factPrompt ? 'Another Fact' : 'Get Fact' }}
+              </button>
+            </div>
+          </div>
+
           <!-- tools -->
           <div class="grp">
             <label class="section">Tool</label>
@@ -381,7 +392,7 @@ import colourScope from '@/components/colourScope.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
-const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage } = bbyUse();
+const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage, getRandomBbyFactPrompt } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
 type RgbColor = { r: number; g: number; b: number };
@@ -419,6 +430,19 @@ const saveConfirmClicks = ref(0);
 const saveButtonText = computed(() =>
   saveConfirmClicks.value === 0 ? 'Save to Gallery' : 'Click again to save'
 );
+
+const factPrompt = ref<{ name: string; value: string; author: string } | null>(null);
+async function loadFactPrompt() {
+  const f = await getRandomBbyFactPrompt();
+  if (f) {
+    factPrompt.value = f;
+    saveLabel.value = f.name;
+    isDrawingOnTestCanvas.value = true;
+    saveConfirmClicks.value = 0;
+  } else {
+    showToast('no unused bbyfacts!', 2000);
+  }
+}
 const eyedropperHoverColor = ref<string | null>(null);
 
 const tempo = ref(120);
@@ -815,6 +839,8 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .save-group{display:flex;align-items:center;gap:.5rem}
 .save-group input{padding:.4rem;border:var(--border);border-radius:var(--border-radius);}
+.fact-prompt-box{display:flex;flex-direction:column;gap:.5rem}
+.fact-prompt{border:var(--border);border-radius:var(--border-radius);padding:.5rem;background:var(--bby-colour-black)}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}
 .row4{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem}
 .action{display:block;width:100%; padding:.4rem .5rem; transition: all 0.2s ease-out; text-align:center;}

@@ -357,6 +357,21 @@ export async function fetchBbyBookGallery() {
   }
 }
 
+export async function getRandomBbyFactPrompt() {
+  try {
+    if (Object.keys(bbyFacts.value).length === 0) await fetchBbyFacts();
+    const gallery = await api.getGallery() as { label?: string }[];
+    const labels = new Set(gallery.map(g => g.label).filter(Boolean));
+    const entries = Object.entries(bbyFacts.value).filter(([key]) => !labels.has(key));
+    if (entries.length === 0) return null;
+    const [name, data] = entries[Math.floor(Math.random() * entries.length)];
+    return { name, ...data } as { name: string; value: string; author: string };
+  } catch (error) {
+    console.error('Could not fetch unillustrated bbyfact:', error);
+    return null;
+  }
+}
+
 let lastSeenAutoSnapId: string | null = null;
 export async function pollActivityForAutosnap() {
   try {
@@ -400,6 +415,6 @@ export function bbyUse() {
     author: readonly(author), userColour: readonly(userColour), paintOverlayData, paintVersion, tickPaint,
     sendPixelUpdate, setUsername, setUserColour, requestStateChange, setBbyTintColour, sendBbyPaintColour, say,
     removeBubble, sayRandomFact, saveCompositeToServer, pollActivityForAutosnap, saveTestGridImage, fetchTestGridGallery,
-    fetchBbyBookGallery, clearBubbles, bbyFacts: readonly(bbyFacts),
+    fetchBbyBookGallery, getRandomBbyFactPrompt, clearBubbles, bbyFacts: readonly(bbyFacts),
   };
 }

@@ -20,7 +20,7 @@
           <div class="grp">
             <label class="section">Bbyfact Challenge</label>
             <div class="fact-prompt-box">
-              <div v-if="factPrompt" class="fact-prompt">{{ factPrompt.value }}</div>
+              <div v-if="factPrompt" class="fact-prompt">{{ factPrompt.prompt }}</div>
               <button @click="loadFactPrompt" class="action">
                 {{ factPrompt ? 'Another Fact' : 'Get Fact' }}
               </button>
@@ -431,11 +431,12 @@ const saveButtonText = computed(() =>
   saveConfirmClicks.value === 0 ? 'Save to Gallery' : 'Click again to save'
 );
 
-const factPrompt = ref<{ name: string; value: string; author: string } | null>(null);
+const factPrompt = ref<{ name: string; value: string; author: string; prompt: string } | null>(null);
 async function loadFactPrompt() {
   const f = await getRandomBbyFactPrompt();
   if (f) {
-    factPrompt.value = f;
+    const prompt = Math.random() < 0.5 ? f.name : f.value;
+    factPrompt.value = { ...f, prompt };
     saveLabel.value = f.name;
     isDrawingOnTestCanvas.value = true;
     saveConfirmClicks.value = 0;

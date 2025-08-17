@@ -38,6 +38,18 @@ async function request(endpoint: string, options: RequestInit = {}) {
   }
 }
 
+export interface PostSayBody {
+  text: string;
+  author?: string;
+  colour?: object;
+  platform?: 'web' | 'discord' | 'twitch';
+  user_id?: string;
+  handle?: string;
+  display_name?: string;
+  is_command?: boolean;
+  speak?: boolean;        // <— NEW
+}
+
 export const api = {
   getState: () => request('/state'),
   getChatHistory: () => request('/chat_history'),
@@ -45,8 +57,10 @@ export const api = {
   getBbyBook: () => request('/bbybook'),
   getGallery: () => request('/gallery'),
   getActivity: () => request('/activity'),
+  postSpeak: (body: { text: string; author?: string }) =>
+  request('/speak', { method: 'POST', body: JSON.stringify(body) }),
 
-  postSay: (body: { text: string; author: string; colour: object }) => request('/say', { method: 'POST', body: JSON.stringify(body) }),
+  postSay: (body: PostSayBody) => request('/say', { method: 'POST', body: JSON.stringify(body) }),
   postPixelUpdate: (body: { pixels: object[] }) => request('/paint_pixel', { method: 'POST', body: JSON.stringify(body) }),
   postStateChange: (body: object) => request('/state', { method: 'POST', body: JSON.stringify(body) }),
   postSnapshot: (body: { label: string; composite_png_b64: string }) => request('/snapshot', { method: 'POST', body: JSON.stringify(body) }),

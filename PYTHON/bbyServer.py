@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os, json, time, uuid, base64, threading, array, random, re
+import hashlib
 from collections import deque
 import requests
 
@@ -30,6 +31,12 @@ COHERENCE_JITTER = 0.12
 REPAINT_REFRESHES_LIFE = True   # repaint with a>0 refreshes lifespan
 REPAINT_POLICY = "diff_color_refresh"  # "always" | "never" | "diff_color_refresh"
 
+# Guest handling for non‑opted‑in external users
+# 'pooled'  -> all guests per platform share a single UID (e.g., 'discord:guest')
+# 'hashed'  -> per-user anonymous shadow UID (not persisted)
+# 'reject'  -> block non-opt-in entirely
+GUEST_POLICY = os.environ.get("BBY_GUEST_POLICY", "pooled").strip().lower()
+
 # ========= APP & STORAGE =========
 app = Flask(__name__)
 # Trust reverse proxy headers so Flask knows it's behind HTTPS
@@ -49,6 +56,97 @@ os.makedirs(GALL_DIR,  exist_ok=True)
 SNAP_IDX  = os.path.join(SNAP_DIR, "index.json")
 GALL_IDX  = os.path.join(GALL_DIR, "index.json")
 CHAT_FILE = os.path.join(STORE_DIR, "chatHistory.json")
+
+# --- USER DATABASE ---
+USERS_FILE = os.path.join(STORE_DIR, "users.json")
+
+def _load_users():
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_users(users: dict):
+    tmp = USERS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
+    os.replace(tmp, USERS_FILE)
+
+def _reload_users_from_disk():
+    """Refresh in-memory `users` from the on-disk users.json.
+    Useful when aliases or edits were made externally (e.g., via a script)."""
+    global users
+    try:
+        on_disk = _load_users()
+        if isinstance(on_disk, dict):
+            users.clear()
+            users.update(on_disk)
+    except Exception as e:
+        print("[WARN] could not reload users:", e)
+
+def _slug(s: str) -> str:
+    try:
+        return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
+    except Exception:
+        return ""
+
+users = _load_users()
+
+def _mk_uid(platform: str, user_id: str, fallback_author: str = "anon") -> str:
+    platform = (platform or "web").strip().lower()
+    user_id = (user_id or fallback_author or "anon").strip()
+    return f"{platform}:{user_id}"
+
+def _upsert_user(platform: str, user_id: str, handle: str = None, display_name: str = None, colour: dict | None = None):
+    uid = _mk_uid(platform, user_id, display_name or handle)
+    rec = users.get(uid, {
+        "platform": platform,
+        "user_id": user_id,
+        "handle": None,
+        "display_name": None,
+        "nicknames": [],
+        "colour": None,
+        "last_seen": 0,
+        "message_count": 0,
+        "loyalty": 1,
+        "inventory": {},
+        "favourites": []
+    })
+    if handle: rec["handle"] = handle
+    if display_name: rec["display_name"] = display_name
+    if isinstance(colour, dict): rec["colour"] = colour
+    rec["last_seen"] = time.time()
+    rec["message_count"] = float(rec.get("message_count", 0)) + 1.0
+    users[uid] = rec
+    _save_users(users)
+    return uid
+
+# --- Consent + guest helpers ---
+def _safe_hash(s: str) -> str:
+    try:
+        return hashlib.sha256((s or '').encode('utf-8')).hexdigest()[:12]
+    except Exception:
+        return 'anon'
+
+def _is_opted_in(platform: str, user_id: str) -> bool:
+    uid = _mk_uid(platform, user_id, None)
+    rec = users.get(uid)
+    if not rec:
+        return False
+    consents = rec.get('consents', {})
+    return bool(consents.get(platform))
+
+def _guest_uid(platform: str, user_id: str) -> str:
+    if GUEST_POLICY == 'pooled':
+        return f"{platform}:guest"
+    elif GUEST_POLICY == 'hashed':
+        return f"{platform}:guest:{_safe_hash(user_id)}"
+    else:
+        return 'reject'
+
+def _looks_like_command(text: str) -> bool:
+    return bool(re.match(r"^\s*[!/]", text or ""))
 PAINT_STATE_FILE    = os.path.join(STORE_DIR, "paintState.raw")
 PAINT_TS_FILE       = os.path.join(STORE_DIR, "paintTimestamps.raw")
 PAINT_LIFE_FILE     = os.path.join(STORE_DIR, "paintLifespans.raw")
@@ -63,6 +161,30 @@ def _get_base_url():
     proto = _request_for_base.headers.get('X-Forwarded-Proto', _request_for_base.scheme)
     host  = _request_for_base.headers.get('X-Forwarded-Host', _request_for_base.host)
     return f"{proto}://{host}".rstrip("/")
+
+# === Brain (local Mac) proxy helpers ===
+def _brain_url(path: str) -> str:
+    base = (LLM_SERVER_URL or '').rstrip('/')
+    path = '/' + path.lstrip('/')
+    return base + path
+
+def _brain_post(path: str, payload: dict, timeout=15):
+    try:
+        url = _brain_url(path)
+        r = requests.post(url, json=payload, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        return {"error": f"brain post failed: {e}"}
+
+def _brain_get(path: str, timeout=10):
+    try:
+        url = _brain_url(path)
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        return {"error": f"brain get failed: {e}"}
 
 # ========= HELPERS =========
 def _load_json(path, default):
@@ -185,6 +307,81 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
     _save_json(GALL_IDX, gallery_index)
     return meta
 
+def _claim_alias_if_exists(platform: str, display_name: str, handle: str, real_uid: str):
+    """If an alias record like '{platform}:alias:{slug(name)}' exists and is unclaimed,
+    merge its fields into the real user and mark it claimed_by=real_uid.
+    Tries both display_name and handle as candidates."""
+    _reload_users_from_disk()
+
+    def _merge_from_alias(alias_uid: str) -> bool:
+        rec = users.get(alias_uid)
+        if not rec or rec.get("claimed_by"):
+            return False
+
+        real = users.get(real_uid, {
+            "platform": platform,
+            "user_id": real_uid.split(":",1)[1],
+            "handle": None,
+            "display_name": None,
+            "nicknames": [],
+            "colour": None,
+            "last_seen": 0,
+            "message_count": 0.0,
+            "loyalty": 1,
+            "inventory": {},
+            "favourites": []
+        })
+
+        if not real.get("display_name") and rec.get("display_name"):
+            real["display_name"] = rec.get("display_name")
+        if not real.get("handle") and rec.get("handle"):
+            real["handle"] = rec.get("handle")
+        if rec.get("colour") and not real.get("colour"):
+            real["colour"] = rec.get("colour")
+
+        try:
+            real["message_count"] = float(real.get("message_count", 0)) + float(rec.get("message_count", 0) or 0)
+        except Exception:
+            pass
+        real["loyalty"]   = max(real.get("loyalty", 1), rec.get("loyalty", 1))
+        real["last_seen"] = max(real.get("last_seen", 0), rec.get("last_seen", 0))
+
+        inv_real  = real.setdefault("inventory", {})
+        inv_alias = rec.get("inventory") or {}
+        if isinstance(inv_alias, dict):
+            for k, v in inv_alias.items():
+                try:
+                    inv_real[k] = int(inv_real.get(k, 0)) + int(v)
+                except Exception:
+                    continue
+
+        fav   = set(real.get("favourites", []) or []) | set(rec.get("favourites", []) or [])
+        nicks = set(real.get("nicknames",  []) or []) | set(rec.get("nicknames",  []) or [])
+        real["favourites"] = list(fav)
+        real["nicknames"]  = list(nicks)
+
+        if isinstance(rec.get("consents"), dict):
+            c = real.setdefault("consents", {})
+            for k, v in rec["consents"].items():
+                c.setdefault(k, v)
+
+        users[real_uid] = real
+        rec["claimed_by"] = real_uid
+        users[alias_uid] = rec
+        _save_users(users)
+        return True
+
+    tried = set()
+    for candidate in (display_name, handle):
+        if not candidate:
+            continue
+        alias_uid = f"{platform}:alias:{_slug(candidate)}"
+        if alias_uid in tried:
+            continue
+        tried.add(alias_uid)
+        if _merge_from_alias(alias_uid):
+            break
+
 # ========= BACKGROUND LOOPS =========
 def _register_paint(n):
     global last_paint_ts, burst_active, burst_start_ts
@@ -286,20 +483,28 @@ threading.Thread(target=pixel_aging_loop, daemon=True).start()
 threading.Thread(target=state_sync_loop, daemon=True).start()
 
 # ========= ROUTES =========
+@app.post("/api/speak")
+def api_speak():
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    author = (data.get("author") or data.get("display_name") or "anon").strip()
+    if not text: return jsonify(error="missing text"), 400
+    brain_resp = _brain_post("/api/say", {"text": text, "author": author})
+    return jsonify(brain_resp), 200
+
 @app.get("/api/ping")
-def ping():
-    return jsonify(ok=True, msg="hello from server")
+def ping(): return jsonify(ok=True, msg="hello from server")
 
 @app.get("/api/state")
 def get_state():
-    with state_lock:
-        return jsonify(babyState)
+    with state_lock: return jsonify(babyState)
 
 # --- Proxy POST for /api/state ---
 
 @app.post("/api/state")
 def api_set_state():
     data = request.get_json(silent=True) or {}
+    _reload_users_from_disk()
     if not isinstance(data, dict):
         return jsonify(error="no json body"), 400
     if not LLM_SERVER_URL:
@@ -324,19 +529,89 @@ def api_chat_history():
     with chat_lock:
         return jsonify(chat_history)
 
+# --- Consent route ---
+@app.post('/api/consent')
+def api_consent():
+    data = request.get_json(silent=True) or {}
+    platform = (data.get('platform') or 'web').strip().lower()
+    user_id = (data.get('user_id') or '').strip()
+    handle = (data.get('handle') or '').strip() or None
+    display_name = (data.get('display_name') or '').strip() or None
+    colour = data.get('colour') or None
+    consent_flag = bool(data.get('consent', True))
+    if not user_id:
+        return jsonify(error='missing user_id'), 400
+    uid = _mk_uid(platform, user_id, display_name or handle)
+    if consent_flag:
+        # ensure record exists and mark consent
+        _upsert_user(platform=platform, user_id=user_id, handle=handle, display_name=display_name, colour=colour)
+        users[uid].setdefault('consents', {})[platform] = int(time.time())
+        try: _claim_alias_if_exists(platform, display_name or (handle or ""), handle or (display_name or ""), uid)
+        except Exception as e: print('[WARN] alias-claim in consent failed:', e)
+        _save_users(users)
+    else:
+        rec = users.get(uid)
+        if rec:
+            rec.setdefault('consents', {}).pop(platform, None)
+            users[uid] = rec
+            _save_users(users)
+    return jsonify(ok=True, uid=uid, consents=users.get(uid, {}).get('consents', {}))
+
 @app.post("/api/say")
 def api_say():
     """Proxies the chat message to the brain server and records history."""
     data = request.json or {}
+    _reload_users_from_disk()
     text = (data.get("text") or "").strip()
     author = (data.get("author") or "anon").strip()
-    if not text: return jsonify(status="error", reply="no text :("), 400
+    platform = (data.get("platform") or "web").strip().lower()
+    user_id = (data.get("user_id") or author or "anon").strip()
+    handle = (data.get("handle") or author).strip()
+    display_name = (data.get("display_name") or author).strip()
+    colour = data.get("colour") or None
 
-    user_msg = {"id": str(uuid.uuid4()), "author": author, "text": text, "timestamp": time.time()}
-    with chat_lock:
-        chat_history.append(user_msg)
-        if len(chat_history) > 500: chat_history[:] = chat_history[-500:]
-        _save_json(CHAT_FILE, chat_history)
+    # Normalise colour
+    if isinstance(colour, dict):
+        try:
+            r = int(colour.get("r", 133)); g = int(colour.get("g", 239)); b = int(colour.get("b", 238))
+            colour = {"r": r, "g": g, "b": b}
+        except Exception:
+            colour = None
+    else:
+        colour = None
+
+    if not text:
+        return jsonify(status="error", reply="no text :("), 400
+
+    # Decide if we persist this user/message
+    is_command = bool(data.get("is_command")) or _looks_like_command(text)
+    persist_user = True
+    if platform in ('discord', 'twitch') and not _is_opted_in(platform, user_id):
+        persist_user = False
+
+    if persist_user:
+        uid = _upsert_user(platform=platform, user_id=user_id, handle=handle, display_name=display_name, colour=colour)
+        _claim_alias_if_exists(platform, display_name, handle, uid)
+    else:
+        uid = _guest_uid(platform, user_id)
+        if uid == 'reject': return jsonify(status='error', reply='you are chatting as a guest; opt in to play!'), 403
+
+    # Only append to chat history if persisted user OR the message is a command
+    if persist_user or is_command:
+        user_msg = {
+            "id": str(uuid.uuid4()),
+            "uid": uid,
+            "author": display_name,  # keep pretty name for UI
+            "text": text,
+            "timestamp": time.time()
+        }
+        if colour is not None:
+            user_msg["colour"] = colour
+        with chat_lock:
+            chat_history.append(user_msg)
+            if len(chat_history) > 500:
+                chat_history[:] = chat_history[-500:]
+            _save_json(CHAT_FILE, chat_history)
 
     reply = "... (brain is offline)"
     status_code = 503
@@ -366,8 +641,29 @@ def api_say():
         chat_history.append(bot_msg)
         if len(chat_history) > 500: chat_history[:] = chat_history[-500:]
         _save_json(CHAT_FILE, chat_history)
+
+    speak = data.get("speak")
+    if speak is None:
+        speak = (platform == "web")  # default: web messages speak
+    if speak:
+        brain_resp = _brain_post("/api/say", {"text": text, "author": display_name})
+        msg["brain_reply"] = brain_resp.get("reply") if isinstance(brain_resp, dict) else None
     
-    return jsonify(status="ok" if status_code == 200 else "error", reply=reply), status_code
+    return jsonify(
+        status=("ok" if status_code == 200 else "error"),
+        reply=reply,
+        uid=uid,
+        guest=(not persist_user and platform in ('discord','twitch'))
+    ), status_code
+
+
+# --- Optional: Read-only endpoint to fetch a user record by uid ---
+@app.get('/api/users/<path:uid>')
+def api_get_user(uid: str):
+    _reload_users_from_disk()
+    rec = users.get(uid)
+    if not rec: return jsonify(error='not found'), 404
+    return jsonify(rec)
 
 @app.get("/api/bbybook")
 def api_bbybook():
@@ -510,7 +806,6 @@ def api_snapshots():
             it["png_url"] = f"{base}/api/snapshots/{it['id']}.png"
         out.append(it)
     return jsonify(out)
-
 
 # Serve the single most recent snapshot (preferably one with a PNG)
 @app.get("/api/snapshots/latest.json")

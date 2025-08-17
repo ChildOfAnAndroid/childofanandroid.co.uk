@@ -44,6 +44,12 @@ const tintStrength = ref(1.0);
 const author = ref(localStorage.getItem('bbyUsername') || 'kevinonline420');
 function setUsername(name: string) { author.value = name; localStorage.setItem('bbyUsername', name); }
 
+const webUserId = (() => {
+  let v = localStorage.getItem('bbyWebUID');
+  if (!v) { v = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)); localStorage.setItem('bbyWebUID', v); }
+  return v;
+})();
+
 const userColour = ref<UserColour>(JSON.parse(localStorage.getItem('bbyUserColour') || '{"r":133,"g":239,"b":238}'));
 function setUserColour(r: number, g: number, b: number) {
   const newColour = { r, g, b };
@@ -206,11 +212,19 @@ async function say(text: string, author: string, colour: UserColour) {
   if (!trimmed) return;
   setBbyTintColour(colour.r, colour.g, colour.b);
   try {
-    await api.postSay({ text: trimmed, author, colour });
+    await api.postSay({
+      text: trimmed,
+      author, // legacy/display only
+      colour,
+      platform: 'web',
+      user_id: webUserId,
+      handle: author,
+      display_name: author,
+      speak: true,            // <— NEW
+    });
   } catch (error) { console.error("failed to talk to baby:", error); }
 }
 
-// ... (removeBubble, clearBubbles, sayRandomFact are unchanged) ...
 const MAX_GHOSTS = 100;
 function removeBubble(id: string) {
   const bubbleEl = document.querySelector(`[data-bubble-id="${id}"]`);

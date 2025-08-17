@@ -94,9 +94,12 @@ def _slug(s: str) -> str:
 users = _load_users()
 
 def _mk_uid(platform: str, user_id: str, fallback_author: str = "anon") -> str:
+    """Create a stable UID like 'web:abc123' or 'discord:123456'.
+    Uses provided args only; does not read request data.
+    """
     platform = (platform or "web").strip().lower()
-    user_id = (user_id or fallback_author or "anon").strip()
-    return f"{platform}:{user_id}"
+    uid_part = str(user_id or "").strip() or str(fallback_author or "anon").strip()
+    return f"{platform}:{uid_part}"
 
 def _upsert_user(platform: str, user_id: str, handle: str = None, display_name: str = None, colour: dict | None = None):
     uid = _mk_uid(platform, user_id, display_name or handle)
@@ -526,14 +529,28 @@ def legacy_post_state():
 
 @app.get("/api/chat_history")
 def api_chat_history():
-    with chat_lock:
-        return jsonify(chat_history)
+    try:
+        with chat_lock:
+            public_events = [
+                {
+                    "id": e.get("id"),
+                    "author": e.get("author") or "anon",
+                    "text": e.get("text") or "",
+                    "colour": e.get("colour") or {"r":133,"g":239,"b":208},
+                }
+                for e in chat_history
+                if e.get("visible_on_web") is True
+            ]
+        if len(public_events) > 200: public_events = public_events[-200:]
+        return jsonify(public_events)
+    except Exception as e: return jsonify(error=f"chat history failed: {e}"), 500
 
 # --- Consent route ---
 @app.post('/api/consent')
 def api_consent():
     data = request.get_json(silent=True) or {}
-    platform = (data.get('platform') or 'web').strip().lower()
+    platform     = (data.get("platform") or "web").strip().lower()
+    visible_on_web = (platform == "web")
     user_id = (data.get('user_id') or '').strip()
     handle = (data.get('handle') or '').strip() or None
     display_name = (data.get('display_name') or '').strip() or None
@@ -564,7 +581,8 @@ def api_say():
     _reload_users_from_disk()
     text = (data.get("text") or "").strip()
     author = (data.get("author") or "anon").strip()
-    platform = (data.get("platform") or "web").strip().lower()
+    platform     = (data.get("platform") or "web").strip().lower()
+    visible_on_web = (platform == "web")
     user_id = (data.get("user_id") or author or "anon").strip()
     handle = (data.get("handle") or author).strip()
     display_name = (data.get("display_name") or author).strip()
@@ -601,12 +619,12 @@ def api_say():
         user_msg = {
             "id": str(uuid.uuid4()),
             "uid": uid,
-            "author": display_name,  # keep pretty name for UI
+            "author": display_name,
             "text": text,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "visible_on_web": visible_on_web,
         }
-        if colour is not None:
-            user_msg["colour"] = colour
+        if colour is not None: user_msg["colour"] = colour
         with chat_lock:
             chat_history.append(user_msg)
             if len(chat_history) > 500:
@@ -636,7 +654,14 @@ def api_say():
     with state_lock:
         bot_color = {"r": babyState.get("R",133), "g": babyState.get("G",239), "b": babyState.get("B",238)}
     
-    bot_msg = {"id": str(uuid.uuid4()), "author": "babyLLM", "text": reply, "timestamp": time.time(), "colour": bot_color}
+    bot_msg = {
+        "id": str(uuid.uuid4()),
+        "author": "babyLLM",
+        "text": reply,
+        "timestamp": time.time(),
+        "colour": bot_color,
+        "visible_on_web": (platform == "web"),  # Baby’s own replies only appear if the original was web
+    }
     with chat_lock:
         chat_history.append(bot_msg)
         if len(chat_history) > 500: chat_history[:] = chat_history[-500:]

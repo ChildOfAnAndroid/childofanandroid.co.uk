@@ -20,7 +20,7 @@ import { stepColourOnce } from '@/utils/colourEngine';
 import type { EQType, RgbColor } from '@/utils/colourEngine';
 
 type RgbaColor = { r: number; g: number; b: number; a: number };
-type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
+type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
 type StrokeState = { brushColor: RgbColor; };
 let strokeState: StrokeState | null = null;
 const props = defineProps<{ hexColor: string; mode: Mode; isScopeCursorActive: boolean; activeEQs: Set<EQType>; userSetColor: RgbColor; bbyColor: RgbColor; rainbowInfluence: number; userColorInfluence: number; bbyInfluence: number; redInfluence: number; greenInfluence: number; blueInfluence: number; tempo: number; blendOpacity: number; isTestCanvas?: boolean; spriteWidth?: number; spriteHeight?: number; resolution?: number; }>();
@@ -203,12 +203,19 @@ function blendRgbColors(base: RgbColor, blend: RgbColor, amount: number): RgbCol
 }
 function paint(e:PointerEvent){
   const p=cssToPixel(e.clientX,e.clientY); if(!p || !strokeState) return;
-  const pixelKey = `${p.x},${p.y}`; if (isDown && paintedPixelsInStroke.has(pixelKey) && props.mode === 'paint') return;
+  const pixelKey = `${p.x},${p.y}`; if (isDown && paintedPixelsInStroke.has(pixelKey) && (props.mode === 'paint' || props.mode === 'behind')) return;
   paintedPixelsInStroke.add(pixelKey);
   const { x, y } = p;
   switch (props.mode) {
     case 'eyedropper': { const c = readCurrentRGB(x,y); if(c) emit('color-picked', rgbToHex(c.r,c.g,c.b)); return; }
     case 'paint': {
+      const next = stepColourOnce(strokeState.brushColor, { activeEqs: props.activeEQs, userColour: props.userSetColor, bbyColour: props.bbyColor, tempo: props.tempo, userColorInfluence: props.userColorInfluence, bbyInfluence: props.bbyInfluence, redInfluence: props.redInfluence, greenInfluence: props.greenInfluence, blueInfluence: props.blueInfluence, rainbowInfluence: props.rainbowInfluence, baseStep: 0.05, rainbowHueStep: 20, });
+      setPixel(x, y, next.r, next.g, next.b, 255); strokeState.brushColor = next; const finalHex = rgbToHex(next.r, next.g, next.b);
+      if (props.hexColor !== finalHex) emit('color-picked', finalHex); if (!props.isTestCanvas) throttledReactionUpdate(next.r, next.g, next.b);
+      break;
+    }
+    case 'behind': {
+      const existing = readCurrentRGB(x, y); if (existing.a !== 0) return;
       const next = stepColourOnce(strokeState.brushColor, { activeEqs: props.activeEQs, userColour: props.userSetColor, bbyColour: props.bbyColor, tempo: props.tempo, userColorInfluence: props.userColorInfluence, bbyInfluence: props.bbyInfluence, redInfluence: props.redInfluence, greenInfluence: props.greenInfluence, blueInfluence: props.blueInfluence, rainbowInfluence: props.rainbowInfluence, baseStep: 0.05, rainbowHueStep: 20, });
       setPixel(x, y, next.r, next.g, next.b, 255); strokeState.brushColor = next; const finalHex = rgbToHex(next.r, next.g, next.b);
       if (props.hexColor !== finalHex) emit('color-picked', finalHex); if (!props.isTestCanvas) throttledReactionUpdate(next.r, next.g, next.b);

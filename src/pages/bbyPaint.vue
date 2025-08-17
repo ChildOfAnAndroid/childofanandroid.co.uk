@@ -19,10 +19,11 @@
           <!-- tools -->
           <div class="grp">
             <label class="section">Tool</label>
-            <div class="row3">
+            <div class="row4">
               <button @click="setMode('paint')" :class="modeBtn('paint')">PAINT</button>
               <button @click="setMode('blend')" :class="modeBtn('blend')">BLEND</button>
               <button @click="setMode('erase')" :class="modeBtn('erase')">ERASE</button>
+              <button @click="setMode('behind')" :class="modeBtn('behind')">BEHIND</button>
             </div>
           </div>
 
@@ -382,7 +383,7 @@ import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage } = bbyUse();
 
-type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper';
+type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
 type RgbColor = { r: number; g: number; b: number };
 type RgbaColor = { r: number; g: number; b: number; a: number };
 type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
@@ -508,6 +509,7 @@ const toolModeDescription = computed(() => {
   if (currentMode.value === 'paint') return "EQs control colour drift";
   if (currentMode.value === 'blend') return "Mix brush colour with existing pixel; EQs & Tempo control strength";
   if (currentMode.value === 'erase') return "EQs & Tempo control erase strength";
+  if (currentMode.value === 'behind') return "Only paint on empty pixels";
   if (currentMode.value === 'eyedropper') return "Hover canvas to sample colour";
   return "";
 });
@@ -791,7 +793,7 @@ async function handleSaveTestSquareClick() {
   }
 }
 
-function setSwatchColor(c:string){ hexColor.value=c; if (currentMode.value !== 'paint') setMode('paint'); }
+function setSwatchColor(c:string){ hexColor.value=c; if (currentMode.value !== 'paint' && currentMode.value !== 'behind') setMode('paint'); }
 function handleColorPicked(c:string){ hexColor.value=c; if (currentMode.value === 'eyedropper') setMode('paint'); }
 function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0) { eyedropperHoverColor.value = rgbToHex(color.r, color.g, color.b); } else { eyedropperHoverColor.value = null; } }
 </script>
@@ -814,7 +816,7 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .save-group{display:flex;align-items:center;gap:.5rem}
 .save-group input{padding:.4rem;border:var(--border);border-radius:var(--border-radius);}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}
-.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+.row4{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem}
 .action{display:block;width:100%; padding:.4rem .5rem; transition: all 0.2s ease-out; text-align:center;}
 .action.active, .action:active, .action.eyedropper-active {background:var(--accent-hover);border-color:var(--accent-colour) !important}
 .action.eyedropper-active { background-color: v-bind(eyedropperHoverColor); }

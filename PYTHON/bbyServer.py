@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os, json, time, uuid, base64, threading, array, random, re
 from collections import deque
 import requests
@@ -31,6 +32,9 @@ REPAINT_POLICY = "diff_color_refresh"  # "always" | "never" | "diff_color_refres
 
 # ========= APP & STORAGE =========
 app = Flask(__name__)
+# Trust reverse proxy headers so Flask knows it's behind HTTPS
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+app.config['PREFERRED_URL_SCHEME'] = 'https'
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
 CORS(app)
 
@@ -50,6 +54,15 @@ PAINT_TS_FILE       = os.path.join(STORE_DIR, "paintTimestamps.raw")
 PAINT_LIFE_FILE     = os.path.join(STORE_DIR, "paintLifespans.raw")
 PAINT_ALPHA0_FILE   = os.path.join(STORE_DIR, "paintAlpha0.raw")
 BBYBOOK_LOCAL       = os.path.join(STORE_DIR, "bbybook.json")
+GALLERY_ADMIN_TOKEN = os.environ.get("GALLERY_ADMIN_TOKEN", "").strip()
+
+# Prefer proxy-provided scheme/host when building absolute URLs
+from flask import request as _request_for_base
+
+def _get_base_url():
+    proto = _request_for_base.headers.get('X-Forwarded-Proto', _request_for_base.scheme)
+    host  = _request_for_base.headers.get('X-Forwarded-Host', _request_for_base.host)
+    return f"{proto}://{host}".rstrip("/")
 
 # ========= HELPERS =========
 def _load_json(path, default):
@@ -143,19 +156,6 @@ def _save_snapshot(label=""):
     meta = {"id": snap_id, "ts": ts, "label": label, "has_png": False}; snapshot_index.append(meta); _save_json(SNAP_IDX, snapshot_index)
     print(f"[_save_snapshot] Successfully saved snapshot {snap_id}.")
     return meta
-
-def _attach_png(snap_id: str, png_bytes: bytes):
-    png_path = os.path.join(SNAP_DIR, f"{snap_id}.png")
-    print(f"[_attach_png] Attempting to attach PNG to snapshot {snap_id} at {png_path}")
-    try:
-        with open(png_path, "wb") as f: f.write(png_bytes)
-        for m in snapshot_index:
-            if m["id"] == snap_id: m["has_png"] = True; break
-        _save_json(SNAP_IDX, snapshot_index)
-        print(f"[_attach_png] Successfully attached PNG for {snap_id}.")
-    except Exception as e:
-        print(f"[_attach_png][FATAL] FAILED TO WRITE PNG FILE for {snap_id}: {e}")
-        print("[_attach_png] This is very likely a file permissions issue on the server!")
 
 def _attach_png(snap_id: str, png_bytes: bytes):
     png_path = os.path.join(SNAP_DIR, f"{snap_id}.png")
@@ -294,6 +294,30 @@ def ping():
 def get_state():
     with state_lock:
         return jsonify(babyState)
+
+# --- Proxy POST for /api/state ---
+
+@app.post("/api/state")
+def api_set_state():
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify(error="no json body"), 400
+    if not LLM_SERVER_URL:
+        return jsonify(error="brain not configured"), 503
+    try:
+        r = requests.post(f"{LLM_SERVER_URL.rstrip('/')}/api/state", json=data, timeout=5)
+        return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type","application/json")})
+    except requests.exceptions.RequestException as e:
+        return jsonify(error=f"brain unreachable: {e}"), 504
+
+# --- Legacy aliases (frontend might call /state) ---
+@app.get("/state")
+def legacy_get_state():
+    return get_state()
+
+@app.post("/state")
+def legacy_post_state():
+    return api_set_state()
 
 @app.get("/api/chat_history")
 def api_chat_history():
@@ -455,6 +479,9 @@ def api_snapshot():
             meta["has_png"] = True
         except Exception as e:
             print("[WARN] attach composite:", e)
+    base = _get_base_url()
+    if meta.get("has_png"):
+        meta["png_url"] = f"{base}/api/snapshots/{meta['id']}.png"
     return jsonify(status="ok", snapshot=meta)
 
 @app.post("/api/snapshot_attach_png/<sid>")
@@ -471,14 +498,40 @@ def api_snapshot_attach_png(sid):
 
 @app.get("/api/snapshots")
 def api_snapshots():
-    base = request.host_url.rstrip("/")
+    base = _get_base_url()
     out = []
-    for m in snapshot_index:
+    # Return newest-first so clients naturally pick the most recent snapshot
+    for m in reversed(snapshot_index):
         it = dict(m)
+        # provide a stable 'timestamp' alias as well as 'ts'
+        if 'timestamp' not in it:
+            it['timestamp'] = it.get('ts')
         if it.get("has_png"):
             it["png_url"] = f"{base}/api/snapshots/{it['id']}.png"
         out.append(it)
     return jsonify(out)
+
+
+# Serve the single most recent snapshot (preferably one with a PNG)
+@app.get("/api/snapshots/latest.json")
+def api_snapshots_latest():
+    base = _get_base_url()
+    # prefer the newest item that has a png; otherwise fall back to newest overall
+    latest = None
+    for m in reversed(snapshot_index):
+        if m.get('has_png'):
+            latest = m
+            break
+    if latest is None:
+        latest = snapshot_index[-1] if snapshot_index else None
+    if not latest:
+        return jsonify({}), 200
+    it = dict(latest)
+    if 'timestamp' not in it:
+        it['timestamp'] = it.get('ts')
+    if it.get('has_png'):
+        it['png_url'] = f"{base}/api/snapshots/{it['id']}.png"
+    return jsonify(it)
 
 @app.get("/api/snapshots/<sid>.png")
 def api_snapshot_png(sid):
@@ -517,7 +570,7 @@ def api_gallery_save():
             label  = str(j.get("label")  or "")
             snap_id= str(j.get("snap_id")) if j.get("snap_id") else None
         meta = _add_to_gallery(img, author=author, title=title, label=label, snap_id=snap_id)
-        base = request.host_url.rstrip("/")
+        base = _get_base_url()
         return jsonify(ok=True, id=meta["id"], url=f"{base}/api/gallery/file/{meta['file']}", title=meta.get("title",""))
     except ValueError as e:
         return jsonify(ok=False, error=str(e)), 413
@@ -526,7 +579,7 @@ def api_gallery_save():
 
 @app.get("/api/gallery")
 def api_gallery_list():
-    base = request.host_url.rstrip("/")
+    base = _get_base_url()
     out = []
     for m in reversed(gallery_index[-200:]):
         it = dict(m)
@@ -562,6 +615,41 @@ def api_gallery_file(fname):
     path = os.path.join(GALL_DIR, fname)
     if not os.path.exists(path): return ("not found", 404)
     return send_from_directory(GALL_DIR, fname, mimetype="image/png")
+
+# --- Delete a gallery image by id or filename (protected) ---
+@app.delete("/api/gallery/<img_id>")
+def delete_gallery_image(img_id):
+    # auth: require token if configured
+    provided = request.headers.get('X-Admin-Token') or request.headers.get('Authorization', '').replace('Bearer ', '').strip()
+    if not GALLERY_ADMIN_TOKEN or not provided or provided != GALLERY_ADMIN_TOKEN:
+        return jsonify({"status": "error", "message": "forbidden"}), 403
+
+    try:
+        # allow either raw id (UUID) or the full filename
+        fn = img_id
+        if not fn.endswith('.png'):
+            meta = next((m for m in list(gallery_index)[-5000:] if m.get('id') == img_id or m.get('file') == img_id), None)
+            if not meta:
+                return jsonify({"status": "error", "message": "not found"}), 404
+            fn = meta.get('file') or f"{meta.get('ts','')}_{img_id}.png"
+        png_path = os.path.join(GALL_DIR, fn)
+
+        deleted = {}
+        if os.path.isfile(png_path):
+            os.remove(png_path)
+            deleted["image"] = True
+
+        before = len(gallery_index)
+        gallery_index[:] = [m for m in gallery_index if m.get('id') != img_id and m.get('file') != fn]
+        if len(gallery_index) != before:
+            deleted["index"] = True
+            _save_json(GALL_IDX, gallery_index)
+
+        if not deleted:
+            return jsonify({"status": "error", "message": "not found"}), 404
+        return jsonify({"status": "ok", "deleted": deleted, "id": img_id, "file": fn})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ---- Activity ----
 @app.get("/api/activity")

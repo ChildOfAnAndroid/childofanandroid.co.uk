@@ -4,7 +4,6 @@ import { reactive, readonly, ref, watch } from 'vue';
 import _ from 'lodash';
 import { api } from '@/api'; // <-- Import the new API module
 
-// ... (interfaces remain the same) ...
 interface Bubble {
   id: string;
   text: string;
@@ -255,20 +254,41 @@ function sayRandomFact() {
   }
 }
 
+// --- optional admin token + delete helpers ---
+export async function deleteGalleryById(id: string, token?: string) {
+  const headers: Record<string,string> = {};
+  if (token) headers['X-Admin-Token'] = token;
+  const res = await fetch(`/api/gallery/${encodeURIComponent(id)}`, { method: 'DELETE', headers });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export function extractGalleryIdFromUrl(url: string): string | null {
+  try {
+    const name = url.split('/').pop() || '';
+    return name.replace(/\\.png$/i, '') || null;
+  } catch { return null; }
+}
+export async function deleteGalleryByUrl(url: string, token?: string) {
+  const id = extractGalleryIdFromUrl(url);
+  if (!id) throw new Error('could not parse id from url');
+  return deleteGalleryById(id, token);
+}
+
 export async function saveCompositeToServer(label = "manual") {
   const canvas = document.querySelector('[aria-label="AI baby sprite, somewhere between a ghost and a robot"]') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('no canvas');
   const dataUrl = canvas.toDataURL('image/png');
-  
+
   const j = await api.postSnapshot({ label, composite_png_b64: dataUrl });
-  if (!j.png_url) throw new Error('snapshot saved but no png_url returned');
+  const pngUrl = j?.png_url ?? j?.snapshot?.png_url;
+  if (!pngUrl) throw new Error('snapshot saved but no png_url returned');
 
   try {
     await saveCanvasToGallery(canvas, author.value, label);
   } catch (e: any) {
     console.error('[gallery/save] failed:', e?.message || e);
   }
-  return j.png_url as string;
+  return pngUrl as string;
 }
 
 export async function saveCanvasToGallery(canvas: HTMLCanvasElement, authorName: string, label = 'grid') {

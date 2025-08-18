@@ -338,17 +338,25 @@ export async function fetchBbyBookGallery() {
       }>>
     ]);
 
+    const decodeLabel = (l: string) => {
+      try { return decodeURIComponent(l); } catch { return l; }
+    };
+
     return gallery
-      // The filter remains the same: it only includes gallery items
-      // that have a label which is a key in the bbybook.
+      // Decode any percent-encoded labels so emoji names match the bbybook keys.
+      .map(item => ({
+        ...item,
+        label: item.label ? decodeLabel(item.label) : undefined,
+      }))
+      // Only include gallery items that have a matching entry in the bbybook.
       .filter((item): item is { url: string; author?: string; label: string } =>
         !!item.label && !!book[item.label]
       )
-      // This part is updated to return ALL the data we need for the styled card.
+      // Return the full data needed for the styled card.
       .map(item => ({
         url: item.url,
         imageAuthor: item.author,
-        factName: item.label,      // The name of the fact (e.g., "cat")
+        factName: item.label,      // The name of the fact (e.g., "cat" or an emoji)
         factData: book[item.label] // The full object with all details
       }));
   } catch (error) {

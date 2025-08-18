@@ -326,8 +326,9 @@ export async function fetchTestGridGallery() {
 
 export async function fetchBbyBookGallery() {
   try {
+    // MODIFIED: Update the expected type to include the optional stamp_url
     const [gallery, book] = await Promise.all([
-      api.getGallery() as Promise<{ url: string; author?: string; label?: string }[]>,
+      api.getGallery() as Promise<{ url: string; stamp_url?: string; author?: string; label?: string }[]>,
       api.getBbyBook() as Promise<Record<string, {
         value: string;
         author: string;
@@ -349,12 +350,13 @@ export async function fetchBbyBookGallery() {
         label: item.label ? decodeLabel(item.label) : undefined,
       }))
       // Only include gallery items that have a matching entry in the bbybook.
-      .filter((item): item is { url: string; author?: string; label: string } =>
+      .filter((item): item is { url: string; stamp_url?: string; author?: string; label: string } =>
         !!item.label && !!book[item.label]
       )
       // Return the full data needed for the styled card.
       .map(item => ({
         url: item.url,
+        stamp_url: item.stamp_url, // MODIFIED: Pass through the stamp_url
         imageAuthor: item.author,
         factName: item.label,      // The name of the fact (e.g., "cat" or an emoji)
         factData: book[item.label] // The full object with all details

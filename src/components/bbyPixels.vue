@@ -27,7 +27,7 @@ const props = defineProps<{ hexColor: string; mode: Mode; isScopeCursorActive: b
 const emit = defineEmits(['color-picked', 'color-hovered']);
 
 let SPRITE_W = 64, SPRITE_H = 64;
-defineExpose({ clearOverlay, exportCanvas, exportCompositeCanvas });
+defineExpose({ clearOverlay, exportCanvas, exportCompositeCanvas, exportRawCanvas });
 
 const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate, tickPaint } = bbyUse();
 const throttledReactionUpdate = throttle((r:number,g:number,b:number)=>sendBbyPaintColour(r,g,b),300);
@@ -71,6 +71,18 @@ function exportCanvas(): HTMLCanvasElement | null {
   return outCanvas;
 }
 
+function exportRawCanvas(): HTMLCanvasElement | null {
+  const data = currentPaintData.value;
+  if (!data) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = data.width;
+  canvas.height = data.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
 function exportCompositeCanvas(): HTMLCanvasElement | null {
   if (props.isTestCanvas) {
     console.warn("Cannot export composite from a test canvas. Returning paint layer only.");
@@ -105,7 +117,8 @@ function exportCompositeCanvas(): HTMLCanvasElement | null {
 }
 
 function clampByte(x:number){ return Math.max(0, Math.min(255, Math.round(x))); }
-function idx(x:number,y:number){ return (y*SPRITE_W+x)*4; }
+// REMOVED: The global idx function was the source of the bug.
+// function idx(x:number,y:number){ return (y*SPRITE_W+x)*4; }
 function hexToRGB(hx:string): RgbColor { const h=hx.replace('#',''); return {r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16)}; }
 function rgbToHex(r:number,g:number,b:number){ return "#"+[r,g,b].map(x=>{const hex=clampByte(x).toString(16); return hex.length===1?'0'+hex:hex;}).join(''); }
 let cachedBase:Uint8ClampedArray|null=null;
@@ -116,24 +129,48 @@ function cacheBabyAtStrokeStart(){
   const ctx=baby.getContext('2d',{willReadFrequently:true}); if(!ctx){cachedBase=null;return;}
   const img=ctx.getImageData(0,0,baby.width,baby.height).data;
   const buf=new Uint8ClampedArray(SPRITE_W*SPRITE_H*4);
-  for(let y=0;y<SPRITE_H;y++)for(let x=0;x<SPRITE_W;x++){ const sx=Math.floor(x*(baby.width/SPRITE_W)), sy=Math.floor(y*(baby.height/SPRITE_H)); const si=(sy*baby.width+sx)*4, di=idx(x,y); buf[di]=img[si]; buf[di+1]=img[si+1]; buf[di+2]=img[si+2]; buf[di+3]=img[si+3]; }
+  const baseW = 64; // The base baby sprite is always 64x64
+  for(let y=0;y<SPRITE_H;y++)for(let x=0;x<SPRITE_W;x++){ const sx=Math.floor(x*(baby.width/SPRITE_W)), sy=Math.floor(y*(baby.height/SPRITE_H)); const si=(sy*baby.width+sx)*4, di=(y*baseW+x)*4; buf[di]=img[si]; buf[di+1]=img[si+1]; buf[di+2]=img[si+2]; buf[di+3]=img[si+3]; }
   cachedBase=buf;
 }
-function readPaintDataRGB(x:number,y:number){ if(!currentPaintData.value)return null; const d=currentPaintData.value.data,i=idx(x,y),a=d[i+3]; return a>0?{r:d[i],g:d[i+1],b:d[i+2],a}:null; }
-function readBabyBaseRGB(x:number,y:number){ if(!cachedBase || props.isTestCanvas)return null; const i=idx(x,y); return { r:cachedBase[i], g:cachedBase[i+1], b:cachedBase[i+2], a:cachedBase[i+3] }; }
+
+// MODIFIED: This function now correctly uses the ImageData's own width property.
+function readPaintDataRGB(x:number,y:number){
+    const data = currentPaintData.value;
+    if(!data) return null;
+    const i = (y * data.width + x) * 4;
+    const a = data.data[i+3];
+    return a > 0 ? { r:data.data[i], g:data.data[i+1], b:data.data[i+2], a } : null;
+}
+function readBabyBaseRGB(x:number,y:number){
+    if(!cachedBase || props.isTestCanvas)return null;
+    const i = (y * 64 + x) * 4; // Base is always 64x64
+    return { r:cachedBase[i], g:cachedBase[i+1], b:cachedBase[i+2], a:cachedBase[i+3] };
+}
 function readCurrentRGB(x:number,y:number): RgbaColor { const overlay = readPaintDataRGB(x,y); if(overlay) return overlay; const base = readBabyBaseRGB(x,y); if(base) return base; return {r:0,g:0,b:0,a:0}; }
+
 function clearOverlay(){
   const data = currentPaintData.value; if(!data) return;
   data.data.fill(0);
   if (props.isTestCanvas) { redrawOverlay(); }
   else { tickPaint(); const out=[] as {x:number,y:number,r:number,g:number,b:number,a:number}[]; for(let y=0;y<SPRITE_H;y++) for(let x=0;x<SPRITE_W;x++) out.push({x,y,r:0,g:0,b:0,a:0}); sendPixelUpdate(out); }
 }
+
+// MODIFIED: This function now correctly uses the ImageData's own width property.
 function setPixel(x:number,y:number,r:number,g:number,b:number,a:number){
   const data = currentPaintData.value; if(!data) return;
-  if(x<0||y<0||x>=SPRITE_W||y>=SPRITE_H) return;
-  const i=idx(x,y), d=data.data; d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a;
-  if (props.isTestCanvas) { redrawOverlay(); }
-  else { tickPaint(); pixelUpdateBatch.push({x,y,r:clampByte(r),g:clampByte(g),b:clampByte(b),a:clampByte(a)}); throttledSendBatch(); }
+  if(x<0||y<0||x>=data.width||y>=data.height) return;
+  const i = (y * data.width + x) * 4;
+  const d = data.data;
+  d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a;
+
+  if (props.isTestCanvas) {
+    redrawOverlay();
+  } else {
+    tickPaint();
+    pixelUpdateBatch.push({x,y,r:clampByte(r),g:clampByte(g),b:clampByte(b),a:clampByte(a)});
+    throttledSendBatch();
+  }
 }
 function setupOverlay(){
   const containerEl = props.isTestCanvas ? stack.value : getBabyCanvas(); if(!containerEl||!overlay.value)return;

@@ -800,8 +800,12 @@ async function handleSaveTestSquareClick() {
     return;
   }
   try {
-    const canvas = testSquareRef.value.exportCanvas();
-    if (!canvas) return;
+    // MODIFIED: Call the new exportRawCanvas function
+    const canvas = testSquareRef.value.exportRawCanvas();
+    if (!canvas) {
+        throw new Error("Failed to export raw canvas data.");
+    };
+
     const url = await saveTestGridImage(
       canvas,
       author.value,

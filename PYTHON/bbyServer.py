@@ -301,28 +301,46 @@ def _attach_png(snap_id: str, png_bytes: bytes):
 
 
 def _crop_transparent_to_square(image_bytes: bytes) -> bytes:
-    """Trim fully transparent rows/columns so the image becomes the smallest
-    possible square. If Pillow is unavailable or cropping fails, the original
-    bytes are returned unchanged."""
+    """
+    Crops transparent padding, then places the result onto a new, perfectly
+    square canvas, ensuring the final image has a 1:1 aspect ratio.
+    """
     if Image is None:
         return image_bytes
     try:
         with Image.open(io.BytesIO(image_bytes)) as img:
             img = img.convert("RGBA")
-            alpha = img.getchannel("A")
-            bbox = alpha.getbbox()
+
+            # 1. Get the tightest bounding box of the content
+            bbox = img.getbbox()
             if not bbox:
-                return image_bytes
-            l, u, r, d = bbox
-            # If no cropping needed and already square, return original
-            if l == 0 and u == 0 and r == img.width and d == img.height and img.width == img.height:
-                return image_bytes
+                # Image is fully transparent, return a 1x1 transparent pixel
+                return Image.new("RGBA", (1, 1), (0,0,0,0)).tobytes()
+
+            # 2. Crop to the tightest rectangle first
             cropped = img.crop(bbox)
+            width, height = cropped.size
+
+            # 3. Determine the size of the new square canvas
+            max_dim = max(width, height)
+
+            # 4. Create a new transparent square canvas
+            square_canvas = Image.new("RGBA", (max_dim, max_dim), (0, 0, 0, 0))
+
+            # 5. Calculate position to paste the cropped image to center it
+            paste_x = (max_dim - width) // 2
+            paste_y = (max_dim - height) // 2
+
+            # 6. Paste the cropped image onto the square canvas
+            square_canvas.paste(cropped, (paste_x, paste_y))
+
+            # 7. Save and return the final square image bytes
             out = io.BytesIO()
-            cropped.save(out, format="PNG")
+            square_canvas.save(out, format="PNG")
             return out.getvalue()
     except Exception as e:
-        print("[_crop_transparent_to_square] failed:", e)
+        print(f"[_crop_transparent_to_square] failed: {e}")
+    # Fallback to original bytes on error
     return image_bytes
 
 def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_id=None):
@@ -335,8 +353,42 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
     fname = f"{ts}_{gid}.png"
     path = os.path.join(GALL_DIR, fname)
     with open(path, "wb") as f: f.write(image_bytes)
+
+    # --- NEW STAMP LOGIC ---
+    stamp_fname = None
+    MAX_STAMP_DIM = 96 # Align with bbyWorld.vue
+    try:
+        if Image is None: raise Exception("Pillow not installed")
+
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = img.convert("RGBA")
+            stamp_img = None
+
+            if snap_id:
+                # Snapshots are from a 64x64 source, so resize to that
+                if img.width != 64 or img.height != 64:
+                    stamp_img = img.resize((64, 64), Image.Resampling.NEAREST)
+            elif img.width > MAX_STAMP_DIM or img.height > MAX_STAMP_DIM:
+                # For test grid images, thumbnail preserves aspect ratio
+                stamp_img = img.copy()
+                stamp_img.thumbnail((MAX_STAMP_DIM, MAX_STAMP_DIM), Image.Resampling.NEAREST)
+
+            if stamp_img:
+                stamp_fname = f"{ts}_{gid}.stamp.png"
+                stamp_path = os.path.join(GALL_DIR, stamp_fname)
+                out_buffer = io.BytesIO()
+                stamp_img.save(out_buffer, format="PNG")
+                with open(stamp_path, "wb") as f:
+                    f.write(out_buffer.getvalue())
+
+    except Exception as e:
+        print(f"[WARN] Failed to create stamp for {gid}: {e}")
+        stamp_fname = None
+    # --- END NEW STAMP LOGIC ---
+
     meta = {"id": gid, "ts": ts, "file": fname, "author": author, "title": title or label, "label": label or title}
     if snap_id: meta["snap_id"] = snap_id
+    if stamp_fname: meta["stamp_file"] = stamp_fname
     gallery_index.append(meta)
     if len(gallery_index) > 5000: del gallery_index[:-5000]
     _save_json(GALL_IDX, gallery_index)
@@ -938,6 +990,8 @@ def api_gallery_list():
     for m in reversed(gallery_index[-200:]):
         it = dict(m)
         it["url"] = f"{base}/api/gallery/file/{m['file']}"
+        if m.get("stamp_file"):
+            it["stamp_url"] = f"{base}/api/gallery/file/{m['stamp_file']}"
         out.append(it)
     return jsonify(out)
 
@@ -979,29 +1033,41 @@ def delete_gallery_image(img_id):
         return jsonify({"status": "error", "message": "forbidden"}), 403
 
     try:
-        # allow either raw id (UUID) or the full filename
-        fn = img_id
-        if not fn.endswith('.png'):
-            meta = next((m for m in list(gallery_index)[-5000:] if m.get('id') == img_id or m.get('file') == img_id), None)
-            if not meta:
-                return jsonify({"status": "error", "message": "not found"}), 404
-            fn = meta.get('file') or f"{meta.get('ts','')}_{img_id}.png"
-        png_path = os.path.join(GALL_DIR, fn)
+        # Find the metadata record first, whether by ID or filename
+        target_meta = next((m for m in gallery_index if m.get('id') == img_id or m.get('file') == img_id), None)
+        if not target_meta:
+            return jsonify({"status": "error", "message": "not found"}), 404
 
         deleted = {}
-        if os.path.isfile(png_path):
-            os.remove(png_path)
-            deleted["image"] = True
+        target_id = target_meta.get("id")
+        
+        # Delete main image file
+        main_file = target_meta.get('file')
+        if main_file:
+            path = os.path.join(GALL_DIR, main_file)
+            if os.path.isfile(path):
+                os.remove(path)
+                deleted["image"] = True
+        
+        # Delete stamp file if it exists
+        stamp_file = target_meta.get('stamp_file')
+        if stamp_file:
+            path = os.path.join(GALL_DIR, stamp_file)
+            if os.path.isfile(path):
+                os.remove(path)
+                deleted["stamp"] = True
 
+        # Remove from index by its ID
         before = len(gallery_index)
-        gallery_index[:] = [m for m in gallery_index if m.get('id') != img_id and m.get('file') != fn]
+        gallery_index[:] = [m for m in gallery_index if m.get('id') != target_id]
         if len(gallery_index) != before:
             deleted["index"] = True
             _save_json(GALL_IDX, gallery_index)
 
         if not deleted:
-            return jsonify({"status": "error", "message": "not found"}), 404
-        return jsonify({"status": "ok", "deleted": deleted, "id": img_id, "file": fn})
+            return jsonify({"status": "error", "message": "index entry found but no files to delete"}), 404
+
+        return jsonify({"status": "ok", "deleted": deleted, "id": target_id})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -1021,4 +1087,3 @@ def api_activity():
 if __name__ == "__main__":
     print(f"=== bby_public_server on 127.0.0.1:{PORT} (Brain at {LLM_SERVER_URL or 'NOT SET!'}) ===")
     app.run(host="0.0.0.0", port=PORT)
-

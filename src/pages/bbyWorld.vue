@@ -50,11 +50,10 @@ const gridSize = 256;
 const canvasScale = 4;
 const canvasW = gridSize * canvasScale;
 const canvasH = gridSize * canvasScale;
-// NEW: Safeguard against enormous images that would crash the browser.
 const MAX_STAMP_DIMENSION = 96; // Max width or height of 96px
 
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
-const cards = ref<{ label: string; url: string }[]>([]);
+const cards = ref<{ label: string; url: string; stamp_url?: string; }[]>([]);
 const selectedCardLabel = ref<string | null>(null);
 
 // --- DATA STRUCTURES ---
@@ -79,7 +78,12 @@ onMounted(async () => {
   console.log("Component mounted.");
   try {
     const gallery = await fetchBbyBookGallery();
-    cards.value = gallery.map(card => ({ label: card.factName, url: card.url }));
+    // MODIFIED: Also store the stamp_url if it exists
+    cards.value = gallery.map(card => ({
+      label: card.factName,
+      url: card.url,
+      stamp_url: card.stamp_url,
+    }));
     if (cards.value.length > 0) {
       selectedCardLabel.value = cards.value[0].label;
       loadSelectedImage();
@@ -135,11 +139,13 @@ function loadSelectedImage() {
   const img = new Image();
   img.crossOrigin = "Anonymous";
   img.onload = () => {
+    // This logic is now a fallback for older images without stamps.
+    // The stamp itself is already correctly sized by the server.
     let stampWidth = img.width;
     let stampHeight = img.height;
 
     // If the image is too large, scale it down while maintaining aspect ratio.
-    if (stampWidth > MAX_STAMP_DIMENSION || stampHeight > MAX_STAMP_DIMENSION) {
+    if (!selected.stamp_url && (stampWidth > MAX_STAMP_DIMENSION || stampHeight > MAX_STAMP_DIMENSION)) {
       const ratio = Math.min(MAX_STAMP_DIMENSION / stampWidth, MAX_STAMP_DIMENSION / stampHeight);
       stampWidth = Math.floor(stampWidth * ratio);
       stampHeight = Math.floor(stampHeight * ratio);
@@ -156,7 +162,11 @@ function loadSelectedImage() {
     loadedImageData = ctx.getImageData(0, 0, stampWidth, stampHeight);
     console.log(`Image "${selected.label}" ready to place at ${stampWidth}x${stampHeight}.`);
   };
-  img.src = selected.url;
+
+  // MODIFIED: Prioritize stamp_url, fallback to original url
+  const imageUrl = selected.stamp_url || selected.url;
+  console.log(`Loading image for bbyWorld: ${imageUrl}`);
+  img.src = imageUrl;
 }
 
 /**

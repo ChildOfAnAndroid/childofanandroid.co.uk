@@ -5,6 +5,7 @@
 		<router-link to="/gallery">gallery</router-link>
 		<router-link to="/bbybook">bbybook</router-link>
 		<router-link to="/test">test</router-link>
+		<router-link to="/world">world</router-link>
 	</nav>
 </template>
 

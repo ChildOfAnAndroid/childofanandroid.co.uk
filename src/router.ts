@@ -8,6 +8,7 @@ import bbyTest from '@/pages/bbyTest.vue'
 import bbyPaint from '@/pages/bbyPaint.vue'
 import bbyGallery from '@/pages/bbyGallery.vue'
 import bbyBook from '@/pages/bbyBook.vue'
+import bbyWorld from '@/pages/bbyWorld.vue'
 import rightNav from '@/components/rightNav.vue'
 
 const routes = [
@@ -45,6 +46,13 @@ const routes = [
 			path: '/gallery',
 			components: {
 					main: bbyGallery,
+					nav: rightNav
+			}
+	},
+	{
+			path: '/world',
+			components: {
+					main: bbyWorld,
 					nav: rightNav
 			}
 	}

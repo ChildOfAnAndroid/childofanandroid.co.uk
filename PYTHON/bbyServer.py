@@ -5,6 +5,7 @@ import os, json, time, uuid, base64, threading, array, random, re
 import hashlib
 from collections import deque
 import requests
+from urllib.parse import unquote
 
 # ========= CONFIG =========
 LLM_SERVER_URL = os.environ.get("LLM_SERVER_URL", "").strip()
@@ -876,9 +877,11 @@ def api_gallery_save():
         body = request.get_data(cache=False)
         if body:
             img = body
-            author = request.headers.get("x-author") or "anon"
-            title  = request.headers.get("x-title")  or ""
-            label  = request.headers.get("x-label")  or ""
+            # Headers are ASCII only, so values may be percent-encoded to allow
+            # emoji or other unicode characters. Decode them if present.
+            author = unquote(request.headers.get("x-author") or "anon")
+            title  = unquote(request.headers.get("x-title")  or "")
+            label  = unquote(request.headers.get("x-label")  or "")
             snap_id= request.headers.get("x-snap-id") or None
         else:
             j = request.get_json(silent=True) or {}

@@ -72,8 +72,8 @@ export const api = {
       method: 'POST',
       headers: {
         'content-type': 'image/png', // Override default header
-        'x-author': authorName,
-        'x-label': label,
+        'x-author': encodeURIComponent(authorName),
+        'x-label': encodeURIComponent(label),
       },
       body: blob,
     });

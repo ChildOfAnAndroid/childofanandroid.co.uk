@@ -50,10 +50,9 @@ const gridSize = 256;
 const canvasScale = 4;
 const canvasW = gridSize * canvasScale;
 const canvasH = gridSize * canvasScale;
-const MAX_STAMP_DIMENSION = 96; // Max width or height of 96px
 
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
-const cards = ref<{ label: string; url: string; stamp_url?: string; }[]>([]);
+const cards = ref<{ label: string; url: string }[]>([]);
 const selectedCardLabel = ref<string | null>(null);
 
 // --- DATA STRUCTURES ---
@@ -78,11 +77,9 @@ onMounted(async () => {
   console.log("Component mounted.");
   try {
     const gallery = await fetchBbyBookGallery();
-    // MODIFIED: Also store the stamp_url if it exists
     cards.value = gallery.map(card => ({
       label: card.factName,
       url: card.url,
-      stamp_url: card.stamp_url,
     }));
     if (cards.value.length > 0) {
       selectedCardLabel.value = cards.value[0].label;
@@ -130,8 +127,9 @@ function update() {
 }
 
 /**
- * Loads the selected image and processes it into pixel data,
- * respecting its original size up to a maximum limit.
+ * Loads the selected image and processes it into pixel data.
+ * Prefer the `.stamp.png` version, falling back to the original if missing.
+ * If the loaded image is too large, scale down while preserving aspect ratio.
  */
 function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value);
@@ -139,34 +137,37 @@ function loadSelectedImage() {
   const img = new Image();
   img.crossOrigin = "Anonymous";
   img.onload = () => {
-    // This logic is now a fallback for older images without stamps.
-    // The stamp itself is already correctly sized by the server.
-    let stampWidth = img.width;
-    let stampHeight = img.height;
-
-    // If the image is too large, scale it down while maintaining aspect ratio.
-    if (!selected.stamp_url && (stampWidth > MAX_STAMP_DIMENSION || stampHeight > MAX_STAMP_DIMENSION)) {
-      const ratio = Math.min(MAX_STAMP_DIMENSION / stampWidth, MAX_STAMP_DIMENSION / stampHeight);
-      stampWidth = Math.floor(stampWidth * ratio);
-      stampHeight = Math.floor(stampHeight * ratio);
-      console.warn(`Image was too large, scaled down to ${stampWidth}x${stampHeight}`);
-    }
+    const outW = img.width;   // use native size
+    const outH = img.height;
 
     const tempCanvas = document.createElement("canvas");
     const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = stampWidth;
-    tempCanvas.height = stampHeight;
-    // Draw the image (potentially scaled) onto the temp canvas
-    ctx.drawImage(img, 0, 0, stampWidth, stampHeight);
+    tempCanvas.width = outW;
+    tempCanvas.height = outH;
 
-    loadedImageData = ctx.getImageData(0, 0, stampWidth, stampHeight);
-    console.log(`Image "${selected.label}" ready to place at ${stampWidth}x${stampHeight}.`);
+    // exact pixel mapping, no smoothing
+    (ctx as any).imageSmoothingEnabled = false;
+    (ctx as any).mozImageSmoothingEnabled = false;
+    (ctx as any).webkitImageSmoothingEnabled = false;
+
+    ctx.drawImage(img, 0, 0, outW, outH);
+
+    loadedImageData = ctx.getImageData(0, 0, outW, outH);
+    console.log(`Stamp "${selected.label}" ready at native ${outW}x${outH}, 1px=1px.`);
   };
 
-  // MODIFIED: Prioritize stamp_url, fallback to original url
-  const imageUrl = selected.stamp_url || selected.url;
-  console.log(`Loading image for bbyWorld: ${imageUrl}`);
-  img.src = imageUrl;
+  // Prefer the .stamp.png version; fall back to the original if it doesn't exist
+  const stampUrl = selected.url.replace(/\.png$/, '.stamp.png');
+
+  img.onerror = () => {
+    // If the stamp fails (404 or CORS), fall back once to the original
+    console.warn(`Stamp not found, falling back to original: ${selected.url}`);
+    img.onerror = null; // prevent infinite loop
+    img.src = selected.url;
+  };
+
+  console.log(`Loading stamp for bbyWorld: ${stampUrl}`);
+  img.src = stampUrl;
 }
 
 /**

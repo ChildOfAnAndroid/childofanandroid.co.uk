@@ -17,10 +17,10 @@
     </div>
 
     <div class="world-stats">
-      <span>⚔ WAR: {{ stats.warDeaths }}</span>
-      <span>💞 BABY: {{ stats.babyMerges }}</span>
-      <span>💥 SQUISH: {{ stats.squishDeaths }}</span>
-      <span>📈 AVG LIFE: {{ avgLifespan }}</span>
+      <span>WAR: {{ stats.warDeaths }}</span>
+      <span>BBY: {{ stats.babyMerges }}</span>
+      <span>SQUISH: {{ stats.squishDeaths }}</span>
+      <span>AVG LIFE: {{ avgLifespan }}</span>
     </div>
 
     <canvas

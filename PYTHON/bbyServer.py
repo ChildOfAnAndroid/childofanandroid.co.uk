@@ -1,11 +1,15 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
-import os, json, time, uuid, base64, threading, array, random, re
+import os, json, time, uuid, base64, threading, array, random, re, io
 import hashlib
 from collections import deque
 import requests
 from urllib.parse import unquote
+try:
+    from PIL import Image
+except Exception:
+    Image = None
 
 # ========= CONFIG =========
 LLM_SERVER_URL = os.environ.get("LLM_SERVER_URL", "").strip()
@@ -295,11 +299,38 @@ def _attach_png(snap_id: str, png_bytes: bytes):
     except Exception as e:
         print("[ERROR] attach png:", e)
 
+
+def _crop_transparent_to_square(image_bytes: bytes) -> bytes:
+    """Trim fully transparent rows/columns so the image becomes the smallest
+    possible square. If Pillow is unavailable or cropping fails, the original
+    bytes are returned unchanged."""
+    if Image is None:
+        return image_bytes
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = img.convert("RGBA")
+            alpha = img.getchannel("A")
+            bbox = alpha.getbbox()
+            if not bbox:
+                return image_bytes
+            l, u, r, d = bbox
+            # If no cropping needed and already square, return original
+            if l == 0 and u == 0 and r == img.width and d == img.height and img.width == img.height:
+                return image_bytes
+            cropped = img.crop(bbox)
+            out = io.BytesIO()
+            cropped.save(out, format="PNG")
+            return out.getvalue()
+    except Exception as e:
+        print("[_crop_transparent_to_square] failed:", e)
+    return image_bytes
+
 def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_id=None):
     if not image_bytes:
         raise ValueError("empty image")
     if len(image_bytes) > MAX_UPLOAD_MB*1024*1024:
         raise ValueError("image too large")
+    image_bytes = _crop_transparent_to_square(image_bytes)
     gid = str(uuid.uuid4()); ts = int(time.time())
     fname = f"{ts}_{gid}.png"
     path = os.path.join(GALL_DIR, fname)

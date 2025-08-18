@@ -48,9 +48,10 @@ type GridCell = {
 // --- CORE CONFIGURATION ---
 const gridSize = 256;
 const canvasScale = 4;
-// These attributes set the canvas's INTERNAL resolution.
-const canvasW = gridSize * canvasScale; // 1024
-const canvasH = gridSize * canvasScale; // 1024
+const canvasW = gridSize * canvasScale;
+const canvasH = gridSize * canvasScale;
+// NEW: Safeguard against enormous images that would crash the browser.
+const MAX_STAMP_DIMENSION = 96; // Max width or height of 96px
 
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
 const cards = ref<{ label: string; url: string }[]>([]);
@@ -66,10 +67,10 @@ const stats = ref({
   totalLifespan: 0, deadCount: 0,
 });
 
-// --- ROBUST GAME LOOP VARIABLES ---
+// --- GAME LOOP VARIABLES ---
 let animationFrameId: number | null = null;
 let lastTime = 0;
-const ticksPerSecond = 30; // Run logic 30 times/sec
+const ticksPerSecond = 30;
 const tickInterval = 1000 / ticksPerSecond;
 let timeSinceLastTick = 0;
 let tickCount = 0;
@@ -86,22 +87,15 @@ onMounted(async () => {
   } catch (error) {
     console.error("Failed to fetch bbyBook gallery:", error);
   }
-
-  // Start the main loop
   animationFrameId = requestAnimationFrame(mainLoop);
 });
 
-// Clean up the animation frame when the component is removed from the page
 onUnmounted(() => {
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
   }
 });
 
-/**
- * The main animation loop, driven by requestAnimationFrame.
- * It manages time to call the logic (update) and rendering (drawGrid) separately.
- */
 function mainLoop(timestamp: number) {
   const ctx = gameCanvas.value?.getContext("2d");
   if (!ctx) return;
@@ -110,22 +104,16 @@ function mainLoop(timestamp: number) {
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
 
-  // Run the logic at a fixed rate to ensure consistent simulation speed
   while (timeSinceLastTick >= tickInterval) {
     update();
     timeSinceLastTick -= tickInterval;
   }
-
-  drawGrid(ctx); // Draw the result once per frame
+  drawGrid(ctx);
   animationFrameId = requestAnimationFrame(mainLoop);
 }
 
-/**
- * Contains only the game logic for a single tick.
- */
 function update() {
   tickCount++;
-  // Scale the number of movements based on population size to keep the world lively
   const updatesPerTick = Math.ceil(livingCells.value.length / 100);
   for (let i = 0; i < updatesPerTick; i++) {
     const cell = pickRandomLivingCell();
@@ -137,51 +125,75 @@ function update() {
   }
 }
 
+/**
+ * Loads the selected image and processes it into pixel data,
+ * respecting its original size up to a maximum limit.
+ */
 function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value);
   if (!selected) return;
   const img = new Image();
   img.crossOrigin = "Anonymous";
   img.onload = () => {
-    const stampSize = 32;
+    let stampWidth = img.width;
+    let stampHeight = img.height;
+
+    // If the image is too large, scale it down while maintaining aspect ratio.
+    if (stampWidth > MAX_STAMP_DIMENSION || stampHeight > MAX_STAMP_DIMENSION) {
+      const ratio = Math.min(MAX_STAMP_DIMENSION / stampWidth, MAX_STAMP_DIMENSION / stampHeight);
+      stampWidth = Math.floor(stampWidth * ratio);
+      stampHeight = Math.floor(stampHeight * ratio);
+      console.warn(`Image was too large, scaled down to ${stampWidth}x${stampHeight}`);
+    }
+
     const tempCanvas = document.createElement("canvas");
     const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = stampSize;
-    tempCanvas.height = stampSize;
-    ctx.drawImage(img, 0, 0, stampSize, stampSize);
-    loadedImageData = ctx.getImageData(0, 0, stampSize, stampSize);
-    console.log(`Image "${selected.label}" ready to place.`);
+    tempCanvas.width = stampWidth;
+    tempCanvas.height = stampHeight;
+    // Draw the image (potentially scaled) onto the temp canvas
+    ctx.drawImage(img, 0, 0, stampWidth, stampHeight);
+
+    loadedImageData = ctx.getImageData(0, 0, stampWidth, stampHeight);
+    console.log(`Image "${selected.label}" ready to place at ${stampWidth}x${stampHeight}.`);
   };
   img.src = selected.url;
 }
 
+/**
+ * Places the loaded image, centering it on the cursor.
+ */
 function placeImage(event: MouseEvent) {
   if (!loadedImageData) return;
   const canvas = gameCanvas.value;
   if (!canvas) return;
 
   const rect = canvas.getBoundingClientRect();
-  // These calculations correctly scale the mouse position to the canvas's internal resolution,
-  // even if the CSS has resized its display dimensions.
   const clickX = (event.clientX - rect.left) * (canvas.width / rect.width);
   const clickY = (event.clientY - rect.top) * (canvas.height / rect.height);
   
-  const gridX = Math.floor(clickX / canvasScale);
-  const gridY = Math.floor(clickY / canvasScale);
-
-  const pixels = loadedImageData.data;
+  const mouseGridX = Math.floor(clickX / canvasScale);
+  const mouseGridY = Math.floor(clickY / canvasScale);
+  
   const stampWidth = loadedImageData.width;
+  const stampHeight = loadedImageData.height;
 
-  for (let y = 0; y < stampWidth; y++) {
+  // Calculate top-left corner to center the image on the cursor
+  const startGridX = mouseGridX - Math.floor(stampWidth / 2);
+  const startGridY = mouseGridY - Math.floor(stampHeight / 2);
+  
+  const pixels = loadedImageData.data;
+
+  for (let y = 0; y < stampHeight; y++) {
     for (let x = 0; x < stampWidth; x++) {
       const i = (y * stampWidth + x) * 4;
       const alpha = pixels[i + 3];
 
       if (alpha > 0) {
-        const newX = gridX + x;
-        const newY = gridY + y;
+        const newX = startGridX + x;
+        const newY = startGridY + y;
         const mapKey = `${newX},${newY}`;
-        if (newX < gridSize && newY < gridSize && !spatialMap.has(mapKey)) {
+
+        if (newX >= 0 && newX < gridSize && newY >= 0 && newY < gridSize && !spatialMap.has(mapKey)) {
           const newCell: GridCell = {
             r: pixels[i], g: pixels[i+1], b: pixels[i+2],
             x: newX, y: newY, energy: 100, alive: true, birthTick: tickCount,
@@ -255,7 +267,7 @@ function tryMove(cell: GridCell, dx: number, dy: number): boolean {
         livingCells.value.push(baby);
         spatialMap.set(`${newX},${newY}`, baby);
         stats.value.babyMerges++;
-        return false; // A merge is not a successful "push"
+        return false;
       }
     }
   }
@@ -306,7 +318,6 @@ const avgLifespan = computed(() => {
   flex-direction: column;
   align-items: center;
   gap: var(--spacing);
-  /* Ensure the container takes full width to properly size the canvas */
   width: 100%;
 }
 
@@ -322,23 +333,14 @@ const avgLifespan = computed(() => {
   gap: var(--spacing);
 }
 
-/* --- RESPONSIVE CANVAS FIX --- */
 canvas {
   cursor: crosshair;
   border: var(--border);
   border-radius: var(--border-radius);
   background: var(--bby-colour-black);
-
-  /* This tells the browser to keep pixels sharp when scaling, not blurry */
   image-rendering: pixelated;
-
-  /*
-    This is the key: The canvas's DISPLAY size is now responsive.
-    It will scale down to fit the screen width, while its internal
-    resolution (the :width and :height attributes) remains 1024x1024.
-  */
   width: 100%;
-  height: auto; /* Maintain aspect ratio automatically */
-  max-width: 1024px; /* Prevents it from becoming huge on large monitors */
+  height: auto;
+  max-width: 1024px;
 }
 </style>

@@ -11,12 +11,10 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 6969,
     proxy: {
-      '/baby.png': 'https://bbyapi.childofanandroid.co.uk',
-      '/speech.txt': 'https://bbyapi.childofanandroid.co.uk',
-      '/set': 'https://bbyapi.childofanandroid.co.uk',
-      '/say': 'https://bbyapi.childofanandroid.co.uk',
-      '/speak': 'https://bbyapi.childofanandroid.co.uk',
-      '/colour': 'https://bbyapi.childofanandroid.co.uk',
+      '/api': {
+        target: 'https://childofanandroid.co.uk',
+        changeOrigin: true, // This is essential for fixing CORS
+      }
     }
   },
 

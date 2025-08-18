@@ -1,4 +1,4 @@
-<!-- CHARIS CAT // bbyWorld — 2025 -->
+<!-- CHARIS CAT // bbyWorld - 2025 -->
 <template>
   <div class="page-container bbyworld-page">
     <h1 class="page-title">bbyWorld</h1>
@@ -69,51 +69,89 @@ const stats = ref({
 
 
 let tickCount = 0;
+let animationFrameId: number | null = null; // To control the animation loop
 
 onMounted(async () => {
-  const gallery = await fetchBbyBookGallery();
-  cards.value = gallery.map(card => ({ label: card.factName, url: card.url }));
+  console.log("Component mounted. Fetching gallery data...");
+  try {
+    const gallery = await fetchBbyBookGallery();
+    cards.value = gallery.map(card => ({ label: card.factName, url: card.url }));
+    console.log(`Successfully fetched ${cards.value.length} cards.`);
+
+    if (cards.value.length > 0) {
+      selectedCardLabel.value = cards.value[0].label;
+      loadSelectedImage();
+    } else {
+      console.warn("No cards found after fetching. The grid will be empty.");
+    }
+  } catch (error) {
+    console.error("Failed to fetch bbyBook gallery:", error);
+  }
 });
 
 function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value);
-  if (!selected) return;
+  if (!selected) {
+    console.error("Could not find the selected card:", selectedCardLabel.value);
+    return;
+  }
+
+  console.log(`Attempting to load image: ${selected.url}`);
 
   const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.src = selected.url;
+  img.crossOrigin = "Anonymous"; // Set to "Anonymous" to request CORS headers
 
+  // --- DEBUGGING HANDLERS ---
   img.onload = () => {
+    console.log("Image successfully loaded. Processing pixels...");
     const tempCanvas = document.createElement("canvas");
-    const ctx = tempCanvas.getContext("2d")!;
+    const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!; // Optimization for getImageData
     tempCanvas.width = gridSize;
     tempCanvas.height = gridSize;
     ctx.drawImage(img, 0, 0, gridSize, gridSize);
 
-    const pixels = ctx.getImageData(0, 0, gridSize, gridSize).data;
-    const newGrid: GridCell[][] = [];
+    try {
+      const pixels = ctx.getImageData(0, 0, gridSize, gridSize).data;
+      const newGrid: GridCell[][] = [];
 
-    for (let y = 0; y < gridSize; y++) {
-      const row: GridCell[] = [];
-      for (let x = 0; x < gridSize; x++) {
-        const i = (y * gridSize + x) * 4;
-          row.push({
-          r: pixels[i],
-          g: pixels[i + 1],
-          b: pixels[i + 2],
-          x,
-          y,
-          energy: 100,
-          alive: true,
-          birthTick: tickCount
-          });
+      for (let y = 0; y < gridSize; y++) {
+        const row: GridCell[] = [];
+        for (let x = 0; x < gridSize; x++) {
+          const i = (y * gridSize + x) * 4;
+            row.push({
+            r: pixels[i],
+            g: pixels[i + 1],
+            b: pixels[i + 2],
+            x,
+            y,
+            energy: 100,
+            alive: true,
+            birthTick: tickCount
+            });
+        }
+        newGrid.push(row);
       }
-      newGrid.push(row);
-    }
 
-    grid.value = newGrid;
-    tickLoop();
+      grid.value = newGrid;
+      console.log("Grid populated. Starting tick loop.");
+
+      // Stop any previous animation loop before starting a new one
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      tickLoop();
+
+    } catch (e) {
+      console.error("CORS Error: Could not get image data. The server hosting the image must send 'Access-Control-Allow-Origin: *' headers.", e);
+    }
   };
+
+  img.onerror = (e) => {
+    console.error("Failed to load the image. Check the URL and network connection.", e);
+  };
+  // --- END DEBUGGING HANDLERS ---
+  
+  img.src = selected.url;
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D) {
@@ -136,7 +174,7 @@ function burstEnergy(x: number, y: number, energy: number, color: {r:number,g:nu
     const nx = (x + dx + gridSize) % gridSize;
     const ny = (y + dy + gridSize) % gridSize;
     const neighbour = grid.value[ny][nx];
-    if (neighbour.alive) {
+    if (neighbour && neighbour.alive) { // Added a check if neighbour exists
       const chaos = 0.2 + Math.random() * 0.5;
       neighbour.energy = Math.min(neighbour.energy + energy * chaos, 200);
       // tint them slightly toward the dead cell's colour
@@ -149,9 +187,12 @@ function burstEnergy(x: number, y: number, energy: number, color: {r:number,g:nu
 
 function tickLoop() {
   const ctx = gameCanvas.value?.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) {
+    console.error("Canvas context not found, stopping loop.");
+    return;
+  }
 
-  tickCount++; // 🔹 count one tick
+  tickCount++;
 
   const cell = pickRandomLivingCell();
   if (cell) {
@@ -163,7 +204,7 @@ function tickLoop() {
   }
 
   drawGrid(ctx);
-  requestAnimationFrame(tickLoop);
+  animationFrameId = requestAnimationFrame(tickLoop);
 }
 
 
@@ -178,39 +219,37 @@ function tryMove(cell: GridCell, dx: number, dy: number): boolean {
   const newY = (cell.y + dy + gridSize) % gridSize;
   const target = grid.value[newY][newX];
 
+  if (!target) return false; // Safety check
+
   // Empty space → move straight in
   if (!target.alive) {
-    grid.value[newY][newX] = { ...cell, x: newX, y: newY }; // ✅ keep birthTick
-    grid.value[cell.y][cell.x] = { ...cell, alive: false };
+    grid.value[newY][newX] = { ...cell, x: newX, y: newY };
+    grid.value[cell.y][cell.x] = { ...grid.value[cell.y][cell.x], alive: false };
     return true;
   }
 
   if (target.alive) {
     const pushed = tryMove(target, dx, dy);
     if (pushed) {
-      grid.value[cell.y][cell.x] = { ...cell, alive: false };
-      grid.value[newY][newX] = { ...cell, x: newX, y: newY }; // ✅ keep birthTick
+      grid.value[cell.y][cell.x] = { ...grid.value[cell.y][cell.x], alive: false };
+      grid.value[newY][newX] = { ...cell, x: newX, y: newY };
       return true;
     } else {
       if (Math.random() < 0.5) {
         // WAR
         if (cell.energy > target.energy) {
-          target.alive = false;
           recordDeath(target, "war");
           grid.value[newY][newX] = {
             ...cell,
             x: newX,
             y: newY,
             energy: cell.energy - 10,
-            birthTick: cell.birthTick, // ✅ preserve
           };
-          grid.value[cell.y][cell.x] = { ...cell, alive: false };
+          grid.value[cell.y][cell.x] = { ...grid.value[cell.y][cell.x], alive: false };
           return true;
         } else {
-          cell.alive = false;
           recordDeath(cell, "war");
-          grid.value[cell.y][cell.x] = { ...cell, alive: false };
-          burstEnergy(cell.x, cell.y, cell.energy, { r: cell.r, g: cell.g, b: cell.b });
+          // No need to set alive: false here, recordDeath already called
           return false;
         }
       } else {
@@ -226,11 +265,11 @@ function tryMove(cell: GridCell, dx: number, dy: number): boolean {
           y: newY,
           energy: Math.min(strength, 200),
           alive: true,
-          birthTick: tickCount, // ✅ new birth
+          birthTick: tickCount,
         };
 
-        stats.value.babyMerges++; // 💞 increment
-        grid.value[cell.y][cell.x] = { ...cell, alive: false };
+        stats.value.babyMerges++;
+        grid.value[cell.y][cell.x] = { ...grid.value[cell.y][cell.x], alive: false };
         return true;
       }
     }
@@ -241,6 +280,9 @@ function tryMove(cell: GridCell, dx: number, dy: number): boolean {
 
 
 function recordDeath(cell: GridCell, reason: "war"|"squish") {
+  if (!cell.alive) return; // Prevent double-counting deaths
+
+  cell.alive = false; // Mark as dead
   const lifespan = tickCount - cell.birthTick;
   stats.value.totalLifespan += lifespan;
   stats.value.deadCount++;

@@ -388,7 +388,6 @@ export async function pollActivityForAutosnap() {
   setTimeout(pollActivityForAutosnap, 7000);
 }
 
-// ... (watchers for CSS variables are unchanged) ...
 watch(currentColour, (newColour) => {
   const r = Math.round(newColour.r); const g = Math.round(newColour.g); const b = Math.round(newColour.b);
   const root = document.documentElement;

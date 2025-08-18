@@ -9,6 +9,7 @@ import bbyPaint from '@/pages/bbyPaint.vue'
 import bbyGallery from '@/pages/bbyGallery.vue'
 import bbyBook from '@/pages/bbyBook.vue'
 import bbyWorld from '@/pages/bbyWorld.vue'
+import bbyAdmin from '@/pages/bbyAdmin.vue'
 import rightNav from '@/components/rightNav.vue'
 
 const routes = [
@@ -55,7 +56,15 @@ const routes = [
 					main: bbyWorld,
 					nav: rightNav
 			}
-	}
+	},
+
+    {
+            path: '/admin',
+            components: {
+                    main: bbyAdmin,
+                    nav: rightNav
+            }
+    }
 ]
 
 export const router = createRouter({

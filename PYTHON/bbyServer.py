@@ -203,10 +203,27 @@ def _load_json(path, default):
         return default
 
 def _save_json(path, data):
+    """
+    Atomically save JSON and, if it's one of our critical indexes, write a timestamped backup.
+    """
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
+
+    # Write a timestamped backup for critical files
+    try:
+        critical = {GALL_IDX, SNAP_IDX, USERS_FILE, CHAT_FILE}
+        if path in critical:
+            backup_dir = os.path.join(os.path.dirname(path), "backups")
+            os.makedirs(backup_dir, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+            base = os.path.basename(path)
+            backup_path = os.path.join(backup_dir, f"{base}.{stamp}.json")
+            with open(backup_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print("[WARN] could not write backup for", path, "->", e)
 
 def _b64_to_bytes(s: str) -> bytes:
     m = re.match(r'^data:image/\w+;base64,(.+)$', s, re.I)
@@ -393,6 +410,89 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
     if len(gallery_index) > 5000: del gallery_index[:-5000]
     _save_json(GALL_IDX, gallery_index)
     return meta
+
+# ---- Gallery index import / merge (recovery) ----
+def _validate_gallery_item(it: dict) -> dict | None:
+    """
+    Validate and normalize a gallery index item. Returns cleaned dict or None.
+    """
+    if not isinstance(it, dict):
+        return None
+    file = it.get("file") or ""
+    if not isinstance(file, str) or not file.endswith(".png"):
+        return None
+    out = {
+        "id": str(it.get("id") or uuid.uuid4()),
+        "ts": int(it.get("ts") or time.time()),
+        "author": str(it.get("author") or "anon"),
+        "title": str(it.get("title") or it.get("label") or ""),
+        "label": str(it.get("label") or it.get("title") or ""),
+        "file": file
+    }
+    # carry optional fields if present
+    if isinstance(it.get("snap_id"), str):
+        out["snap_id"] = it["snap_id"]
+    if isinstance(it.get("stamp_file"), str):
+        out["stamp_file"] = it["stamp_file"]
+    return out
+
+@app.post("/api/gallery/import_index")
+def api_gallery_import_index():
+    """
+    Replace or merge the gallery index from a posted JSON payload.
+    Body:
+    {
+        "index": [ ...items... ],
+        "mode": "replace" | "merge"   (default: replace)
+    }
+    Matching is done by 'file' (preferred) then by 'id' if present.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        items = payload.get("index")
+        mode = (payload.get("mode") or "replace").strip().lower()
+        if not isinstance(items, list) or not items:
+            return jsonify(error="missing or invalid 'index' array"), 400
+
+        cleaned = []
+        for it in items:
+            v = _validate_gallery_item(it)
+            if v:
+                cleaned.append(v)
+
+        if not cleaned:
+            return jsonify(error="no valid items to import"), 400
+
+        imported = 0
+        updated = 0
+
+        global gallery_index
+        if mode == "replace":
+            gallery_index = cleaned
+            imported = len(cleaned)
+        else:
+            # merge mode: keep existing, update/insert by 'file' fallback 'id'
+            existing_by_file = {it["file"]: i for i, it in enumerate(gallery_index) if isinstance(it, dict) and it.get("file")}
+            existing_by_id   = {it.get("id"): i for i, it in enumerate(gallery_index) if isinstance(it, dict) and it.get("id")}
+            for it in cleaned:
+                idx = existing_by_file.get(it["file"])
+                if idx is None and it.get("id"):
+                    idx = existing_by_id.get(it["id"])
+                if idx is None:
+                    gallery_index.append(it)
+                    imported += 1
+                else:
+                    gallery_index[idx] = it
+                    updated += 1
+
+        # keep only the newest 5000 like saver does
+        if len(gallery_index) > 5000:
+            gallery_index = gallery_index[-5000:]
+
+        _save_json(GALL_IDX, gallery_index)
+        return jsonify(ok=True, mode=mode, imported=imported, updated=updated, total=len(gallery_index))
+    except Exception as e:
+        return jsonify(error=f"import failed: {e}"), 500
 
 def _claim_alias_if_exists(platform: str, display_name: str, handle: str, real_uid: str):
     """If an alias record like '{platform}:alias:{slug(name)}' exists and is unclaimed,
@@ -629,6 +729,11 @@ def api_chat_history():
         return jsonify(public_events)
     except Exception as e: return jsonify(error=f"chat history failed: {e}"), 500
 
+# --- Legacy alias (frontend might call /chat_history) ---
+@app.get("/chat_history")
+def legacy_chat_history():
+    return api_chat_history()
+
 # --- Consent route ---
 @app.post('/api/consent')
 def api_consent():
@@ -793,6 +898,11 @@ def api_get_paint_canvas():
         b64 = base64.b64encode(paint_rgba).decode("utf-8")
     return jsonify(paintOverlayData_b64=b64, w=PAINT_W, h=PAINT_H)
 
+# --- Legacy alias (frontend might call /get_paint_canvas) ---
+@app.get("/get_paint_canvas")
+def legacy_get_paint_canvas():
+    return api_get_paint_canvas()
+
 @app.post("/api/paint_pixel")
 def api_paint_pixel():
     data = request.json or {}
@@ -868,6 +978,11 @@ def api_paint_events():
         out.append(ev)
     out.reverse()
     return jsonify(out)
+
+# --- Legacy alias (frontend might call /paint_events) ---
+@app.get("/paint_events")
+def legacy_paint_events():
+    return api_paint_events()
 
 # ---- Snapshots ----
 @app.post("/api/snapshot")
@@ -954,6 +1069,14 @@ def api_snapshot_raw(sid):
     return jsonify(state=state)
 
 # ---- Gallery ----
+@app.get("/api/gallery/index_count")
+def api_gallery_index_count():
+    try:
+        return jsonify(count=len(gallery_index))
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+
 @app.post("/api/gallery/save")
 def api_gallery_save():
     try:

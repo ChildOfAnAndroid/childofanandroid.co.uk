@@ -1236,6 +1236,8 @@ function placeImage(event: MouseEvent) {
       }
     }
   }
+  lastTime = performance.now();
+  timeSinceLastTick = 0;
 }
 
 /* ===================== Movement / Chains ===================== */

@@ -124,7 +124,22 @@
               @click="placeImage"
               :style="canvasStyle"
             />
-            <canvas v-show="scopeActive" ref="scopeCanvas" class="zoom-scope" />
+            <div v-show="scopeActive" ref="scopeBox" class="zoom-scope">
+              <canvas ref="scopeCanvas"></canvas>
+              <div class="scope-info">
+                <div>{{ hoverEnv.x }},{{ hoverEnv.y }}</div>
+                <div>
+                  H {{ hoverEnv.heat.toFixed(2) }}
+                  M {{ hoverEnv.moisture.toFixed(2) }}
+                  N {{ hoverEnv.nutrient.toFixed(2) }}
+                </div>
+                <div v-if="hoverCell">
+                  Age {{ hoverCell.age }}
+                  E {{ hoverCell.energy.toFixed(1) }}
+                  S {{ hoverCell.strength.toFixed(2) }}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -148,6 +163,10 @@ function S(){ return boardSize.value; }       // size getter everywhere
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLDivElement | null>(null);
 const scopeCanvas = ref<HTMLCanvasElement | null>(null);
+const scopeBox = ref<HTMLDivElement | null>(null);
+const hoverCell = ref<GridCell | null>(null);
+const hoverEnv = ref({ x: 0, y: 0, heat: 0, moisture: 0, nutrient: 0 });
+let lastMouseEvent: MouseEvent | null = null;
 
 const pan = ref({ x: 0, y: 0 });
 
@@ -183,6 +202,7 @@ function onMouseMove(e: MouseEvent) {
     pan.value.y += e.clientY - lastPan.y;
     lastPan = { x: e.clientX, y: e.clientY };
   }
+  lastMouseEvent = e;
   updateScope(e);
 }
 function endPan() { isPanning = false; }
@@ -436,6 +456,7 @@ function mainLoop(timestamp: number) {
   }
 
   drawGrid(ctx);
+  if (lastMouseEvent) updateScope(lastMouseEvent);
   animationFrameId = requestAnimationFrame(mainLoop);
 }
 
@@ -1044,7 +1065,8 @@ const updateScope = throttle((event: MouseEvent) => {
   if (!scopeActive.value) return;
   const canvas = gameCanvas.value;
   const scope = scopeCanvas.value;
-  if (!canvas || !scope || !frameImg) return;
+  const box = scopeBox.value;
+  if (!canvas || !scope || !box || !frameImg) return;
   const rect = canvas.getBoundingClientRect();
   const hx = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
   const hy = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
@@ -1078,10 +1100,25 @@ const updateScope = throttle((event: MouseEvent) => {
   ctx.strokeStyle = 'rgba(0,0,0,0.7)';
   ctx.strokeRect(half * pixelSize, half * pixelSize, pixelSize, pixelSize);
 
-  const offsetX = (hx / s < 0.5) ? 20 : -scope.width - 20;
-  const offsetY = (hy / s < 0.5) ? 20 : -scope.height - 20;
-  scope.style.left = `${event.clientX + offsetX}px`;
-  scope.style.top = `${event.clientY + offsetY}px`;
+  if (hx >= 0 && hy >= 0 && hx < s && hy < s) {
+    const ii = I(hx, hy);
+    hoverEnv.value = {
+      x: hx,
+      y: hy,
+      heat: heatField[ii],
+      moisture: moistureField[ii],
+      nutrient: nutrientField[ii],
+    };
+    hoverCell.value = spatialMap[ii] || null;
+  } else {
+    hoverEnv.value = { x: hx, y: hy, heat: 0, moisture: 0, nutrient: 0 };
+    hoverCell.value = null;
+  }
+
+  const offsetX = (hx / s < 0.5) ? 20 : -box.offsetWidth - 20;
+  const offsetY = (hy / s < 0.5) ? 20 : -box.offsetHeight - 20;
+  box.style.left = `${event.clientX + offsetX}px`;
+  box.style.top = `${event.clientY + offsetY}px`;
 }, 16);
 
 /* ===================== Derived ===================== */
@@ -1123,8 +1160,10 @@ const avgLifespan = computed(() => {
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
-.world-stage .stack canvas:not(.zoom-scope){grid-area:1/1;image-rendering:pixelated}
-.zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;image-rendering:pixelated;z-index:1000}
+.world-stage .stack canvas{grid-area:1/1;image-rendering:pixelated}
+.zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;z-index:1000}
+.zoom-scope canvas{width:100%;height:100%;image-rendering:pixelated;display:block}
+.zoom-scope .scope-info{position:absolute;bottom:0;left:0;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px;font-family:monospace;line-height:1.2;white-space:nowrap}
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .legend{font-size:var(--small-font-size);display:flex;flex-direction:column;gap:.25rem;line-height:1.2}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}

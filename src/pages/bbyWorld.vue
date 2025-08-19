@@ -194,11 +194,13 @@ const zoomFactor = ref(1);         // user-controlled, relative to fit
 const scopeActive = ref(false);
 
 // total scale applied to canvas
-const totalScale = computed(() => baseScale.value * zoomFactor.value);
+const totalScale = computed(() => {
+  return Math.max(1, Math.round(baseScale.value * zoomFactor.value));
+});
 
 // style for canvas transform
 const canvasStyle = computed(() => ({
-  transform: `translate(${pan.value.x}px, ${pan.value.y}px) scale(${totalScale.value})`,
+  transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`,
   transformOrigin: "top left",
 }));
 
@@ -405,8 +407,8 @@ function computeBaseScale(){
   const h = stage.clientHeight;
   const s = S();
   if (w <= 0 || h <= 0 || s <= 0) return;
-  // fit entire board into stage
-  baseScale.value = Math.min(w / s, h / s);
+  // fit entire board into stage using integer scale for crisp pixels
+  baseScale.value = Math.max(1, Math.floor(Math.min(w / s, h / s)));
 }
 
 function resetView(){
@@ -1424,6 +1426,9 @@ function deposit(cell:GridCell){
 function drawGrid(ctx: CanvasRenderingContext2D) {
   if (!frameImg) return;
 
+  // ensure scaling keeps sharp edges
+  ctx.imageSmoothingEnabled = false;
+
   const skyR = Number(currentColour.r)||0;
   const skyG = Number(currentColour.g)||0;
   const skyB = Number(currentColour.b)||0;
@@ -1503,12 +1508,6 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
   }
 
   ctx.putImageData(frameImg, 0, 0);
-
-  ctx.lineWidth = 1;
-  for (const c of livingCells.value) {
-    ctx.strokeStyle = `rgba(${c.r},${c.g},${c.b},1)`;
-    ctx.strokeRect(c.x + 0.5, c.y + 0.5, 1, 1);
-  }
 }
 
 /* ===================== Scope ===================== */
@@ -1604,7 +1603,12 @@ const avgLifespan = computed(() => {
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
-.world-stage .stack canvas{grid-area:1/1;image-rendering:pixelated}
+.world-stage .stack canvas{
+  grid-area:1/1;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+  display:block;
+}
 .zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;z-index:1000}
 .zoom-scope canvas{width:100%;height:100%;image-rendering:pixelated;display:block}
 .zoom-scope .scope-info{position:absolute;bottom:0;left:0;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px;font-family:monospace;line-height:1.2;white-space:nowrap}

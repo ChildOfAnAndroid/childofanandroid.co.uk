@@ -1480,6 +1480,12 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
   }
 
   ctx.putImageData(frameImg, 0, 0);
+
+  ctx.lineWidth = 1;
+  for (const c of livingCells.value) {
+    ctx.strokeStyle = `rgba(${c.r},${c.g},${c.b},1)`;
+    ctx.strokeRect(c.x + 0.5, c.y + 0.5, 1, 1);
+  }
 }
 
 /* ===================== Scope ===================== */

@@ -235,6 +235,7 @@ type Heading = 0|1|2|3;
 const HEADING_VECS: [number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
 
 type GridCell = {
+  id:number;
   r:number; g:number; b:number; a:number;
   x:number; y:number;
   energy:number; alive:boolean; birthTick:number; age:number;
@@ -244,10 +245,14 @@ type GridCell = {
   turnBias:number;         // smoothness (smaller = straighter)
   coop:number;             // cooperation affinity
   cargo:number;            // carried nutrients
+  friends: Record<number, number>; // pairwise affinity
 };
 
 /* ===================== World State ===================== */
 const livingCells = ref<GridCell[]>([]);
+let nextCellId = 1;
+const cellById: Record<number, GridCell> = {};
+const familyTree: Record<number, {parents:number[]; children:number[]}> = {};
 // Spatial occupancy is tracked with a plain array indexed by the numeric
 // key produced by `I(x,y)`.  Earlier versions used a `Map` with string
 // keys such as "x,y" for lookups.  During large "light blooms" thousands
@@ -568,6 +573,12 @@ function update() {
     c.age += 1;
 
     const ii = I(c.x, c.y);
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = (c.x + dx + S()) % S();
+      const ny = (c.y + dy + S()) % S();
+      const n = spatialMap[I(nx, ny)];
+      if (n && n.alive) adjustAffinity(c, n, 0.01);
+    }
     // Basic environmental energy intake allows cells to sustain themselves
     // instead of rapidly starving. Each colour channel draws from its
     // matching field, converting a small portion into energy.
@@ -942,12 +953,16 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
 
   const heading = (Math.floor(rand()*4) as Heading);
   const cell: GridCell = {
+    id: nextCellId++,
     r, g, b, a: A, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
     aggression, fertility, metabolism,
     strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
     coop: 0,
     cargo: 0,
+    friends: {},
   };
+  cellById[cell.id] = cell;
+  familyTree[cell.id] = {parents: [], children: []};
 
   // Newborn cells previously spawned into completely empty tiles and
   // immediately began burning energy faster than they could recover it. By
@@ -1193,12 +1208,14 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   }
 
   if (target.alive){
-    const coopBoost = (cell.coop + target.coop) * 0.2;
+    const pairAff = getAffinity(cell, target);
+    const coopBoost = (cell.coop + target.coop) * 0.2 + pairAff * 0.1;
     const pCompat = Math.min(1, compatibility(cell,target) * 0.8 + (cell.fertility+target.fertility)*0.1 + coopBoost);
     const baseWar = (cell.aggression+target.aggression)*0.35 + (heatField[tIndex]*0.25);
-    const pWar    = Math.min(1, Math.max(0, baseWar - coopBoost*0.5));
+    const pWar    = Math.min(1, Math.max(0, baseWar - coopBoost*0.5 - pairAff*0.1));
 
     if (pCompat >= pWar){
+      adjustAffinity(cell, target, 0.5);
       const spawn = findEmptyAdjacent(newX, newY) || findEmptyAdjacent(cell.x, cell.y);
       if (spawn){
         const [bx, by] = spawn;
@@ -1220,11 +1237,13 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
 
       if (cellScore >= tarScore){
         recordDeath(target, "war");
+        adjustAffinity(cell, target, -1.5);
         cell.energy = Math.min(cell.energy + 20, 260);
         performMove(cell, newX, newY);
         return true;
       } else {
         recordDeath(cell, "war");
+        adjustAffinity(cell, target, -1.5);
         return false;
       }
     }
@@ -1256,6 +1275,16 @@ function neighbourCount(x:number,y:number):number{
     }
   }
   return count;
+}
+
+function getAffinity(a:GridCell, b:GridCell){
+  return a.friends[b.id] || 0;
+}
+
+function adjustAffinity(a:GridCell, b:GridCell, delta:number){
+  const clamp = (v:number)=>Math.min(10, Math.max(-10, v));
+  a.friends[b.id] = clamp((a.friends[b.id]||0) + delta);
+  b.friends[a.id] = clamp((b.friends[a.id]||0) + delta);
 }
 
 function compatibility(a:GridCell,b:GridCell){
@@ -1297,6 +1326,12 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
 
   kid.aggression += (rand()*0.1-0.05);
   kid.metabolism += (rand()*0.04-0.02);
+  familyTree[kid.id].parents = [cell.id, target.id];
+  familyTree[cell.id].children.push(kid.id);
+  familyTree[target.id].children.push(kid.id);
+  adjustAffinity(cell, target, 2);
+  adjustAffinity(cell, kid, 3);
+  adjustAffinity(target, kid, 3);
   return kid;
 }
 

@@ -64,6 +64,8 @@
                 class="group-row"
                 v-for="g in sortedGroupStats"
                 :key="g.colour"
+                :class="{selected: highlightedGroup === g.colour}"
+                @click="selectGroup(g.colour)"
               >
                 <div class="group-bar" :style="{ background: g.colour, width: g.percentage + '%' }"></div>
                 <span class="colour-cell">
@@ -75,6 +77,44 @@
                 <span>{{ formatTicks(g.avgAge) }}</span>
                 <span>{{ g.avgEnergy.toFixed(1) }}</span>
                 <span>{{ g.avgStrength.toFixed(2) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grp" v-if="selectedGroupInfo">
+            <label class="section">group insight</label>
+            <div class="group-insight">
+              <span class="colour-swatch" :style="{ background: selectedGroupInfo.colour }"></span>
+              <span>{{ selectedGroupInfo.message }}</span>
+            </div>
+          </div>
+
+          <div class="grp" v-if="selectedCell">
+            <label class="section">cell {{ selectedCell.id }} family</label>
+            <div class="family-tree">
+              <div>
+                parents:
+                <template v-if="selectedFamily.parents.length">
+                  <span
+                    v-for="p in selectedFamily.parents"
+                    :key="p.id"
+                    class="family-link"
+                    @click="selectCellById(p.id)"
+                  >#{{ p.id }}</span>
+                </template>
+                <span v-else>none</span>
+              </div>
+              <div>
+                children:
+                <template v-if="selectedFamily.children.length">
+                  <span
+                    v-for="c in selectedFamily.children"
+                    :key="c.id"
+                    class="family-link"
+                    @click="selectCellById(c.id)"
+                  >#{{ c.id }}</span>
+                </template>
+                <span v-else>none</span>
               </div>
             </div>
           </div>
@@ -293,6 +333,50 @@ function rgbToHex(r: number, g: number, b: number) {
   return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
 }
 
+function hexToRgb(hex: string) {
+  const h = hex.replace('#', '');
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+
+const GROUP_STEP = 48; // bucket size for colour grouping
+const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
+function groupKeyFromRGB(r: number, g: number, b: number) {
+  return rgbToHex(quant(r), quant(g), quant(b));
+}
+function groupKey(c: GridCell) {
+  return groupKeyFromRGB(c.r, c.g, c.b);
+}
+
+const highlightedGroup = ref<string | null>(null);
+function selectGroup(colour: string) {
+  highlightedGroup.value = highlightedGroup.value === colour ? null : colour;
+}
+
+const selectedGroupInfo = computed(() => {
+  if (!highlightedGroup.value) return null;
+  const { r, g, b } = hexToRgb(highlightedGroup.value);
+  const msgs: string[] = [];
+  if (r > g && r > b) msgs.push('High red boosts aggression and heat-seeking.');
+  if (g > r && g > b) msgs.push('Green fuels metabolism and nutrient hunger.');
+  if (b > r && b > g) msgs.push('Blue increases moisture affinity and cooling.');
+  if (!msgs.length) msgs.push('Balanced colours yield balanced behaviour.');
+  return { colour: highlightedGroup.value, message: msgs.join(' ') };
+});
+
+const selectedCell = ref<GridCell | null>(null);
+function selectCellById(id: number) {
+  const c = cellById[id];
+  if (c) selectedCell.value = c;
+}
+const selectedFamily = computed(() => {
+  if (!selectedCell.value) return { parents: [] as GridCell[], children: [] as GridCell[] };
+  const entry = familyTree[selectedCell.value.id] || { parents: [], children: [] };
+  return {
+    parents: entry.parents.map(id => cellById[id]).filter(Boolean),
+    children: entry.children.map(id => cellById[id]).filter(Boolean),
+  };
+});
+
 const groupStats = computed<ColourGroupStat[]>(() => {
   const base = {
     count: 0,
@@ -301,10 +385,8 @@ const groupStats = computed<ColourGroupStat[]>(() => {
     totalEnergy: 0,
   };
   const groups: Record<string, typeof base> = {};
-  const STEP = 48; // bucket size for colour grouping
-  const quant = (v: number) => Math.min(255, Math.round(v / STEP) * STEP);
   for (const c of livingCells.value) {
-    const key = rgbToHex(quant(c.r), quant(c.g), quant(c.b));
+    const key = groupKey(c);
     const g = groups[key] || (groups[key] = { ...base });
     g.count++;
     g.totalStrength += c.strength;
@@ -1020,7 +1102,6 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
 }
 
 function placeImage(event: MouseEvent) {
-  if (!loadedImageData) return;
   const canvas = gameCanvas.value; if (!canvas) return;
 
   const rect = canvas.getBoundingClientRect();
@@ -1029,6 +1110,14 @@ function placeImage(event: MouseEvent) {
 
   const mouseGridX = Math.floor(clickX);
   const mouseGridY = Math.floor(clickY);
+
+  const existing = spatialMap[I(mouseGridX, mouseGridY)];
+  if (existing) {
+    selectedCell.value = existing;
+    return;
+  }
+
+  if (!loadedImageData) return;
 
   const W = loadedImageData.width;
   const H = loadedImageData.height;
@@ -1544,6 +1633,17 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     frame[off+2] = c.b;
     frame[off+3] = Math.max(0, Math.min(255, c.a));
 
+    if (highlightedGroup.value && groupKey(c) === highlightedGroup.value) {
+      frame[off  ] = Math.min(255, frame[off  ] + 100);
+      frame[off+1] = Math.min(255, frame[off+1] + 100);
+      frame[off+2] = Math.min(255, frame[off+2] + 100);
+    }
+    if (selectedCell.value && c === selectedCell.value) {
+      frame[off  ] = 255;
+      frame[off+1] = 255;
+      frame[off+2] = 0;
+    }
+
     if (c.age < BIRTH_FLASH_TICKS){
       const flash = 1 - c.age / BIRTH_FLASH_TICKS;
       frame[off  ] = Math.min(255, frame[off  ] + flash*200);
@@ -1641,8 +1741,9 @@ const avgLifespan = computed(() => {
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-row{display:grid;grid-template-columns:repeat(7,auto);gap:.25rem;position:relative}
-.group-row.header{font-weight:700}
+.group-row{display:grid;grid-template-columns:repeat(7,auto);gap:.25rem;position:relative;cursor:pointer}
+.group-row.header{font-weight:700;cursor:default}
+.group-row.selected{outline:1px solid var(--accent-colour);}
 .group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
 .colour-cell{display:flex;align-items:center;gap:.25rem}
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
@@ -1670,5 +1771,9 @@ const avgLifespan = computed(() => {
 .card-swatch{border:var(--border);padding:2px;background:var(--panel-colour);cursor:pointer}
 .card-swatch img{width:32px;height:32px;image-rendering:pixelated;display:block}
 .card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
+.group-insight{display:flex;align-items:center;gap:.5rem;font-size:var(--small-font-size)}
+.family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
+.family-link:hover{text-decoration:underline}
 @media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

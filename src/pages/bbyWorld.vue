@@ -76,7 +76,7 @@
             <label class="section">legend</label>
             <div class="legend">
               <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
-              <p><strong>Colours = genes:</strong> the intensity of each channel is the strength of that trait—red for aggression & heat-seeking, blue raises fertility & moisture affinity, green fuels metabolism & nutrient hunger, while alpha sets overall toughness.</p>
+              <p><strong>Colours = genes:</strong> the intensity of each channel is the strength of that trait—red for aggression & heat-seeking, blue boosts moisture affinity, green fuels metabolism & nutrient hunger, while alpha sets overall toughness.</p>
               <p><strong>Trade-offs:</strong> excess red burns energy, greens need elbow-room, blues pool but slip off heights, and high alpha is mighty yet sluggish.</p>
               <p><strong>Genetics:</strong> when two cells merge, each colour channel mixes according to parental strength so offspring wear a visible blend. New births flash briefly to mark their arrival.</p>
               <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
@@ -577,6 +577,16 @@ function update() {
     const domB = colourDominance(Bf, Rf, Gf);
     const domG = colourDominance(Gf, Rf, Bf);
 
+    // transparency fades over time with colour/environment randomness
+    const envAvg = (heatField[ii] + moistureField[ii] + nutrientField[ii]) / 3;
+    const colourAvg = (Rf + Bf + Gf) / 3;
+    const fade = rand() * (0.05 + colourAvg*0.05 + envAvg*0.02);
+    c.a = Math.max(ALPHA_MIN, c.a - fade);
+    c.strength = c.a / 255;
+    const ageFactor = Math.min(1, c.age / 1000);
+    const transpFactor = 1 - c.a / 255;
+    c.fertility = ageFactor * transpFactor;
+
     let gain = 0;
     const handleField = (dom:number, field:Float32Array, idx:number) => {
       if (dom === 0) return;
@@ -869,7 +879,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
   let energy = 60 + strength*140;
   let metabolism = 0.18 + (g/255)*0.20;  // green=hungry growth
   let aggression  = (r/255)*0.9;         // red=fighty
-  let fertility   = 0.25 + (b/255)*0.5;  // blue=bonding
+  let fertility   = 0;                   // fertility will grow with age/transparency
 
   const heading = (Math.floor(rand()*4) as Heading);
   const cell: GridCell = {
@@ -1205,7 +1215,6 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   target.energy *= 0.7;
 
   kid.aggression += (rand()*0.1-0.05);
-  kid.fertility  += (rand()*0.1-0.05);
   kid.metabolism += (rand()*0.04-0.02);
   return kid;
 }
@@ -1320,7 +1329,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     frame[off  ] = c.r;
     frame[off+1] = c.g;
     frame[off+2] = c.b;
-    frame[off+3] = 255;
+    frame[off+3] = Math.max(0, Math.min(255, c.a));
 
     if (c.age < BIRTH_FLASH_TICKS){
       const flash = 1 - c.age / BIRTH_FLASH_TICKS;

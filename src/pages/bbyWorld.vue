@@ -256,6 +256,7 @@ type GridCell = {
   coop:number;             // cooperation affinity
   cargo:number;            // carried nutrients
   friends: Record<number, number>; // pairwise affinity
+  decayRate:number;        // alpha loss per tick
 };
 
 /* ===================== World State ===================== */
@@ -601,11 +602,8 @@ function update() {
     const domB = colourDominance(Bf, Rf, Gf);
     const domG = colourDominance(Gf, Rf, Bf);
 
-    // transparency fades over time with colour/environment randomness
-    const envAvg = (heatField[ii] + moistureField[ii] + nutrientField[ii]) / 3;
-    const colourAvg = (Rf + Bf + Gf) / 3;
-    const fade = rand() * (0.05 + colourAvg*0.05 + envAvg*0.02);
-    c.a = Math.max(0, c.a - fade);
+    // transparency fades over time based on each cell's inherent decay rate
+    c.a = Math.max(0, c.a - c.decayRate);
     c.strength = c.a / 255;
     if (c.a < VISIBLE_ALPHA) {
       recordDeath(c, "fade");
@@ -953,6 +951,12 @@ const FERTILITY_ALPHA_MIN = 0.3
 const FERTILITY_ALPHA_MAX = 0.9
 const FERTILITY_ALPHA_PEAK = 0.7
 const BIRTH_FLASH_TICKS = 8
+const MIN_DECAY_RATE = 0.02
+const MAX_DECAY_RATE = 0.05
+
+function randomDecayRate(){
+  return MIN_DECAY_RATE + rand() * (MAX_DECAY_RATE - MIN_DECAY_RATE);
+}
 
 function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): GridCell {
   const A = Math.max(VISIBLE_ALPHA, a);
@@ -971,6 +975,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
     coop: 0,
     cargo: 0,
     friends: {},
+    decayRate: randomDecayRate(),
   };
   cellById[cell.id] = cell;
   familyTree[cell.id] = {parents: [], children: []};
@@ -1337,6 +1342,8 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
 
   kid.aggression += (rand()*0.1-0.05);
   kid.metabolism += (rand()*0.04-0.02);
+  const baseDecay = (cell.decayRate + target.decayRate) / 2;
+  kid.decayRate = Math.min(MAX_DECAY_RATE, Math.max(MIN_DECAY_RATE, baseDecay + (rand()*0.01 - 0.005)));
   familyTree[kid.id].parents = [cell.id, target.id];
   familyTree[cell.id].children.push(kid.id);
   familyTree[target.id].children.push(kid.id);

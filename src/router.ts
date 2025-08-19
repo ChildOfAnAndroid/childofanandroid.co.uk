@@ -9,6 +9,7 @@ import bbyPaint from '@/pages/bbyPaint.vue'
 import bbyGallery from '@/pages/bbyGallery.vue'
 import bbyBook from '@/pages/bbyBook.vue'
 import bbyWorld from '@/pages/bbyWorld.vue'
+import bbyWorld2 from '@/pages/bbyWorld2.vue'
 import bbyAdmin from '@/pages/bbyAdmin.vue'
 import rightNav from '@/components/rightNav.vue'
 
@@ -54,6 +55,14 @@ const routes = [
 			path: '/world',
 			components: {
 					main: bbyWorld,
+					nav: rightNav
+			}
+	},
+
+	{
+			path: '/world2',
+			components: {
+					main: bbyWorld2,
 					nav: rightNav
 			}
 	},

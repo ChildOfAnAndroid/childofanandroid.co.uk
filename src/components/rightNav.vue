@@ -4,8 +4,9 @@
 		<router-link to="/paint">paint</router-link>
 		<router-link to="/gallery">gallery</router-link>
 		<router-link to="/bbybook">bbybook</router-link>
+		<router-link to="/world2">world</router-link>
 		<router-link to="/test">test</router-link>
-		<router-link to="/world">world</router-link>
+		<router-link to="/world">dlrow</router-link>
 	</nav>
 </template>
 

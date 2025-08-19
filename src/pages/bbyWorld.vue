@@ -742,8 +742,11 @@ function update() {
         c.a = Math.max(0, c.a - c.decayRate);
     }
 
-    // pixels that clump lose additional size so massive blobs
-    // cannot accumulate without a supporting mechanism.
+    // pixels that clump lose transparency so massive blobs
+    // cannot accumulate without a supporting mechanism. The
+    // penalty now ramps up gently so moderately sized groups
+    // can persist while very dense clusters still thin out
+    // over time.
     let neighbourCount = 0;
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
@@ -754,8 +757,10 @@ function update() {
         if (n && n.alive) neighbourCount++;
       }
     }
-    if (neighbourCount >= 4) {
-      c.a = Math.max(0, c.a - (neighbourCount - 3) * 0.5);
+    if (neighbourCount > 3) {
+      const excess = neighbourCount - 3;
+      const penalty = (excess * excess) * 0.02; // slow, offsetting group detriment
+      c.a = Math.max(0, c.a - penalty);
     }
 
     c.strength = c.a / 255;

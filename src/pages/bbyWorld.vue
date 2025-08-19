@@ -90,6 +90,27 @@
           </div>
 
           <div class="grp" v-if="selectedCell">
+            <label class="section">cell {{ selectedCell.id }} info</label>
+            <div class="cell-stats">
+              <div class="cell-colour">
+                <span
+                  class="colour-swatch"
+                  :style="{ background: `rgba(${selectedCell.r},${selectedCell.g},${selectedCell.b},${selectedCell.a/255})` }"
+                ></span>
+                <span>{{ selectedCell.r }},{{ selectedCell.g }},{{ selectedCell.b }},{{ selectedCell.a }}</span>
+              </div>
+              <div>pos: {{ selectedCell.x }}, {{ selectedCell.y }}</div>
+              <div>age: {{ formatTicks(selectedCell.age) }}</div>
+              <div>energy: {{ selectedCell.energy.toFixed(1) }}</div>
+              <div>strength: {{ selectedCell.strength.toFixed(2) }}</div>
+              <div>aggr: {{ selectedCell.aggression.toFixed(2) }}</div>
+              <div>fert: {{ selectedCell.fertility.toFixed(2) }}</div>
+              <div>met: {{ selectedCell.metabolism.toFixed(2) }}</div>
+              <div>cargo: {{ selectedCell.cargo.toFixed(1) }}</div>
+            </div>
+          </div>
+
+          <div class="grp" v-if="selectedCell">
             <label class="section">cell {{ selectedCell.id }} family</label>
             <div class="family-tree">
               <div>
@@ -1796,5 +1817,7 @@ const avgLifespan = computed(() => {
 .family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
 .family-link:hover{text-decoration:underline}
+.cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.cell-colour{display:flex;align-items:center;gap:.25rem}
 @media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

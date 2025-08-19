@@ -243,6 +243,7 @@ type GridCell = {
   heading: Heading;        // chain direction
   turnBias:number;         // smoothness (smaller = straighter)
   coop:number;             // cooperation affinity
+  cargo:number;            // carried nutrients
 };
 
 /* ===================== World State ===================== */
@@ -621,6 +622,12 @@ function update() {
     } else if (domG < 0) {
       nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.004 * Gf * (-domG));
     }
+    if (domR > 0) {
+      const fuel = Math.min(0.015 * Rf * domR, nutrientField[ii]);
+      nutrientField[ii] -= fuel;
+      gain += fuel * 25;
+      if (fuel === 0) c.energy -= 0.1;
+    }
     // Mixed colour synergies encourage varied emergent behaviours by letting
     // cells with blended channels transmute nearby resources. These effects
     // provide alternatives to chasing a perfectly neutral colour.
@@ -820,10 +827,46 @@ function update() {
       }
     }
 
+    // Animal behaviour: dark and purple cells ferry nutrients and gift energy
+    const isAnimal = (c.r + c.g + c.b < 60) || (c.r > 150 && c.b > 150 && c.g < 80);
+    if (isAnimal) {
+      if (c.cargo < 20 && nutrientField[ii] > 0.01) {
+        const take = Math.min(0.01, nutrientField[ii]);
+        nutrientField[ii] -= take;
+        c.cargo += take * 100;
+      }
+      for (const [dx, dy] of shareDirs) {
+        const nx = (c.x + dx + S()) % S();
+        const ny = (c.y + dy + S()) % S();
+        const neighbour = spatialMap[I(nx, ny)];
+        if (!neighbour || !neighbour.alive || c.cargo <= 0) continue;
+        const nIsAnimal = (neighbour.r + neighbour.g + neighbour.b < 60) || (neighbour.r > 150 && neighbour.b > 150 && neighbour.g < 80);
+        if (nIsAnimal) {
+          const gift = Math.min(5, c.cargo);
+          neighbour.energy = Math.min(260, neighbour.energy + gift);
+          c.cargo -= gift;
+        }
+      }
+    }
+
     // Only squash cells that fail to recover enough energy after drawing from
     // their local field this tick.
     if (c.energy <= 0) {
       if (domB > 0) {
+        let pooled = false;
+        for (const [dx, dy] of shareDirs) {
+          const nx = (c.x + dx + S()) % S();
+          const ny = (c.y + dy + S()) % S();
+          const neighbour = spatialMap[I(nx, ny)];
+          if (neighbour && neighbour.alive) {
+            const nDomB = colourDominance(neighbour.b/255, neighbour.r/255, neighbour.g/255);
+            if (nDomB > 0) { pooled = true; break; }
+          }
+        }
+        if (pooled) {
+          c.energy = 1;
+          continue;
+        }
         const escape = findEmptyAdjacent(c.x, c.y);
         if (escape) {
           const [ex, ey] = escape;
@@ -903,6 +946,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
     aggression, fertility, metabolism,
     strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
     coop: 0,
+    cargo: 0,
   };
 
   // Newborn cells previously spawned into completely empty tiles and
@@ -990,16 +1034,20 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     const domB = colourDominance(Bf, Rf, Gf);
     const domG = colourDominance(Gf, Rf, Bf);
     let want = heat*Rf + wet*Bf + nut*Gf + (heat+wet+nut)*0.05;
-    // Blue cells shy from climbing higher ground while red cells seek it
+    // Blue cells shy from climbing higher ground
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
     want -= Math.max(0, hDiff) * Bf * domB;
-    want += hDiff * Rf * domR;
+    // Red cells hunt for fuel (nutrient and dryness)
+    want += (nut - wet) * Rf * domR * 0.5;
 
     // Stronger cells should be less deterred by solid tiles. Previously the
     // penalty increased with strength, causing fragile cells to push through
     // rock more easily than tough ones. Invert the relationship so that
     // strong cells incur the minimum penalty while weak cells avoid solids.
-    const solidPenalty = solidGrid[i] * (1 - cell.strength);
+    let solidPenalty = solidGrid[i] * (1 - cell.strength);
+    if (Math.abs(cell.r - cell.g) < 20 && Math.abs(cell.g - cell.b) < 20) {
+      solidPenalty *= 0.3;
+    }
     const same = (h === cell.heading) ? 1 : 0;
     const turnPenalty = (h === cell.heading ? 0 : cell.turnBias);
 
@@ -1036,6 +1084,10 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
       }
     }
 
+    if (Math.abs(cell.r - cell.g) < 20 && Math.abs(cell.g - cell.b) < 20) {
+      const density = neighbourCount(nx, ny);
+      score += (1 - density / 8) * 0.3;
+    }
     // amplify a touch of randomness so groups don't lock into perfect stability
     score += (rand()-0.5)*0.1;
 
@@ -1193,6 +1245,19 @@ function pickRandomLivingCell(): GridCell | null {
   return livingCells.value[Math.floor(rand()*livingCells.value.length)];
 }
 
+function neighbourCount(x:number,y:number):number{
+  let count=0;
+  for(let dy=-1;dy<=1;dy++){
+    for(let dx=-1;dx<=1;dx++){
+      if(dx===0&&dy===0) continue;
+      const ni = I((x+dx+S())%S(), (y+dy+S())%S());
+      const c = spatialMap[ni];
+      if(c && c.alive) count++;
+    }
+  }
+  return count;
+}
+
 function compatibility(a:GridCell,b:GridCell){
   // cross-channel complement: blue↔red, red↔green, green↔blue
   const AR=a.r/255, AG=a.g/255, AB=a.b/255;
@@ -1273,6 +1338,10 @@ function deposit(cell:GridCell){
   heatField[i]     = Math.max(0, heatField[i] - (0.012*Bf));     // blue cools
   nutrientField[i] += 0.005*Bf;                                 // water dissolves
   heatField[i]     += 0.003*Gf;                                 // growth warms
+  if (cell.cargo > 0) {
+    nutrientField[i] += cell.cargo;
+    cell.cargo = 0;
+  }
 }
 
 /* ===================== Draw ===================== */

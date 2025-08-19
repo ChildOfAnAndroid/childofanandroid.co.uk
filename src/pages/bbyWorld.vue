@@ -490,9 +490,28 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
   if (sp === "plant")    { metabolism += 0.08; aggression *= 0.6; }
 
   const heading = (Math.floor(rand()*4) as Heading);
-  return { r,g,b,a, x:px,y:py, energy, alive:true, birthTick:tickCount, age:0,
-           species: sp, aggression, fertility, metabolism,
-           strength, heading, turnBias: 0.3 + (1 - strength)*0.4 };
+  const cell: GridCell = {
+    r, g, b, a, x: px, y: py, energy, alive: true, birthTick: tickCount, age: 0,
+    species: sp, aggression, fertility, metabolism,
+    strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
+  };
+
+  // Newborn cells previously spawned into completely empty tiles and
+  // immediately began burning energy faster than they could recover it. By
+  // seeding a little of their preferred field type at birth, they have an
+  // initial resource to metabolise which prevents the whole population from
+  // dying out in the opening moments of a game.
+  const idx = I(px, py);
+  if (sp === "plasma")      heatField[idx]     += 0.3;
+  else if (sp === "water")  moistureField[idx] += 0.3;
+  else if (sp === "plant")  nutrientField[idx] += 0.3;
+  else {
+    heatField[idx] += 0.1;
+    moistureField[idx] += 0.1;
+    nutrientField[idx] += 0.1;
+  }
+
+  return cell;
 }
 
 function placeImage(event: MouseEvent) {

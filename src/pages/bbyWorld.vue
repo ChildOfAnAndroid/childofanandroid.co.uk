@@ -386,10 +386,6 @@ function update() {
     const c = livingCells.value[i];
     c.energy -= c.metabolism;
     c.age += 1;
-    if (c.energy <= 0) {
-      recordDeath(c, "squish");
-      continue;
-    }
 
     const ii = I(c.x, c.y);
     // Basic environmental energy intake allows cells to sustain themselves
@@ -421,6 +417,13 @@ function update() {
       moistureField[ii] -= m;
       nutrientField[ii] = Math.max(0, nutrientField[ii] - n);
       c.energy = Math.min(c.energy + (h + m + n) * 10, 260);
+    }
+
+    // Only squash cells that fail to recover enough energy after drawing from
+    // their local field this tick.
+    if (c.energy <= 0) {
+      recordDeath(c, "squish");
+      continue;
     }
   }
 

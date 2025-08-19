@@ -583,6 +583,31 @@ function update() {
 
     c.energy = Math.min(c.energy + gain, 260);
 
+    // Bright cells struggle near the depths and dim cells shun the dazzling.
+    const brightness = (c.r + c.g + c.b) / 3;
+    const deep = S() * 0.75;
+    if (brightness > 200 && c.y > deep) {
+      c.energy -= (brightness - 200) * 0.01;
+    }
+    if (brightness < 100) {
+      let brightNeighbours = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = (c.x + dx + S()) % S();
+          const ny = (c.y + dy + S()) % S();
+          const neigh = spatialMap[I(nx, ny)];
+          if (neigh && neigh.alive) {
+            const nb = (neigh.r + neigh.g + neigh.b) / 3;
+            if (nb > 200) brightNeighbours++;
+          }
+        }
+      }
+      if (brightNeighbours > 0) {
+        c.energy -= brightNeighbours * 0.5;
+      }
+    }
+
     // Blue cells slowly erode nearby solids and push debris outward
     if (domB !== 0) {
       const erosion = 0.004 * Bf * Math.abs(domB);

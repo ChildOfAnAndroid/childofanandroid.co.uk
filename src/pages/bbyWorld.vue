@@ -1198,6 +1198,51 @@ function hasNearbyGreenBlue(x:number,y:number,dist=2): boolean {
   return false;
 }
 
+function congaMove(start:GridCell, dx:number, dy:number): boolean {
+  const heading = start.heading;
+  const chain: GridCell[] = [start];
+  let cx = start.x;
+  let cy = start.y;
+  for (let steps = 0; steps < S(); steps++) {
+    const nx = (cx + dx + S()) % S();
+    const ny = (cy + dy + S()) % S();
+    const next = spatialMap[I(nx, ny)];
+    if (!next) {
+      for (let i = chain.length - 1; i >= 0; i--) {
+        const c = chain[i];
+        const tx = (c.x + dx + S()) % S();
+        const ty = (c.y + dy + S()) % S();
+        performMove(c, tx, ty);
+      }
+      return true;
+    }
+    if (next.heading === heading && next.alive) {
+      chain.push(next);
+      cx = nx; cy = ny;
+      continue;
+    }
+    if (next.alive) {
+      recordDeath(next, "squish");
+      for (let i = chain.length - 1; i >= 0; i--) {
+        const c = chain[i];
+        const tx = (c.x + dx + S()) % S();
+        const ty = (c.y + dy + S()) % S();
+        performMove(c, tx, ty);
+      }
+      return true;
+    }
+  }
+  const last = chain[chain.length - 1];
+  recordDeath(last, "squish");
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const c = chain[i];
+    const tx = (c.x + dx + S()) % S();
+    const ty = (c.y + dy + S()) % S();
+    performMove(c, tx, ty);
+  }
+  return true;
+}
+
 function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   // stronger cells used to sit still half the time which made the world feel static.
   // reduce the rest chance so even tough pixels wander and bump into neighbours.
@@ -1290,7 +1335,7 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     }
   }
 
-  return false;
+  return congaMove(cell, dx, dy);
 }
 
 function performMove(moving:GridCell, toX:number, toY:number){

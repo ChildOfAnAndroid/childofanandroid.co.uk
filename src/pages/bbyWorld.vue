@@ -197,6 +197,10 @@ function formatTicks(ticks: number) {
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);
 function S(){ return boardSize.value; }
+
+function ensurePowerOfTwo(n: number): number {
+  return 1 << Math.round(Math.log2(Math.max(1, n)));
+}
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLDivElement | null>(null);
 const scopeCanvas = ref<HTMLCanvasElement | null>(null);
@@ -411,9 +415,12 @@ function update() {
   }
 }
 
-// FIXED: This function now correctly wraps coordinates around the grid.
+// Use fast bitwise wrapping when board size is a power of two.
 function I(x: number, y: number): number {
   const s = S();
+  if ((s & (s - 1)) === 0) {
+    return ((x & (s - 1)) + ((y & (s - 1)) * s)) >>> 0;
+  }
   const wrappedX = (x % s + s) % s;
   const wrappedY = (y % s + s) % s;
   return wrappedY * s + wrappedX;
@@ -550,7 +557,14 @@ onMounted(async () => {
   animationFrameId = requestAnimationFrame(mainLoop);
 });
 onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); });
-watch(boardSize, () => applyBoardSize());
+watch(boardSize, (newSize) => {
+  const pow2 = ensurePowerOfTwo(newSize);
+  if (pow2 !== newSize) {
+    boardSize.value = pow2;
+  } else {
+    applyBoardSize();
+  }
+});
 watch(selectedCardLabel, () => loadSelectedImage());
 function selectCard(label: string) { selectedCardLabel.value = label; }
 function loadSelectedImage() {

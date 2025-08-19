@@ -387,9 +387,36 @@ function update() {
     }
 
     const ii = I(c.x, c.y);
-    if (c.species === "water")  heatField[ii] *= 0.985;
-    if (c.species === "plasma") nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.008);
-    if (c.species === "plant")  nutrientField[ii] += 0.004;
+    // Basic environmental energy intake allows cells to sustain themselves
+    // instead of rapidly starving. Each species draws from its preferred
+    // field, converting a small portion into energy.
+    if (c.species === "plasma") {
+      const take = Math.min(0.02, heatField[ii]);
+      heatField[ii] -= take;
+      c.energy = Math.min(c.energy + take * 10, 260);
+      nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.008);
+    }
+    if (c.species === "water") {
+      const take = Math.min(0.02, moistureField[ii]);
+      moistureField[ii] -= take;
+      c.energy = Math.min(c.energy + take * 10, 260);
+      heatField[ii] *= 0.985;
+    }
+    if (c.species === "plant") {
+      const take = Math.min(0.02, nutrientField[ii]);
+      nutrientField[ii] = Math.max(0, nutrientField[ii] - take);
+      c.energy = Math.min(c.energy + take * 10, 260);
+      nutrientField[ii] += 0.004;
+    }
+    if (c.species === "blend") {
+      const h = Math.min(0.01, heatField[ii]);
+      const m = Math.min(0.01, moistureField[ii]);
+      const n = Math.min(0.01, nutrientField[ii]);
+      heatField[ii] -= h;
+      moistureField[ii] -= m;
+      nutrientField[ii] = Math.max(0, nutrientField[ii] - n);
+      c.energy = Math.min(c.energy + (h + m + n) * 10, 260);
+    }
   }
 
   // move slice

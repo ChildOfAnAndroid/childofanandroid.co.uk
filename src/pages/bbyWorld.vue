@@ -691,6 +691,20 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
   return [dx,dy,best.h];
 }
 
+function findEmptyAdjacent(x:number,y:number): [number,number] | null {
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  shuffleArray(dirs);
+  for (const [dx,dy] of dirs) {
+    const nx = (x + dx + S()) % S();
+    const ny = (y + dy + S()) % S();
+    const idx = I(nx, ny);
+    if (!spatialMap[idx] && solidGrid[idx] <= 0) {
+      return [nx, ny];
+    }
+  }
+  return null;
+}
+
 function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const newX = (cell.x + dx + S()) % S();
   const newY = (cell.y + dy + S()) % S();
@@ -736,16 +750,14 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     const pWar    = Math.min(1, (cell.aggression+target.aggression)*0.35 + (heatField[tIndex]*0.25));
 
     if (pCompat >= pWar){
-      const baby = mergeBaby(cell, target, newX, newY);
-      recordDeath(cell, "squish");
-      // `target` comes from `spatialMap` which stores the proxied cell, so
-      // recordDeath will successfully remove it from `livingCells`.
-      recordDeath(target, "squish");
-      livingCells.value.push(baby);
-      // Store the proxied baby in spatialMap to keep references consistent
-      // with `livingCells` and prevent duplicate ghost cells.
-      spatialMap[key] = livingCells.value[livingCells.value.length - 1];
-      stats.value.babyMerges++;
+      const spawn = findEmptyAdjacent(newX, newY) || findEmptyAdjacent(cell.x, cell.y);
+      if (spawn){
+        const [bx, by] = spawn;
+        const baby = mergeBaby(cell, target, bx, by);
+        livingCells.value.push(baby);
+        spatialMap[I(bx, by)] = livingCells.value[livingCells.value.length - 1];
+        stats.value.babyMerges++;
+      }
       return false;
     } else {
       const envBoost = (
@@ -807,7 +819,9 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
 
   const totalE = Math.max(1, cell.energy + target.energy);
   const kid = makeCell(x,y,babyR,babyG,babyB,babyA);
-  kid.energy = Math.min(totalE * 0.85, 240);
+  kid.energy = Math.min(totalE * 0.3, 240);
+  cell.energy *= 0.7;
+  target.energy *= 0.7;
 
   kid.aggression += (rand()*0.1-0.05);
   kid.fertility  += (rand()*0.1-0.05);

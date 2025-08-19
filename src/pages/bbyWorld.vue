@@ -311,6 +311,11 @@ let solidGrid      = new Float32Array(S()*S());
 
 function I(x:number,y:number){ const s=S(); return ((x & (s-1)) + ((y & (s-1)) * s)) >>> 0; }
 
+function colourDominance(v:number, o1:number, o2:number): number {
+  const diff = v - Math.max(o1, o2);
+  return diff * Math.abs(diff) * 0.7;
+}
+
 /* Renderer buffer */
 let frame = new Uint8ClampedArray(0);
 let frameImg: ImageData | null = null;
@@ -520,26 +525,30 @@ function update() {
     // instead of rapidly starving. Each colour channel draws from its
     // matching field, converting a small portion into energy.
     const Rf = c.r/255, Bf = c.b/255, Gf = c.g/255;
-    const isRedDominant   = Rf > 0.5 && Rf > Bf && Rf > Gf;
-    const isBlueDominant  = Bf > 0.5 && Bf > Rf && Bf > Gf;
-    const isGreenDominant = Gf > 0.5 && Gf > Rf && Gf > Bf;
+    const domR = colourDominance(Rf, Bf, Gf);
+    const domB = colourDominance(Bf, Rf, Gf);
+    const domG = colourDominance(Gf, Rf, Bf);
 
     let gain = 0;
-    if (isRedDominant) {
-      const take = Math.min(0.02*Rf, heatField[ii]);
-      heatField[ii] -= take;
-      gain += take*10;
-    }
-    if (isBlueDominant) {
-      const take = Math.min(0.02*Bf, moistureField[ii]);
-      moistureField[ii] -= take;
-      gain += take*10;
-    }
-    if (isGreenDominant) {
-      const take = Math.min(0.02*Gf, nutrientField[ii]);
-      nutrientField[ii] = Math.max(0, nutrientField[ii] - take);
-      gain += take*10;
-      nutrientField[ii] += 0.004*Gf;
+    const handleField = (dom:number, field:Float32Array, idx:number) => {
+      if (dom === 0) return;
+      const amt = 0.02 * Math.abs(dom);
+      if (dom > 0) {
+        const take = Math.min(amt, field[idx]);
+        field[idx] -= take;
+        gain += take * 10;
+      } else {
+        field[idx] += amt;
+        gain -= amt * 10;
+      }
+    };
+    handleField(domR, heatField, ii);
+    handleField(domB, moistureField, ii);
+    handleField(domG, nutrientField, ii);
+    if (domG > 0) {
+      nutrientField[ii] += 0.004 * Gf * domG;
+    } else if (domG < 0) {
+      nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.004 * Gf * (-domG));
     }
     // Mixed colour synergies encourage varied emergent behaviours by letting
     // cells with blended channels transmute nearby resources. These effects
@@ -569,96 +578,124 @@ function update() {
     c.energy = Math.min(c.energy + gain, 260);
 
     // Blue cells slowly erode nearby solids and push debris outward
-    if (isBlueDominant) {
-      const erosion = 0.004 * Bf;
+    if (domB !== 0) {
+      const erosion = 0.004 * Bf * Math.abs(domB);
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = (c.x + dx + S()) % S();
           const ny = (c.y + dy + S()) % S();
           const ni = I(nx, ny);
-          const take = Math.min(erosion, solidGrid[ni]);
+          const limit = domB > 0 ? solidGrid[ni] : 6 - solidGrid[ni];
+          const take = Math.min(erosion, limit);
           if (take > 0) {
-            solidGrid[ni] -= take;
+            if (domB > 0) {
+              solidGrid[ni] -= take;
 
-            // determine where to push removed material
-            let px: number, py: number;
-            if (dx === 0 && dy === 0) {
-              const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-              const d = dirs[(rand() * dirs.length) | 0];
-              px = (c.x + d[0] + S()) % S();
-              py = (c.y + d[1] + S()) % S();
+              // determine where to push removed material
+              let px: number, py: number;
+              if (dx === 0 && dy === 0) {
+                const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+                const d = dirs[(rand() * dirs.length) | 0];
+                px = (c.x + d[0] + S()) % S();
+                py = (c.y + d[1] + S()) % S();
+              } else {
+                px = (c.x + dx * 2 + S()) % S();
+                py = (c.y + dy * 2 + S()) % S();
+              }
+              const pi = I(px, py);
+              const push = take * 0.5;
+              solidGrid[pi] = Math.min(6, solidGrid[pi] + push);
+
+              const resource = take - push;
+              moistureField[ni] += resource * 0.6;
+              nutrientField[ni] += resource * 0.3;
+              heatField[ni]     += resource * 0.1;
             } else {
-              px = (c.x + dx * 2 + S()) % S();
-              py = (c.y + dy * 2 + S()) % S();
+              solidGrid[ni] += take;
+              moistureField[ni] = Math.max(0, moistureField[ni] - take * 0.6);
+              nutrientField[ni] = Math.max(0, nutrientField[ni] - take * 0.3);
+              heatField[ni]     = Math.max(0, heatField[ni] - take * 0.1);
             }
-            const pi = I(px, py);
-            const push = take * 0.5;
-            solidGrid[pi] = Math.min(6, solidGrid[pi] + push);
-
-            const resource = take - push;
-            moistureField[ni] += resource * 0.6;
-            nutrientField[ni] += resource * 0.3;
-            heatField[ni]     += resource * 0.1;
           }
         }
       }
     }
 
     // Green cells chew through nearby ground, releasing nutrients
-    if (isGreenDominant) {
-      const erosion = 0.002 * Gf;
+    if (domG !== 0) {
+      const erosion = 0.002 * Gf * Math.abs(domG);
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = (c.x + dx + S()) % S();
           const ny = (c.y + dy + S()) % S();
           const ni = I(nx, ny);
-          const take = Math.min(erosion, solidGrid[ni]);
+          const limit = domG > 0 ? solidGrid[ni] : 6 - solidGrid[ni];
+          const take = Math.min(erosion, limit);
           if (take > 0) {
-            solidGrid[ni] -= take;
-            nutrientField[ni] += take * 0.8;
-            moistureField[ni] += take * 0.1;
-            heatField[ni]     += take * 0.1;
+            if (domG > 0) {
+              solidGrid[ni] -= take;
+              nutrientField[ni] += take * 0.8;
+              moistureField[ni] += take * 0.1;
+              heatField[ni]     += take * 0.1;
+            } else {
+              solidGrid[ni] += take;
+              nutrientField[ni] = Math.max(0, nutrientField[ni] - take * 0.8);
+              moistureField[ni] = Math.max(0, moistureField[ni] - take * 0.1);
+              heatField[ni]     = Math.max(0, heatField[ni] - take * 0.1);
+            }
           }
         }
       }
     }
 
     // Red cells bake the earth, hardening ground and drying it out
-    if (isRedDominant) {
-      const harden = 0.0025 * Rf;
+    if (domR !== 0) {
+      const harden = 0.0025 * Rf * Math.abs(domR);
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = (c.x + dx + S()) % S();
           const ny = (c.y + dy + S()) % S();
           const ni = I(nx, ny);
-          solidGrid[ni] = Math.min(6, solidGrid[ni] + harden);
-          moistureField[ni] = Math.max(0, moistureField[ni] - harden * 0.5);
+          if (domR > 0) {
+            solidGrid[ni] = Math.min(6, solidGrid[ni] + harden);
+            moistureField[ni] = Math.max(0, moistureField[ni] - harden * 0.5);
+          } else {
+            solidGrid[ni] = Math.max(0, solidGrid[ni] - harden);
+            moistureField[ni] += harden * 0.5;
+          }
         }
       }
     }
 
     // Green cells crave space to grow – reward solitude but punish crowding
     const neighbours = countOccupiedAdjacent(c.x, c.y);
-    if (isGreenDominant) {
+    if (domG !== 0) {
       if (neighbours <= 1) {
-        c.energy = Math.min(c.energy + Gf*0.5, 260);
+        c.energy = Math.min(c.energy + Gf*domG*0.5, 260);
       } else if (neighbours > 3) {
-        c.energy -= (neighbours-3) * Gf * 2;
+        c.energy -= (neighbours-3) * Gf * domG * 2;
       }
     }
 
-    // Blue cells slip toward lower ground and can't regain height easily
-    if (isBlueDominant) {
-      let lowest = solidGrid[ii];
+    // Blue cells slip toward lower ground or climb high when suppressed
+    if (domB !== 0) {
+      let target = solidGrid[ii];
       let bx = c.x, by = c.y;
       const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
       for (const [dx,dy] of dirs){
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
         const ni = I(nx, ny);
-        if (!spatialMap[ni] && solidGrid[ni] + 0.1 < lowest){
-          lowest = solidGrid[ni];
-          bx = nx; by = ny;
+        if (domB > 0) {
+          if (!spatialMap[ni] && solidGrid[ni] + 0.1 < target){
+            target = solidGrid[ni];
+            bx = nx; by = ny;
+          }
+        } else {
+          if (!spatialMap[ni] && solidGrid[ni] - 0.1 > target){
+            target = solidGrid[ni];
+            bx = nx; by = ny;
+          }
         }
       }
       if (bx !== c.x || by !== c.y){
@@ -691,7 +728,7 @@ function update() {
     // Only squash cells that fail to recover enough energy after drawing from
     // their local field this tick.
     if (c.energy <= 0) {
-      if (isBlueDominant) {
+      if (domB > 0) {
         const escape = findEmptyAdjacent(c.x, c.y);
         if (escape) {
           const [ex, ey] = escape;
@@ -851,14 +888,14 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
 
     const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
     const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
-    const isRedDominant = Rf > 0.5 && Rf > Bf && Rf > Gf;
-    const isBlueDominant = Bf > 0.5 && Bf > Rf && Bf > Gf;
-    const isGreenDominant = Gf > 0.5 && Gf > Rf && Gf > Bf;
+    const domR = colourDominance(Rf, Bf, Gf);
+    const domB = colourDominance(Bf, Rf, Gf);
+    const domG = colourDominance(Gf, Rf, Bf);
     let want = heat*Rf + wet*Bf + nut*Gf + (heat+wet+nut)*0.05;
     // Blue cells shy from climbing higher ground while red cells seek it
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
-    if (isBlueDominant) want -= Math.max(0, hDiff) * Bf * 0.5;
-    if (isRedDominant)  want += hDiff * Rf * 0.5;
+    want -= Math.max(0, hDiff) * Bf * domB;
+    want += hDiff * Rf * domR;
 
     // Stronger cells should be less deterred by solid tiles. Previously the
     // penalty increased with strength, causing fragile cells to push through
@@ -873,11 +910,17 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // for them. Stronger cells are less affected by moisture.
     score -= (1 - cell.strength) * wet * 0.2;
 
-    if (isGreenDominant) {
+    if (domG > 0) {
       if (wet > 0.1 && hasNearbyGreenBlue(nx, ny, 2)) {
-        score += wet * 0.3;
+        score += wet * 0.3 * domG;
       } else {
-        score -= 0.4;
+        score -= 0.4 * domG;
+      }
+    } else if (domG < 0) {
+      if (wet > 0.1 && hasNearbyGreenBlue(nx, ny, 2)) {
+        score -= wet * 0.3 * (-domG);
+      } else {
+        score += 0.4 * (-domG);
       }
     }
 
@@ -963,12 +1006,13 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const currentH = solidGrid[I(cell.x, cell.y)];
   const targetH = solidGrid[tIndex];
   const Rf = cell.r/255, Gf = cell.g/255, Bf = cell.b/255;
-  const isBlueDominant = Bf > 0.5 && Bf > Rf && Bf > Gf;
-  if (isBlueDominant && targetH > currentH + 0.1) return false;
+  const domB = colourDominance(Bf, Rf, Gf);
+  if (domB > 0 && targetH > currentH + 0.1) return false;
+  if (domB < 0 && targetH < currentH - 0.1) return false;
 
   if (targetH > 0){
-    if (isBlueDominant){
-      const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)));
+    if (domB > 0){
+      const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)) * domB);
       solidGrid[tIndex] -= erode;
       moistureField[tIndex] += erode*0.5;
 

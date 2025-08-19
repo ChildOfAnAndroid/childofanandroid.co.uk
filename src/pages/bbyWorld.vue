@@ -1672,7 +1672,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
 
   const s=S();
 
-  // base + faint field glow and solids darken in one pass
+  // base + faint field glow; render terrain height
   for (let y=0;y<s;y++){
     for (let x=0;x<s;x++){
       const off = (x + y*s)*4;
@@ -1695,11 +1695,12 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
       let b = (baseB*(1-a) + glowB*a) | 0;
 
       const m = solidGrid[ii];
-      if (m>0){
-        const gVal = Math.max(0, 180 - Math.floor(m*25));
-        r = (r*0.6 + gVal*0.4)>>>0;
-        g = (g*0.6 + gVal*0.4)>>>0;
-        b = (b*0.6 + gVal*0.4)>>>0;
+      if (m > 0) {
+        // Show stacked terrain as obvious grayscale height: higher mounds are brighter
+        const shade = Math.min(255, 80 + m * 30);
+        r = shade;
+        g = shade;
+        b = shade;
       }
 
       const dr = dyeRField[ii];

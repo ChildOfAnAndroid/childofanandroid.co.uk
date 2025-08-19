@@ -167,14 +167,14 @@ type GridCell = {
 
 /* ===================== World State ===================== */
 const livingCells = ref<GridCell[]>([]);
-// A simple array-based spatial index is used instead of a Map with
-// string keys.  During large "light blooms" thousands of cells can be
-// spawned and moved every tick.  Previously this relied on Map lookups
-// which generated many temporary strings and objects, exhausting memory
-// and crashing the page.  By indexing directly into an array using the
-// numeric key produced by I(x,y), we eliminate those allocations and keep
-// lookups O(1) with minimal churn.
-let spatialMap: (GridCell | null)[] = [];
+// Spatial occupancy is tracked with a plain array indexed by the numeric
+// key produced by `I(x,y)`.  Earlier versions used a `Map` with string
+// keys such as "x,y" for lookups.  During large "light blooms" thousands
+// of cells are spawned and moved every tick which caused that Map to churn
+// out temporary strings and wrapper objects, eventually exhausting memory
+// and crashing the page.  Using a preallocated array keeps lookups O(1)
+// and avoids those allocations entirely.
+let spatialMap: Array<GridCell | null> = [];
 
 const stats = ref({
   warDeaths: 0, babyMerges: 0, squishDeaths: 0,
@@ -493,17 +493,12 @@ function shuffleArray(array: any[]) {
 
 function chooseChainDir(cell:GridCell): [number,number,Heading] {
   const prefs: {h:Heading, score:number}[] = [];
-  
-  // --- START OF CHANGES ---
-  // Create an array of all possible directions
+
+  // Evaluate directions in a random order to avoid directional bias
   const headings: Heading[] = [0, 1, 2, 3];
-  
-  // Shuffle the array to randomize the order of evaluation
   shuffleArray(headings);
-  
-  // Loop over the SHUFFLED directions instead of a fixed 0-3 loop
+
   for (const h of headings) {
-  // --- END OF CHANGES ---
 
     const [dx,dy] = HEADING_VECS[h];
     const nx = (cell.x + dx + S()) % S();

@@ -270,7 +270,7 @@ const groupStats = computed<ColourGroupStat[]>(() => {
     totalEnergy: 0,
   };
   const groups: Record<string, typeof base> = {};
-  const STEP = 32; // bucket size for colour grouping
+  const STEP = 48; // bucket size for colour grouping
   const quant = (v: number) => Math.min(255, Math.round(v / STEP) * STEP);
   for (const c of livingCells.value) {
     const key = rgbToHex(quant(c.r), quant(c.g), quant(c.b));

@@ -33,6 +33,7 @@
           <div class="grp">
             <label class="section">stats</label>
             <div class="world-stats">
+              <span>TIME: {{ elapsedTimeDisplay }}</span>
               <span>CELLS: {{ livingCells.length }}</span>
               <span>WAR: {{ stats.warDeaths }}</span>
               <span>BBY: {{ stats.babyMerges }}</span>
@@ -284,6 +285,8 @@ let animationFrameId: number | null = null;
 let lastTime = 0;
 let timeSinceLastTick = 0;
 let tickCount = 0;
+const startTime = ref(performance.now());
+const elapsedMs = ref(0);
 
 /* Fields + solids (allocated per size) */
 let heatField      = new Float32Array(S()*S());
@@ -325,6 +328,8 @@ function clearWorld(){
   spatialMap.fill(null);
   stats.value = { warDeaths:0, babyMerges:0, squishDeaths:0, totalLifespan:0, deadCount:0 };
   tickCount = 0;
+  startTime.value = performance.now();
+  elapsedMs.value = 0;
 }
 
 function applyBoardSize(){
@@ -415,6 +420,7 @@ function mainLoop(timestamp: number) {
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
+  elapsedMs.value = timestamp - startTime.value;
 
   // Cap the number of simulation updates processed in a single frame. When
   // the tab is hidden or timers are throttled `deltaTime` can grow very
@@ -1028,6 +1034,15 @@ const updateScope = throttle((event: MouseEvent) => {
 }, 16);
 
 /* ===================== Derived ===================== */
+const elapsedTimeDisplay = computed(() => {
+  const totalSeconds = Math.floor(elapsedMs.value / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes
+    .toString()
+    .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+});
 const avgLifespan = computed(() => {
   return stats.value.deadCount > 0
     ? (stats.value.totalLifespan / stats.value.deadCount).toFixed(1)

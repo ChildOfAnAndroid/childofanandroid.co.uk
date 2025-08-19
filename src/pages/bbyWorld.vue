@@ -540,7 +540,11 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     else if (cell.species === "plant") want = (-heat*0.6) + (+wet*0.8) + (+nut*1.1);
     else                               want = (+heat*0.4) + (+wet*0.6) + (+nut*0.6);
 
-    const solidPenalty = solidGrid[i] * (0.3 + 0.7*cell.strength);
+    // Stronger cells should be less deterred by solid tiles. Previously the
+    // penalty increased with strength, causing fragile cells to push through
+    // rock more easily than tough ones. Invert the relationship so that
+    // strong cells incur the minimum penalty while weak cells avoid solids.
+    const solidPenalty = solidGrid[i] * (0.3 + 0.7*(1 - cell.strength));
     const same = (h === cell.heading) ? 1 : 0;
     const turnPenalty = (h === cell.heading ? 0 : cell.turnBias);
 
@@ -581,7 +585,11 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
         return true;
       }
     } else {
-      const stuckP = Math.min(0.9, (0.2 + 0.6*cell.strength) * Math.min(1, solidGrid[tIndex]/3));
+      // Likewise, strong cells should have a lower chance of getting stuck
+      // when moving through solids. The previous formula increased the stuck
+      // probability with strength. Flip it so strength reduces the likelihood
+      // of becoming trapped.
+      const stuckP = Math.min(0.9, (0.8 - 0.6*cell.strength) * Math.min(1, solidGrid[tIndex]/3));
       if (rand() < stuckP) return false;
     }
   }

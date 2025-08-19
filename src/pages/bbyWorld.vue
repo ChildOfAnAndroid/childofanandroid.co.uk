@@ -299,31 +299,38 @@ onUnmounted(() => {
 watch(boardSize, () => applyBoardSize());
 
 /* ===================== Main Loop ===================== */
+const MAX_UPDATES_PER_FRAME = 5;
+
 function mainLoop(timestamp: number) {
   const ctx = gameCanvas.value?.getContext("2d");
-  if (!ctx) { animationFrameId = requestAnimationFrame(mainLoop); return; }
+  if (!ctx) {
+    animationFrameId = requestAnimationFrame(mainLoop);
+    return;
+  }
 
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
 
-  // Cap the number of simulation updates processed in a single frame.
-  // When the tab is hidden or the browser throttles timers, `deltaTime`
-  // can grow very large.  Without a cap the loop below would attempt to
-  // "catch up" by running thousands of updates at once, freezing or
-  // crashing the page.  Limiting the loop prevents that runaway catch-up
-  // behaviour and keeps the simulation responsive.
-  const MAX_UPDATES = 5;
+  // Cap the number of simulation updates processed in a single frame. When
+  // the tab is hidden or timers are throttled `deltaTime` can grow very
+  // large. Without a cap the loop below would attempt to "catch up" by
+  // running thousands of updates at once, freezing or crashing the page.
   let performed = 0;
-  while (timeSinceLastTick >= tickInterval.value && performed < MAX_UPDATES) {
+  while (
+    timeSinceLastTick >= tickInterval.value &&
+    performed < MAX_UPDATES_PER_FRAME
+  ) {
     update();
     timeSinceLastTick -= tickInterval.value;
     performed++;
   }
-  if (performed === MAX_UPDATES) {
+
+  if (performed === MAX_UPDATES_PER_FRAME) {
     // Drop any excess accumulated time to avoid spiralling further.
     timeSinceLastTick = 0;
   }
+
   drawGrid(ctx);
   animationFrameId = requestAnimationFrame(mainLoop);
 }

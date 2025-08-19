@@ -65,7 +65,7 @@
                 </span>
                 <span>{{ g.count }}</span>
                 <span>{{ g.percentage.toFixed(1) }}%</span>
-                <span>{{ g.avgAge.toFixed(1) }}</span>
+                <span>{{ formatTicks(g.avgAge) }}</span>
                 <span>{{ g.avgEnergy.toFixed(1) }}</span>
                 <span>{{ g.avgStrength.toFixed(2) }}</span>
               </div>
@@ -134,7 +134,7 @@
                   N {{ hoverEnv.nutrient.toFixed(2) }}
                 </div>
                 <div v-if="hoverCell">
-                  Age {{ hoverCell.age }}
+                  Age {{ formatTicks(hoverCell.age) }}
                   E {{ hoverCell.energy.toFixed(1) }}
                   S {{ hoverCell.strength.toFixed(2) }}
                 </div>
@@ -158,6 +158,13 @@ const { fetchBbyBookGallery, currentColour } = bbyUse();
 // world time constants
 const TICKS_PER_DAY = 69;
 const DAYS_PER_YEAR = 420;
+
+function formatTicks(ticks: number) {
+  const totalDays = Math.floor(ticks / TICKS_PER_DAY);
+  const year = Math.floor(totalDays / DAYS_PER_YEAR);
+  const day = totalDays % DAYS_PER_YEAR;
+  return `Year ${year} Day ${day}`;
+}
 
 /* ============== BOARD SIZE (dynamic) ============== */
 const boardSize = ref<number>(256);           // 128 / 256 / 512
@@ -1308,16 +1315,11 @@ const updateScope = throttle((event: MouseEvent) => {
 }, 16);
 
 /* ===================== Derived ===================== */
-const elapsedTimeDisplay = computed(() => {
-  const totalDays = Math.floor(tickCount.value / TICKS_PER_DAY);
-  const year = Math.floor(totalDays / DAYS_PER_YEAR);
-  const day = totalDays % DAYS_PER_YEAR;
-  return `Year ${year} Day ${day}`;
-});
+const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
 
 const avgLifespan = computed(() => {
   return stats.value.deadCount > 0
-    ? (stats.value.totalLifespan / stats.value.deadCount).toFixed(1)
+    ? formatTicks(stats.value.totalLifespan / stats.value.deadCount)
     : "–";
 });
 </script>

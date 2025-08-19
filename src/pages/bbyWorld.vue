@@ -307,9 +307,22 @@ function mainLoop(timestamp: number) {
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
 
-  while (timeSinceLastTick >= tickInterval.value) {
+  // Cap the number of simulation updates processed in a single frame.
+  // When the tab is hidden or the browser throttles timers, `deltaTime`
+  // can grow very large.  Without a cap the loop below would attempt to
+  // "catch up" by running thousands of updates at once, freezing or
+  // crashing the page.  Limiting the loop prevents that runaway catch-up
+  // behaviour and keeps the simulation responsive.
+  const MAX_UPDATES = 5;
+  let performed = 0;
+  while (timeSinceLastTick >= tickInterval.value && performed < MAX_UPDATES) {
     update();
     timeSinceLastTick -= tickInterval.value;
+    performed++;
+  }
+  if (performed === MAX_UPDATES) {
+    // Drop any excess accumulated time to avoid spiralling further.
+    timeSinceLastTick = 0;
   }
   drawGrid(ctx);
   animationFrameId = requestAnimationFrame(mainLoop);

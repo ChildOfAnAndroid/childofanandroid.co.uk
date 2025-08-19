@@ -549,7 +549,9 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     const turnPenalty = (h === cell.heading ? 0 : cell.turnBias);
 
     let score = want + same*0.15 - turnPenalty - solidPenalty;
-    score += (1 - cell.strength) * wet * 0.2;
+    // Weak cells struggle in wet terrain, so make damp tiles less appealing
+    // for them. Stronger cells are less affected by moisture.
+    score -= (1 - cell.strength) * wet * 0.2;
     score += (rand()-0.5)*0.05;
 
     prefs.push({h: h as Heading, score});

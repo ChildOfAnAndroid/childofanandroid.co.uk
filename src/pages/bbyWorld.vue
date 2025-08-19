@@ -544,7 +544,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // penalty increased with strength, causing fragile cells to push through
     // rock more easily than tough ones. Invert the relationship so that
     // strong cells incur the minimum penalty while weak cells avoid solids.
-    const solidPenalty = solidGrid[i] * (0.3 + 0.7*(1 - cell.strength));
+    const solidPenalty = solidGrid[i] * (1 - cell.strength);
     const same = (h === cell.heading) ? 1 : 0;
     const turnPenalty = (h === cell.heading ? 0 : cell.turnBias);
 
@@ -589,7 +589,7 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
       // when moving through solids. The previous formula increased the stuck
       // probability with strength. Flip it so strength reduces the likelihood
       // of becoming trapped.
-      const stuckP = Math.min(0.9, (0.8 - 0.6*cell.strength) * Math.min(1, solidGrid[tIndex]/3));
+      const stuckP = Math.min(0.9, 0.8 * (1 - cell.strength) * Math.min(1, solidGrid[tIndex]/3));
       if (rand() < stuckP) return false;
     }
   }
@@ -657,8 +657,9 @@ function compatibility(a:GridCell,b:GridCell){
   const AR=a.r/255, AG=a.g/255, AB=a.b/255;
   const BR=b.r/255, BG=b.g/255, BB=b.b/255;
   const comp = (AR*BB + AG*BR + AB*BG);
-  const dist = Math.hypot(AR-BR, AG-BG, AB-BB);
-  return 0.6*comp + 0.4*dist;
+  // normalise distance into [0,1] so compatibility stays bounded
+  const dist = Math.hypot(AR-BR, AG-BG, AB-BB) / Math.sqrt(3);
+  return 0.6*comp + 0.4*(1 - dist);
 }
 
 function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {

@@ -45,7 +45,7 @@
             <label class="section">colour groups</label>
             <div class="group-stats">
               <div class="group-row header">
-                <span>group</span>
+                <span>colour</span>
                 <span>count</span>
                 <span>strength</span>
                 <span>agg</span>
@@ -55,9 +55,12 @@
               <div
                 class="group-row"
                 v-for="g in sortedGroupStats"
-                :key="g.species"
+                :key="g.colour"
               >
-                <span>{{ g.species }}</span>
+                <span class="colour-cell">
+                  <span class="colour-swatch" :style="{ background: g.colour }"></span>
+                  {{ g.colour }}
+                </span>
                 <span>{{ g.count }}</span>
                 <span>{{ g.avgStrength.toFixed(2) }}</span>
                 <span>{{ g.avgAggression.toFixed(2) }}</span>
@@ -213,8 +216,8 @@ const stats = ref({
   totalLifespan: 0, deadCount: 0,
 });
 
-interface GroupStat {
-  species: Species;
+interface ColourGroupStat {
+  colour: string;
   count: number;
   avgStrength: number;
   avgAggression: number;
@@ -222,7 +225,11 @@ interface GroupStat {
   avgMetabolism: number;
 }
 
-const groupStats = computed<GroupStat[]>(() => {
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+const groupStats = computed<ColourGroupStat[]>(() => {
   const base = {
     count: 0,
     totalStrength: 0,
@@ -230,22 +237,18 @@ const groupStats = computed<GroupStat[]>(() => {
     totalFertility: 0,
     totalMetabolism: 0,
   };
-  const groups: Record<Species, typeof base> = {
-    plasma: { ...base },
-    water: { ...base },
-    plant: { ...base },
-    blend: { ...base },
-  };
+  const groups: Record<string, typeof base> = {};
   for (const c of livingCells.value) {
-    const g = groups[c.species];
+    const key = rgbToHex(c.r, c.g, c.b);
+    const g = groups[key] || (groups[key] = { ...base });
     g.count++;
     g.totalStrength += c.strength;
     g.totalAggression += c.aggression;
     g.totalFertility += c.fertility;
     g.totalMetabolism += c.metabolism;
   }
-  return (Object.entries(groups) as [Species, typeof base][]).map(([species, g]) => ({
-    species,
+  return Object.entries(groups).map(([colour, g]) => ({
+    colour,
     count: g.count,
     avgStrength: g.count ? g.totalStrength / g.count : 0,
     avgAggression: g.count ? g.totalAggression / g.count : 0,
@@ -255,7 +258,7 @@ const groupStats = computed<GroupStat[]>(() => {
 });
 
 const sortedGroupStats = computed(() =>
-  [...groupStats.value].sort((a, b) => b.avgStrength - a.avgStrength)
+  [...groupStats.value].sort((a, b) => b.count - a.count)
 );
 
 /* Tick bookkeeping */
@@ -979,6 +982,8 @@ const avgLifespan = computed(() => {
 .group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .group-row{display:grid;grid-template-columns:repeat(6,auto);gap:.25rem}
 .group-row.header{font-weight:700}
+.colour-cell{display:flex;align-items:center;gap:.25rem}
+.colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
 .world-stage .stack canvas:not(.zoom-scope){grid-area:1/1;image-rendering:pixelated}

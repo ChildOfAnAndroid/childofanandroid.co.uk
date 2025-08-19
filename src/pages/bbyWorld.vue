@@ -320,6 +320,7 @@ type GridCell = {
   cargo:number;            // carried nutrients
   friends: Record<number, number>; // pairwise affinity
   decayRate:number;        // alpha loss per tick
+  lifespan: number;        // randomized lifespan in ticks
 };
 
 /* ===================== World State ===================== */
@@ -707,6 +708,8 @@ function update() {
   // metabolism & micro-reactions
   for (let i = livingCells.value.length - 1; i >= 0; i--) {
     const c = livingCells.value[i];
+    if (!c.alive) continue;
+
     c.coop *= 0.95; // cooperative affinity decays each tick
     // Red aggression burns extra energy while alpha heft slows overall output
     c.energy -= c.metabolism + c.aggression*0.05;
@@ -731,7 +734,11 @@ function update() {
     const domG = colourDominance(Gf, Rf, Bf);
 
     // transparency fades over time based on each cell's inherent decay rate
-    c.a = Math.max(0, c.a - c.decayRate);
+    if (c.age > c.lifespan) {
+        c.a = Math.max(0, c.a - c.decayRate * 5); // Accelerate fading past lifespan
+    } else {
+        c.a = Math.max(0, c.a - c.decayRate);
+    }
 
     // pixels that clump lose additional size so massive blobs
     // cannot accumulate without a supporting mechanism.
@@ -779,7 +786,6 @@ function update() {
         gain -= amt * 10;
       }
     };
-    handleField(domR, heatField, ii);
     handleField(domB, moistureField, ii);
     handleField(domG, nutrientField, ii);
     if (domG > 0) {
@@ -787,12 +793,16 @@ function update() {
     } else if (domG < 0) {
       nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.004 * Gf * (-domG));
     }
+    // MODIFIED: Red pixels (fire) require nutrient (fuel) to gain energy
     if (domR > 0) {
       const fuel = Math.min(0.015 * Rf * domR, nutrientField[ii]);
       nutrientField[ii] -= fuel;
-      gain += fuel * 25;
-      if (fuel === 0) c.energy -= 0.1;
+      gain += fuel * 25; // Fire gets a large energy boost from fuel
+      if (fuel === 0) c.energy -= 0.1; // Burn out without fuel
+    } else {
+      handleField(domR, heatField, ii); // Non-fire reds behave as before
     }
+    
     // Mixed colour synergies encourage varied emergent behaviours by letting
     // cells with blended channels transmute nearby resources. These effects
     // provide alternatives to chasing a perfectly neutral colour.
@@ -860,7 +870,7 @@ function update() {
               // determine where to push removed material
               let px: number, py: number;
               if (dx === 0 && dy === 0) {
-                const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+                const dirs = [[1,0],[-1,0],[0,1],[-1,0]];
                 const d = dirs[(rand() * dirs.length) | 0];
                 px = (c.x + d[0] + S()) % S();
                 py = (c.y + d[1] + S()) % S();
@@ -948,7 +958,7 @@ function update() {
     if (domB !== 0) {
       let target = solidGrid[ii];
       let bx = c.x, by = c.y;
-      const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+      const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0]];
       for (const [dx,dy] of dirs){
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
@@ -972,7 +982,7 @@ function update() {
     }
 
     // --- Cooperation: share energy with compatible neighbours ---
-    const shareDirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+    const shareDirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0]];
     for (const [dx,dy] of shareDirs){
       const nx = (c.x + dx + S()) % S();
       const ny = (c.y + dy + S()) % S();
@@ -992,19 +1002,22 @@ function update() {
       }
     }
 
-    // Animal behaviour: dark and purple cells ferry nutrients and gift energy
+    // NEW: Animal behaviour: dark and purple cells ferry nutrients and gift energy
     const isAnimal = (c.r + c.g + c.b < 60) || (c.r > 150 && c.b > 150 && c.g < 80);
     if (isAnimal) {
+      // Gather nutrients into cargo
       if (c.cargo < 20 && nutrientField[ii] > 0.01) {
         const take = Math.min(0.01, nutrientField[ii]);
         nutrientField[ii] -= take;
         c.cargo += take * 100;
       }
+      // Gift cargo to other animals
       for (const [dx, dy] of shareDirs) {
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
         const neighbour = spatialMap[I(nx, ny)];
         if (!neighbour || !neighbour.alive || c.cargo <= 0) continue;
+        
         const nIsAnimal = (neighbour.r + neighbour.g + neighbour.b < 60) || (neighbour.r > 150 && neighbour.b > 150 && neighbour.g < 80);
         if (nIsAnimal) {
           const gift = Math.min(5, c.cargo);
@@ -1014,8 +1027,25 @@ function update() {
       }
     }
 
-    // Only squash cells that fail to recover enough energy after drawing from
-    // their local field this tick.
+    // NEW: Heavier pixels can roll off high places
+    if (c.strength > 0.8 && solidGrid[ii] > 2.5) {
+        let bestTarget: [number, number] | null = null;
+        let lowestSolid = solidGrid[ii];
+        for (const [dx, dy] of shareDirs) {
+            const nx = (c.x + dx + S()) % S();
+            const ny = (c.y + dy + S()) % S();
+            const ni = I(nx, ny);
+            if (!spatialMap[ni] && solidGrid[ni] < lowestSolid - 0.5) {
+                lowestSolid = solidGrid[ni];
+                bestTarget = [nx, ny];
+            }
+        }
+        if (bestTarget && rand() < 0.1) { // 10% chance to roll per tick
+            performMove(c, bestTarget[0], bestTarget[1]);
+        }
+    }
+
+    // MODIFIED: Blue pixels (water) avoid squish death if pooled
     if (c.energy <= 0) {
       if (domB > 0) {
         let pooled = false;
@@ -1029,14 +1059,15 @@ function update() {
           }
         }
         if (pooled) {
-          c.energy = 1;
+          c.energy = 1; // Survive another tick if pooled
           continue;
         }
+        // Try to flow into an empty space
         const escape = findEmptyAdjacent(c.x, c.y);
         if (escape) {
           const [ex, ey] = escape;
           performMove(c, ex, ey);
-          c.energy = 5;
+          c.energy = 5; // Get a small energy boost for escaping
           continue;
         }
       }
@@ -1049,7 +1080,7 @@ function update() {
   const updatesPerTick = Math.ceil(livingCells.value.length / 80) || 1;
   for (let i = 0; i < updatesPerTick; i++) {
     const cell = pickRandomLivingCell();
-    if (cell) {
+    if (cell && cell.alive) {
       const [dx, dy, newH] = chooseChainDir(cell);
       if (attemptMove(cell, dx, dy)) {
         cell.heading = newH;
@@ -1107,7 +1138,7 @@ function randomDecayRate(){
   return MIN_DECAY_RATE + rand() * (MAX_DECAY_RATE - MIN_DECAY_RATE);
 }
 
-function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): GridCell {
+function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, parentLifespan?: number): GridCell {
   const A = Math.max(VISIBLE_ALPHA, a);
   const strength = (A/255);              // weight 0..1
   let energy = 60 + strength*140;
@@ -1116,6 +1147,11 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
   let fertility   = 0;                   // fertility will grow with age/transparency
 
   const heading = (Math.floor(rand()*4) as Heading);
+  // Inherited lifespan with mutation
+  const baseLifespan = parentLifespan || (TICKS_PER_DAY * 10 + rand() * TICKS_PER_DAY * 20);
+  const lifespan = baseLifespan + (rand() - 0.5) * (TICKS_PER_DAY * 5);
+
+
   const cell: GridCell = {
     id: nextCellId++,
     r, g, b, a: A, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
@@ -1125,6 +1161,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
     cargo: 0,
     friends: {},
     decayRate: randomDecayRate(),
+    lifespan,
   };
   cellById[cell.id] = cell;
   familyTree[cell.id] = {parents: [], children: []};
@@ -1224,14 +1261,17 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // Blue cells shy from climbing higher ground
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
     want -= Math.max(0, hDiff) * Bf * domB;
-    // Red cells hunt for fuel (nutrient and dryness)
-    want += (nut - wet) * Rf * domR * 0.5;
+    // MODIFIED: Red cells hunt for fuel (nutrient and dryness)
+    if (domR > 0) {
+      want += (nut - wet) * domR * 0.5;
+    }
 
     // Stronger cells should be less deterred by solid tiles. Previously the
     // penalty increased with strength, causing fragile cells to push through
     // rock more easily than tough ones. Invert the relationship so that
     // strong cells incur the minimum penalty while weak cells avoid solids.
     let solidPenalty = solidGrid[i] * (1 - cell.strength);
+    // NEW: White/Grey (gas-like) cells are less affected by terrain and seek empty space
     if (Math.abs(cell.r - cell.g) < 20 && Math.abs(cell.g - cell.b) < 20) {
       solidPenalty *= 0.3;
     }
@@ -1271,9 +1311,10 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
       }
     }
 
+    // NEW: White/Grey (gas-like) cells seek empty space
     if (Math.abs(cell.r - cell.g) < 20 && Math.abs(cell.g - cell.b) < 20) {
       const density = neighbourCount(nx, ny);
-      score += (1 - density / 8) * 0.3;
+      score += (1 - density / 8) * 0.3; // Bonus for moving to less dense areas
     }
     // amplify a touch of randomness so groups don't lock into perfect stability
     score += (rand()-0.5)*0.1;
@@ -1287,7 +1328,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
 }
 
 function findEmptyAdjacent(x:number,y:number): [number,number] | null {
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
   shuffleArray(dirs);
   for (const [dx,dy] of dirs) {
     const nx = (x + dx + S()) % S();
@@ -1301,7 +1342,7 @@ function findEmptyAdjacent(x:number,y:number): [number,number] | null {
 }
 
 function countOccupiedAdjacent(x:number,y:number): number {
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
   let c=0;
   for (const [dx,dy] of dirs){
     const nx=(x+dx+S())%S();
@@ -1393,6 +1434,9 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   if (domB < 0 && targetH < currentH - 0.1) return false;
 
   if (targetH > 0){
+    // NEW: Terrain causes damage (energy loss)
+    cell.energy -= targetH * 0.1;
+
     if (domB > 0){
       const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)) * domB);
       erodeSolid(tIndex, erode);
@@ -1449,8 +1493,9 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
         (cell.g-target.g)/255 * nutrientField[tIndex]
       ) * 30;
 
-      const cellScore = cell.energy * (0.8 + 0.5*cell.aggression) + envBoost;
-      const tarScore  = target.energy*(0.8 + 0.5*target.aggression) - envBoost;
+      // MODIFIED: Strength (weight) is now a factor in combat, making lighter pixels more fragile
+      const cellScore = cell.energy * (0.8 + 0.5 * cell.aggression) + (cell.strength * 20) + envBoost;
+      const tarScore  = target.energy * (0.8 + 0.5 * target.aggression) + (target.strength * 20) - envBoost;
 
       if (cellScore >= tarScore){
         recordDeath(target, "war");
@@ -1536,7 +1581,8 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   const babyA = 255;
 
   const totalE = Math.max(1, cell.energy + target.energy);
-  const kid = makeCell(x,y,babyR,babyG,babyB,babyA);
+  const avgLifespan = (cell.lifespan + target.lifespan) / 2;
+  const kid = makeCell(x, y, babyR, babyG, babyB, babyA, avgLifespan);
   kid.energy = Math.min(totalE * 0.3, 240);
   cell.energy *= 0.7;
   target.energy *= 0.7;
@@ -1558,7 +1604,7 @@ function recordDeath(cell: GridCell, reason: "war" | "squish" | "fade") {
   if (!cell.alive) return;
   cell.alive = false;
 
-  stats.value.totalLifespan += tickCount.value - cell.birthTick;
+  stats.value.totalLifespan += cell.age;
   stats.value.deadCount++;
   if (reason === "war") stats.value.warDeaths++;
   if (reason === "squish") stats.value.squishDeaths++;
@@ -1575,7 +1621,7 @@ function recordDeath(cell: GridCell, reason: "war" | "squish" | "fade") {
   nutrientField[i] += energy*(0.01 + 0.04*Gf);
 
   spatialMap[I(cell.x, cell.y)] = null;
-  const index = livingCells.value.findIndex(c => c === cell);
+  const index = livingCells.value.findIndex(c => c.id === cell.id);
   if (index > -1) livingCells.value.splice(index, 1);
 }
 
@@ -1593,7 +1639,7 @@ function deposit(cell:GridCell){
   nutrientField[i] += 0.005*Bf;                                 // water dissolves
   heatField[i]     += 0.003*Gf;                                 // growth warms
   if (cell.cargo > 0) {
-    nutrientField[i] += cell.cargo;
+    nutrientField[i] += cell.cargo * 0.01; // Deposit cargo back into nutrient field
     cell.cargo = 0;
   }
 }
@@ -1659,11 +1705,10 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
         b = (b*(1-dyeAlpha) + bb*dyeAlpha) | 0;
       }
 
-      const terrainAlpha = Math.min(255, Math.floor((m / 6) * 255));
       frame[off  ] = r;
       frame[off+1] = g;
       frame[off+2] = b;
-      frame[off+3] = terrainAlpha;
+      frame[off+3] = 255; // Solid background
     }
   }
 
@@ -1680,7 +1725,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
       frame[off+1] = Math.min(255, frame[off+1] + 100);
       frame[off+2] = Math.min(255, frame[off+2] + 100);
     }
-    if (selectedCell.value && c === selectedCell.value) {
+    if (selectedCell.value && c.id === selectedCell.value.id) {
       frame[off  ] = 255;
       frame[off+1] = 255;
       frame[off+2] = 0;
@@ -1752,8 +1797,13 @@ const updateScope = throttle((event: MouseEvent) => {
     hoverCell.value = null;
   }
 
-  const offsetX = (hx / s < 0.5) ? 20 : -box.offsetWidth - 20;
-  const offsetY = (hy / s < 0.5) ? 20 : -box.offsetHeight - 20;
+  const stageRect = stageEl.value?.getBoundingClientRect();
+  if (!stageRect) return;
+  const boxX = event.clientX - stageRect.left;
+  const boxY = event.clientY - stageRect.top;
+  
+  const offsetX = (boxX / stageRect.width < 0.5) ? 20 : -box.offsetWidth - 20;
+  const offsetY = (boxY / stageRect.height < 0.5) ? 20 : -box.offsetHeight - 20;
   box.style.left = `${event.clientX + offsetX}px`;
   box.style.top = `${event.clientY + offsetY}px`;
 }, 16);
@@ -1783,12 +1833,12 @@ const avgLifespan = computed(() => {
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-row{display:grid;grid-template-columns:repeat(7,auto);gap:.25rem;position:relative;cursor:pointer}
+.group-row{display:grid;grid-template-columns: 2fr 1fr 1fr 1.5fr 1fr 1fr; gap:.25rem;position:relative;cursor:pointer; align-items: center;}
 .group-row.header{font-weight:700;cursor:default}
 .group-row.selected{outline:1px solid var(--accent-colour);}
 .group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
 .colour-cell{display:flex;align-items:center;gap:.25rem}
-.colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
+.colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px; flex-shrink: 0;}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
 .world-stage .stack canvas{

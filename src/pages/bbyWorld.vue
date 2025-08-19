@@ -317,6 +317,11 @@ let heatField      = new Float32Array(S()*S());
 let moistureField  = new Float32Array(S()*S());
 let nutrientField  = new Float32Array(S()*S());
 let solidGrid      = new Float32Array(S()*S());
+let dyeRField      = new Float32Array(S()*S());
+let dyeGField      = new Float32Array(S()*S());
+let dyeBField      = new Float32Array(S()*S());
+
+const DYE_RATE = 0.001; // how quickly cells tint terrain
 
 function I(x:number,y:number){ const s=S(); return ((x & (s-1)) + ((y & (s-1)) * s)) >>> 0; }
 
@@ -340,6 +345,9 @@ function allocateWorldArrays(size:number){
   moistureField  = new Float32Array(size*size);
   nutrientField  = new Float32Array(size*size);
   solidGrid      = new Float32Array(size*size);
+  dyeRField      = new Float32Array(size*size);
+  dyeGField      = new Float32Array(size*size);
+  dyeBField      = new Float32Array(size*size);
   spatialMap     = new Array(size*size).fill(null);
   const ctx = gameCanvas.value?.getContext("2d");
   if (ctx) {
@@ -485,6 +493,37 @@ function diffuseDecay(src:Float32Array, mix=0.25, decay=0.996){
   }
 }
 
+function erodeSolid(idx:number, amt:number){
+  const current = solidGrid[idx];
+  const take = Math.min(current, amt);
+  if (take <= 0 || current <= 0) return 0;
+  const frac = take / current;
+  solidGrid[idx] -= take;
+  dyeRField[idx] *= 1 - frac;
+  dyeGField[idx] *= 1 - frac;
+  dyeBField[idx] *= 1 - frac;
+  return take;
+}
+
+function moveSolid(from:number, to:number, amt:number){
+  const current = solidGrid[from];
+  const moveAmt = Math.min(current, amt);
+  if (moveAmt <= 0 || current <= 0) return 0;
+  const frac = moveAmt / current;
+  const r = dyeRField[from] * frac;
+  const g = dyeGField[from] * frac;
+  const b = dyeBField[from] * frac;
+  solidGrid[from] -= moveAmt;
+  dyeRField[from] -= r;
+  dyeGField[from] -= g;
+  dyeBField[from] -= b;
+  solidGrid[to] = Math.min(6, solidGrid[to] + moveAmt);
+  dyeRField[to] += r;
+  dyeGField[to] += g;
+  dyeBField[to] += b;
+  return moveAmt;
+}
+
 function worldTick(){
   // Baby colour biases fields *gently*
   const skyR = (Number(currentColour.r)||0)/255 * 0.004;
@@ -531,6 +570,9 @@ function update() {
     // instead of rapidly starving. Each colour channel draws from its
     // matching field, converting a small portion into energy.
     const Rf = c.r/255, Bf = c.b/255, Gf = c.g/255;
+    dyeRField[ii] = Math.min(255, dyeRField[ii] + c.r * DYE_RATE);
+    dyeGField[ii] = Math.min(255, dyeGField[ii] + c.g * DYE_RATE);
+    dyeBField[ii] = Math.min(255, dyeBField[ii] + c.b * DYE_RATE);
     const domR = colourDominance(Rf, Bf, Gf);
     const domB = colourDominance(Bf, Rf, Gf);
     const domG = colourDominance(Gf, Rf, Bf);
@@ -620,8 +662,6 @@ function update() {
           const take = Math.min(erosion, limit);
           if (take > 0) {
             if (domB > 0) {
-              solidGrid[ni] -= take;
-
               // determine where to push removed material
               let px: number, py: number;
               if (dx === 0 && dy === 0) {
@@ -635,9 +675,10 @@ function update() {
               }
               const pi = I(px, py);
               const push = take * 0.5;
-              solidGrid[pi] = Math.min(6, solidGrid[pi] + push);
+              moveSolid(ni, pi, push);
 
               const resource = take - push;
+              erodeSolid(ni, resource);
               moistureField[ni] += resource * 0.6;
               nutrientField[ni] += resource * 0.3;
               heatField[ni]     += resource * 0.1;
@@ -664,7 +705,7 @@ function update() {
           const take = Math.min(erosion, limit);
           if (take > 0) {
             if (domG > 0) {
-              solidGrid[ni] -= take;
+              erodeSolid(ni, take);
               nutrientField[ni] += take * 0.8;
               moistureField[ni] += take * 0.1;
               heatField[ni]     += take * 0.1;
@@ -691,7 +732,7 @@ function update() {
             solidGrid[ni] = Math.min(6, solidGrid[ni] + harden);
             moistureField[ni] = Math.max(0, moistureField[ni] - harden * 0.5);
           } else {
-            solidGrid[ni] = Math.max(0, solidGrid[ni] - harden);
+            erodeSolid(ni, harden);
             moistureField[ni] += harden * 0.5;
           }
         }
@@ -1044,15 +1085,15 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   if (targetH > 0){
     if (domB > 0){
       const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)) * domB);
-      solidGrid[tIndex] -= erode;
+      erodeSolid(tIndex, erode);
       moistureField[tIndex] += erode*0.5;
 
       const px = (newX + dx + S()) % S();
       const py = (newY + dy + S()) % S();
-      if (!spatialMap[I(px,py)]){
+      const pi = I(px, py);
+      if (!spatialMap[pi]){
         const moved = solidGrid[tIndex]*0.6;
-        solidGrid[I(px,py)] += moved;
-        solidGrid[tIndex]   -= moved;
+        moveSolid(tIndex, pi, moved);
       }
       if (!target && solidGrid[tIndex] < 0.2) {
         performMove(cell, newX, newY);
@@ -1250,6 +1291,20 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
         r = (r*0.6 + gVal*0.4)>>>0;
         g = (g*0.6 + gVal*0.4)>>>0;
         b = (b*0.6 + gVal*0.4)>>>0;
+      }
+
+      const dr = dyeRField[ii];
+      const dg = dyeGField[ii];
+      const db = dyeBField[ii];
+      const dyeTotal = dr + dg + db;
+      if (dyeTotal > 0){
+        const dyeAlpha = Math.min(0.4, dyeTotal / 765);
+        const rr = dr / dyeTotal * 255;
+        const gg = dg / dyeTotal * 255;
+        const bb = db / dyeTotal * 255;
+        r = (r*(1-dyeAlpha) + rr*dyeAlpha) | 0;
+        g = (g*(1-dyeAlpha) + gg*dyeAlpha) | 0;
+        b = (b*(1-dyeAlpha) + bb*dyeAlpha) | 0;
       }
 
       frame[off  ] = r;

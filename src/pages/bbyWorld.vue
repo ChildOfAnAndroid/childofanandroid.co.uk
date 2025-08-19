@@ -280,7 +280,7 @@ function allocateWorldArrays(size:number){
   fieldPsi = new Float32Array(len); fieldLam = new Float32Array(len); fieldSig = new Float32Array(len);
   solidGrid = new Float32Array(len); tempField = new Float32Array(len);
   spatialMap = new Array(len).fill(null);
-  const ctx = gameCanvas.value?.getContext("2d");
+  const ctx = gameCanvas.value?.getContext("2d", { willReadFrequently: true });
   if (ctx) { frameImg = ctx.createImageData(size, size); frame = frameImg.data; }
 }
 
@@ -324,7 +324,11 @@ function applyBoardSize(){
 const pan = ref({ x: 0, y: 0 }); const baseScale = ref(1); const zoomFactor = ref(1);
 const ticksPerSecond = ref(30);
 const totalScale = computed(() => Math.max(1, Math.floor(baseScale.value * zoomFactor.value)));
-const canvasStyle = computed(() => ({ transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, transformOrigin: "top left" }));
+const canvasStyle = computed(() => ({ 
+  transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, 
+  transformOrigin: "top left",
+  willChange: 'transform'
+}));
 function zoomIn() { zoomFactor.value = Math.min(16, zoomFactor.value * 1.25); }
 function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
 function resetView(){ pan.value = { x: 0, y: 0 }; zoomFactor.value = 1; computeBaseScale(); }
@@ -343,7 +347,7 @@ let timeSinceLastTick = 0;
 const MAX_UPDATES_PER_FRAME = 5;
 
 function mainLoop(timestamp: number) {
-  const ctx = gameCanvas.value?.getContext("2d");
+  const ctx = gameCanvas.value?.getContext("2d", { willReadFrequently: true });
   if (!ctx) { animationFrameId = requestAnimationFrame(mainLoop); return; }
   const tickInterval = 1000 / ticksPerSecond.value;
   if(lastTime === 0) lastTime = timestamp;
@@ -404,7 +408,7 @@ function diffuseAndTransform(field: Float32Array, feedField: Float32Array, trans
     for (let y = 0; y < s; y++) { for (let x = 0; x < s; x++) {
         const i = I(x, y); const neighbors = (tempField[I(x + 1, y)] + tempField[I(x - 1, y)] + tempField[I(x, y + 1)] + tempField[I(x, y - 1)]) * 0.25;
         field[i] = (1 - FIELD_DIFFUSION) * tempField[i] + FIELD_DIFFUSION * neighbors; field[i] *= FIELD_DECAY;
-        const transform = Math.sin(feedField[i]) * transformField[i] * FIELD_TRANSFORM_RATE;
+        const transform = Math.sin(feedField[i]) * Math.tanh(transformField[i]) * FIELD_TRANSFORM_RATE;
         if (!isNaN(transform)) field[i] += transform; field[i] = isNaN(field[i]) ? 0 : Math.max(0, field[i]);
     }}
 }
@@ -539,13 +543,23 @@ function loadSelectedImage() {
   };
   img.src = selected.stamp_url || selected.url;
 }
-function handleCanvasClick(event: MouseEvent) {
-    const canvas = gameCanvas.value; if (!canvas) return; const rect = canvas.getBoundingClientRect();
+
+function screenToWorld(event: MouseEvent): {x: number, y: number} | null {
+    const canvas = gameCanvas.value;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
     const worldX = Math.floor((event.clientX - rect.left - pan.value.x) / totalScale.value);
     const worldY = Math.floor((event.clientY - rect.top - pan.value.y) / totalScale.value);
-    const clickedCell = spatialMap[I(worldX, worldY)];
-    if (clickedCell && clickedCell.alive) { selectedCell.value = clickedCell; } else { placeImageAt(worldX, worldY); }
+    return {x: worldX, y: worldY};
 }
+
+function handleCanvasClick(event: MouseEvent) {
+    const coords = screenToWorld(event);
+    if (!coords) return;
+    const clickedCell = spatialMap[I(coords.x, coords.y)];
+    if (clickedCell && clickedCell.alive) { selectedCell.value = clickedCell; } else { placeImageAt(coords.x, coords.y); }
+}
+
 function placeImageAt(worldX: number, worldY: number) {
     if (!loadedImageData) return;
     const startX = worldX - Math.floor(loadedImageData.width / 2); const startY = worldY - Math.floor(loadedImageData.height / 2);
@@ -595,10 +609,9 @@ function selectGroup(colour: string) { highlightedGroup.value = highlightedGroup
 const hoverInfo = ref({ x: 0, y: 0, psi: 0, lam: 0, sig: 0, solid: 0, cell: null as Cell | null });
 const updateScope = throttle((event: MouseEvent) => {
   if (!scopeActive.value) return;
-  const canvas = gameCanvas.value, scope = scopeCanvas.value, box = scopeBox.value; if (!canvas || !scope || !box || !frameImg) return;
-  const rect = canvas.getBoundingClientRect();
-  const hx = Math.floor((event.clientX - rect.left - pan.value.x) / totalScale.value);
-  const hy = Math.floor((event.clientY - rect.top - pan.value.y) / totalScale.value);
+  const scope = scopeCanvas.value, box = scopeBox.value; if (!scope || !box || !frameImg) return;
+  const coords = screenToWorld(event); if (!coords) return;
+  const hx = coords.x, hy = coords.y;
   const ctx = scope.getContext('2d'); if (!ctx) return;
   const SCOPE_SIZE = 9; const half = Math.floor(SCOPE_SIZE / 2); const pixelSize = scope.width / SCOPE_SIZE; const s = S();
   ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, scope.width, scope.height);

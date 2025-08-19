@@ -494,7 +494,11 @@ function placeImage(event: MouseEvent) {
           if (!spatialMap[key]) {
             const cell = makeCell(newX, newY, pixels[i], pixels[i+1], pixels[i+2], a);
             livingCells.value.push(cell);
-            spatialMap[key] = cell;
+            // Vue wraps objects pushed into reactive arrays with proxies.
+            // Retrieve the proxied instance so `spatialMap` holds the same
+            // reference as `livingCells`.  This ensures identity checks
+            // succeed when removing cells later (e.g. during merges).
+            spatialMap[key] = livingCells.value[livingCells.value.length - 1];
           }
         }
       }
@@ -590,9 +594,13 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     if (pCompat >= pWar){
       const baby = mergeBaby(cell, target, newX, newY);
       recordDeath(cell, "squish");
+      // `target` comes from `spatialMap` which stores the proxied cell, so
+      // recordDeath will successfully remove it from `livingCells`.
       recordDeath(target, "squish");
       livingCells.value.push(baby);
-      spatialMap[key] = baby;
+      // Store the proxied baby in spatialMap to keep references consistent
+      // with `livingCells` and prevent duplicate ghost cells.
+      spatialMap[key] = livingCells.value[livingCells.value.length - 1];
       stats.value.babyMerges++;
       return false;
     } else {

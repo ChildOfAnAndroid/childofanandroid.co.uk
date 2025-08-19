@@ -17,6 +17,11 @@
           </div>
 
           <div class="grp">
+            <label class="section">world</label>
+            <button class="action" @click="clearWorld">clear</button>
+          </div>
+
+          <div class="grp">
             <label class="section" for="card-select">select a bby to place:</label>
             <select id="card-select" v-model="selectedCardLabel" @change="loadSelectedImage">
               <option v-for="card in cards" :value="card.label" :key="card.label">
@@ -78,6 +83,7 @@
               <button class="action" @click="zoomIn">+</button>
             </div>
             <button class="action" @click="scopeActive = !scopeActive" :class="{active: scopeActive}">scope</button>
+            <button class="action" @click="resetView">reset view</button>
           </div>
         </div>
       </div>
@@ -321,6 +327,12 @@ function computeBaseScale(){
   if (w <= 0 || h <= 0 || s <= 0) return;
   // fit entire board into stage
   baseScale.value = Math.min(w / s, h / s);
+}
+
+function resetView(){
+  pan.value = { x: 0, y: 0 };
+  zoomFactor.value = 1;
+  computeBaseScale();
 }
 
 /* stage resize observer */

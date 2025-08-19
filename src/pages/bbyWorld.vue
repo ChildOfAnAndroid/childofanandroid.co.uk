@@ -77,7 +77,8 @@
             <label class="section">legend</label>
             <div class="legend">
               <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
-              <p><strong>Colours:</strong> red boosts aggression & heat-seeking; blue raises fertility & moisture affinity; green fuels metabolism & nutrient hunger; alpha sets strength.</p>
+              <p><strong>Colours = genes:</strong> the intensity of each channel is the strength of that trait—red for aggression & heat-seeking, blue raises fertility & moisture affinity, green fuels metabolism & nutrient hunger, while alpha sets overall toughness.</p>
+              <p><strong>Genetics:</strong> when two cells merge, each colour channel mixes according to parental strength so offspring wear a visible blend. New births flash briefly to mark their arrival.</p>
               <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
               <p><strong>Group stats:</strong> % shows each colour's share of living cells.</p>
             </div>
@@ -568,6 +569,7 @@ function loadSelectedImage() {
 }
 
 const ALPHA_MIN = 0.01
+const BIRTH_FLASH_TICKS = 8
 
 function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): GridCell {
   const A = Math.max(ALPHA_MIN, a);
@@ -793,13 +795,20 @@ function compatibility(a:GridCell,b:GridCell){
 }
 
 function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
+  // Weight genetic contribution by parental strength so tougher parents pass on more of their colour.
+  const totalS = Math.max(0.0001, cell.strength + target.strength);
+  const wA = cell.strength / totalS;
+  const wB = target.strength / totalS;
+
+  const babyR = Math.min(255, Math.round(cell.r*wA + target.r*wB + (rand()*6-3)));
+  const babyG = Math.min(255, Math.round(cell.g*wA + target.g*wB + (rand()*6-3)));
+  const babyB = Math.min(255, Math.round(cell.b*wA + target.b*wB + (rand()*6-3)));
+  const babyA = Math.min(255, Math.round(cell.a*wA + target.a*wB + (rand()*20-10)));
+
   const totalE = Math.max(1, cell.energy + target.energy);
-  const babyR = Math.min(255, Math.round((cell.r*cell.energy + target.r*target.energy)/totalE + (rand()*6-3)));
-  const babyG = Math.min(255, Math.round((cell.g*cell.energy + target.g*target.energy)/totalE + (rand()*6-3)));
-  const babyB = Math.min(255, Math.round((cell.b*cell.energy + target.b*target.energy)/totalE + (rand()*6-3)));
-  const babyA = Math.min(255, Math.round((cell.a + target.a)/2 + (rand()*20-10)));
   const kid = makeCell(x,y,babyR,babyG,babyB,babyA);
   kid.energy = Math.min(totalE * 0.85, 240);
+
   kid.aggression += (rand()*0.1-0.05);
   kid.fertility  += (rand()*0.1-0.05);
   kid.metabolism += (rand()*0.04-0.02);
@@ -896,6 +905,13 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     frame[off+1] = c.g;
     frame[off+2] = c.b;
     frame[off+3] = 255;
+
+    if (c.age < BIRTH_FLASH_TICKS){
+      const flash = 1 - c.age / BIRTH_FLASH_TICKS;
+      frame[off  ] = Math.min(255, frame[off  ] + flash*200);
+      frame[off+1] = Math.min(255, frame[off+1] + flash*200);
+      frame[off+2] = Math.min(255, frame[off+2] + flash*200);
+    }
   }
 
   ctx.putImageData(frameImg, 0, 0);

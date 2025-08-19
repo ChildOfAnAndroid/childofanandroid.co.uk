@@ -8,7 +8,7 @@
 
           <div class="grp">
             <label class="section" for="board-size">board size</label>
-            <select id="board-size" v-model.number="boardSize" @change="applyBoardSize">
+            <select id="board-size" v-model.number="boardSize">
               <option :value="128">128 × 128</option>
               <option :value="256">256 × 256</option>
               <option :value="512">512 × 512</option>
@@ -377,12 +377,16 @@ function update() {
   worldTick();
 
   // metabolism & micro-reactions
-  for (const c of livingCells.value){
+  for (let i = livingCells.value.length - 1; i >= 0; i--) {
+    const c = livingCells.value[i];
     c.energy -= c.metabolism;
     c.age += 1;
-    if (c.energy <= 0){ recordDeath(c, "squish"); continue; }
+    if (c.energy <= 0) {
+      recordDeath(c, "squish");
+      continue;
+    }
 
-    const ii = I(c.x,c.y);
+    const ii = I(c.x, c.y);
     if (c.species === "water")  heatField[ii] *= 0.985;
     if (c.species === "plasma") nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.008);
     if (c.species === "plant")  nutrientField[ii] += 0.004;

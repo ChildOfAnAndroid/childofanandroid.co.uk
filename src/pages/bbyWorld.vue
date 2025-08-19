@@ -38,6 +38,7 @@
               <span>WAR: {{ stats.warDeaths }}</span>
               <span>BBY: {{ stats.babyMerges }}</span>
               <span>SQUISH: {{ stats.squishDeaths }}</span>
+              <span>FADE: {{ stats.fadedDeaths }}</span>
               <span>AVG LIFE: {{ avgLifespan }}</span>
             </div>
           </div>
@@ -256,7 +257,7 @@ const livingCells = ref<GridCell[]>([]);
 let spatialMap: Array<GridCell | null> = [];
 
 const stats = ref({
-  warDeaths: 0, babyMerges: 0, squishDeaths: 0,
+  warDeaths: 0, babyMerges: 0, squishDeaths: 0, fadedDeaths: 0,
   totalLifespan: 0, deadCount: 0,
 });
 
@@ -363,7 +364,7 @@ function clearWorld(){
   // Reset arrays without creating new ones to avoid extra allocations
   livingCells.value.length = 0;
   spatialMap.fill(null);
-  stats.value = { warDeaths:0, babyMerges:0, squishDeaths:0, totalLifespan:0, deadCount:0 };
+  stats.value = { warDeaths:0, babyMerges:0, squishDeaths:0, fadedDeaths:0, totalLifespan:0, deadCount:0 };
   tickCount.value = 0;
 }
 
@@ -581,11 +582,23 @@ function update() {
     const envAvg = (heatField[ii] + moistureField[ii] + nutrientField[ii]) / 3;
     const colourAvg = (Rf + Bf + Gf) / 3;
     const fade = rand() * (0.05 + colourAvg*0.05 + envAvg*0.02);
-    c.a = Math.max(ALPHA_MIN, c.a - fade);
+    c.a = Math.max(0, c.a - fade);
     c.strength = c.a / 255;
+    if (c.a < VISIBLE_ALPHA) {
+      recordDeath(c, "fade");
+      continue;
+    }
     const ageFactor = Math.min(1, c.age / 1000);
-    const transpFactor = 1 - c.a / 255;
-    c.fertility = ageFactor * transpFactor;
+    const alphaN = c.a / 255;
+    let fertAlpha = 0;
+    if (alphaN >= FERTILITY_ALPHA_MIN && alphaN <= FERTILITY_ALPHA_MAX) {
+      if (alphaN <= FERTILITY_ALPHA_PEAK) {
+        fertAlpha = (alphaN - FERTILITY_ALPHA_MIN) / (FERTILITY_ALPHA_PEAK - FERTILITY_ALPHA_MIN);
+      } else {
+        fertAlpha = (FERTILITY_ALPHA_MAX - alphaN) / (FERTILITY_ALPHA_MAX - FERTILITY_ALPHA_PEAK);
+      }
+    }
+    c.fertility = ageFactor * fertAlpha;
 
     let gain = 0;
     const handleField = (dom:number, field:Float32Array, idx:number) => {
@@ -870,11 +883,14 @@ function loadSelectedImage() {
   img.src = tryUrls[idx];
 }
 
-const ALPHA_MIN = 0.01
+const VISIBLE_ALPHA = 0.2 * 255
+const FERTILITY_ALPHA_MIN = 0.3
+const FERTILITY_ALPHA_MAX = 0.9
+const FERTILITY_ALPHA_PEAK = 0.7
 const BIRTH_FLASH_TICKS = 8
 
 function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): GridCell {
-  const A = Math.max(ALPHA_MIN, a);
+  const A = Math.max(VISIBLE_ALPHA, a);
   const strength = (A/255);              // weight 0..1
   let energy = 60 + strength*140;
   let metabolism = 0.18 + (g/255)*0.20;  // green=hungry growth
@@ -883,7 +899,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
 
   const heading = (Math.floor(rand()*4) as Heading);
   const cell: GridCell = {
-    r, g, b, a, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
+    r, g, b, a: A, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
     aggression, fertility, metabolism,
     strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
     coop: 0,
@@ -925,7 +941,7 @@ function placeImage(event: MouseEvent) {
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4;
       const a = pixels[i + 3];
-      if (a > ALPHA_MIN) {
+      if (a > VISIBLE_ALPHA) {
         const newX = startGridX + x;
         const newY = startGridY + y;
         if (newX>=0 && newX<S() && newY>=0 && newY<S()) {
@@ -1206,7 +1222,7 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   const babyR = blendChannel(cell.r, target.r, 6);
   const babyG = blendChannel(cell.g, target.g, 6);
   const babyB = blendChannel(cell.b, target.b, 6);
-  const babyA = blendChannel(cell.a, target.a, 20);
+  const babyA = 255;
 
   const totalE = Math.max(1, cell.energy + target.energy);
   const kid = makeCell(x,y,babyR,babyG,babyB,babyA);
@@ -1219,7 +1235,7 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   return kid;
 }
 
-function recordDeath(cell: GridCell, reason: "war" | "squish") {
+function recordDeath(cell: GridCell, reason: "war" | "squish" | "fade") {
   if (!cell.alive) return;
   cell.alive = false;
 
@@ -1227,6 +1243,7 @@ function recordDeath(cell: GridCell, reason: "war" | "squish") {
   stats.value.deadCount++;
   if (reason === "war") stats.value.warDeaths++;
   if (reason === "squish") stats.value.squishDeaths++;
+  if (reason === "fade") stats.value.fadedDeaths++;
 
   const i = I(cell.x, cell.y);
   const solidAdd = 0.2 + 0.8*cell.strength; // alpha = stronger rock

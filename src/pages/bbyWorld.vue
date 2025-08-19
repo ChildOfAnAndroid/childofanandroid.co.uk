@@ -37,6 +37,32 @@
           </div>
 
           <div class="grp">
+            <label class="section">colour groups</label>
+            <div class="group-stats">
+              <div class="group-row header">
+                <span>group</span>
+                <span>count</span>
+                <span>strength</span>
+                <span>agg</span>
+                <span>fert</span>
+                <span>meta</span>
+              </div>
+              <div
+                class="group-row"
+                v-for="g in sortedGroupStats"
+                :key="g.species"
+              >
+                <span>{{ g.species }}</span>
+                <span>{{ g.count }}</span>
+                <span>{{ g.avgStrength.toFixed(2) }}</span>
+                <span>{{ g.avgAggression.toFixed(2) }}</span>
+                <span>{{ g.avgFertility.toFixed(2) }}</span>
+                <span>{{ g.avgMetabolism.toFixed(2) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grp">
             <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
             <div class="row2">
               <button class="action" @click="slowDown">-</button>
@@ -180,6 +206,51 @@ const stats = ref({
   warDeaths: 0, babyMerges: 0, squishDeaths: 0,
   totalLifespan: 0, deadCount: 0,
 });
+
+interface GroupStat {
+  species: Species;
+  count: number;
+  avgStrength: number;
+  avgAggression: number;
+  avgFertility: number;
+  avgMetabolism: number;
+}
+
+const groupStats = computed<GroupStat[]>(() => {
+  const base = {
+    count: 0,
+    totalStrength: 0,
+    totalAggression: 0,
+    totalFertility: 0,
+    totalMetabolism: 0,
+  };
+  const groups: Record<Species, typeof base> = {
+    plasma: { ...base },
+    water: { ...base },
+    plant: { ...base },
+    blend: { ...base },
+  };
+  for (const c of livingCells.value) {
+    const g = groups[c.species];
+    g.count++;
+    g.totalStrength += c.strength;
+    g.totalAggression += c.aggression;
+    g.totalFertility += c.fertility;
+    g.totalMetabolism += c.metabolism;
+  }
+  return (Object.entries(groups) as [Species, typeof base][]).map(([species, g]) => ({
+    species,
+    count: g.count,
+    avgStrength: g.count ? g.totalStrength / g.count : 0,
+    avgAggression: g.count ? g.totalAggression / g.count : 0,
+    avgFertility: g.count ? g.totalFertility / g.count : 0,
+    avgMetabolism: g.count ? g.totalMetabolism / g.count : 0,
+  }));
+});
+
+const sortedGroupStats = computed(() =>
+  [...groupStats.value].sort((a, b) => b.avgStrength - a.avgStrength)
+);
 
 /* Tick bookkeeping */
 let animationFrameId: number | null = null;
@@ -893,6 +964,9 @@ const avgLifespan = computed(() => {
 .vertical-panel{position:relative;width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.group-row{display:grid;grid-template-columns:repeat(6,auto);gap:.25rem}
+.group-row.header{font-weight:700}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
 .world-stage .stack canvas:not(.zoom-scope){grid-area:1/1;image-rendering:pixelated}

@@ -881,14 +881,38 @@ def api_get_user(uid: str):
 
 @app.get("/api/bbybook")
 def api_bbybook():
-    """Always gets the bbybook from the brain server, as it's the source of truth."""
+    """Gets the bbybook from the brain server with a local fallback.
+
+    If the brain server is reachable we return its data and update the cached
+    copy on disk.  Otherwise we fall back to the last saved copy if it exists.
+    """
+    # Try the brain server first if a URL is configured
     if LLM_SERVER_URL:
         try:
             r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/bbybook", timeout=5)
             if r.ok:
-                return jsonify(r.json())
-        except requests.exceptions.RequestException as e:
-            return jsonify(error=f"Could not reach brain server: {e}"), 504
+                data = r.json()
+                # Save a copy so we can serve it later if the brain is offline
+                try:
+                    with open(BBYBOOK_LOCAL, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                except Exception:
+                    pass  # Caching errors shouldn't prevent serving the data
+                return jsonify(data)
+        except requests.exceptions.RequestException:
+            pass  # Fall back to local copy below
+
+    # If we couldn't reach the brain, try the cached local copy
+    if os.path.exists(BBYBOOK_LOCAL):
+        try:
+            with open(BBYBOOK_LOCAL, "r", encoding="utf-8") as f:
+                return jsonify(json.load(f))
+        except Exception as e:
+            return jsonify(error=f"Could not read local bbybook: {e}"), 500
+
+    # No brain data and no local cache – return appropriate error
+    if LLM_SERVER_URL:
+        return jsonify(error="Could not reach brain server"), 504
     return jsonify(error="Brain server URL not configured"), 503
 
 # ---- Pixels ----

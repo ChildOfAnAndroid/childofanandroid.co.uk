@@ -265,7 +265,7 @@ const grad = (hash: number, x: number, y: number) => {
     const u = h < 8 ? x : y, v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
 };
-function noise(x: number, y: number) {
+function perlinNoise(x: number, y: number) {
     const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
     x -= Math.floor(x); y -= Math.floor(y);
     const u = fade(x), v = fade(y);
@@ -274,7 +274,7 @@ function noise(x: number, y: number) {
                    lerp(u, grad(perm[A + 1], x, y - 1), grad(perm[B + 1], x - 1, y - 1)));
 }
 
-/* ===================== Init / Resize ===================== */
+/* ===================== Init / Resize / UI Functions (Defined Before Use) ===================== */
 function allocateWorldArrays(size:number){
   const len = size * size;
   fieldPsi = new Float32Array(len); fieldLam = new Float32Array(len); fieldSig = new Float32Array(len);
@@ -284,18 +284,25 @@ function allocateWorldArrays(size:number){
   if (ctx) { frameImg = ctx.createImageData(size, size); frame = frameImg.data; }
 }
 
+function computeBaseScale(){
+  const stage = stageEl.value;
+  if (!stage) return;
+  const s = S();
+  if (s <= 0) return;
+  baseScale.value = Math.max(1, Math.floor(Math.min(stage.clientWidth / s, stage.clientHeight / s)));
+}
+
 function clearWorld(){
   livingCells.value.length = 0;
   spatialMap.fill(null);
   Object.keys(cellById).forEach(key => delete cellById[Number(key)]);
   Object.keys(familyTree).forEach(key => delete familyTree[Number(key)]);
-  
   const s = S();
   for (let y = 0; y < s; y++) {
     for (let x = 0; x < s; x++) {
       const i = x + y * s;
       fieldPsi[i] = rand() * 0.1; fieldLam[i] = rand() * 0.1; fieldSig[i] = rand() * 0.1;
-      const n = (noise(x / (s/4), y / (s/4)) + 1) / 2; // Scaled noise for better features
+      const n = (perlinNoise(x / (s/4), y / (s/4)) + 1) / 2;
       solidGrid[i] = n > 0.6 ? (n - 0.6) * 10 : 0;
     }
   }
@@ -303,6 +310,31 @@ function clearWorld(){
   tickCount.value = 0;
   nextCellId = 1;
 }
+
+function applyBoardSize(){
+  pan.value = {x:0, y:0};
+  zoomFactor.value = 1;
+  const canvas = gameCanvas.value;
+  if (canvas){ canvas.width = S(); canvas.height = S(); }
+  allocateWorldArrays(S());
+  clearWorld();
+  computeBaseScale();
+}
+
+const pan = ref({ x: 0, y: 0 }); const baseScale = ref(1); const zoomFactor = ref(1);
+const ticksPerSecond = ref(30);
+const totalScale = computed(() => Math.max(1, Math.floor(baseScale.value * zoomFactor.value)));
+const canvasStyle = computed(() => ({ transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, transformOrigin: "top left" }));
+function zoomIn() { zoomFactor.value = Math.min(16, zoomFactor.value * 1.25); }
+function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
+function resetView(){ pan.value = { x: 0, y: 0 }; zoomFactor.value = 1; computeBaseScale(); }
+let isPanning = false; let lastPan = { x: 0, y: 0 };
+function startPan(e: MouseEvent) { if (e.button !== 1 && e.button !== 2) return; isPanning = true; lastPan = { x: e.clientX, y: e.clientY }; }
+function onMouseMove(e: MouseEvent) { lastMouseEvent = e; if (isPanning) { pan.value.x += e.clientX - lastPan.x; pan.value.y += e.clientY - lastPan.y; lastPan = { x: e.clientX, y: e.clientY }; } }
+function endPan() { isPanning = false; }
+function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
+function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
+function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
 
 /* ===================== Main Loop ===================== */
 let animationFrameId: number | null = null;
@@ -318,7 +350,6 @@ function mainLoop(timestamp: number) {
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
-
   let performed = 0;
   while (timeSinceLastTick >= tickInterval && performed < MAX_UPDATES_PER_FRAME) {
     update();
@@ -326,7 +357,6 @@ function mainLoop(timestamp: number) {
     performed++;
   }
   if (performed === MAX_UPDATES_PER_FRAME) timeSinceLastTick = 0;
-
   drawGrid(ctx);
   if (lastMouseEvent) updateScope(lastMouseEvent);
   animationFrameId = requestAnimationFrame(mainLoop);
@@ -335,59 +365,35 @@ function mainLoop(timestamp: number) {
 /* ===================== Simulation Update ===================== */
 function update() {
   tickCount.value++;
-  
-  // 1. Cells influence fields and terrain
   for (const c of livingCells.value) {
-    if (!c.alive) continue;
-    c.age++;
-    const idx = I(c.x, c.y);
-    const influence = (c.a / 255) * 0.2;
+    if (!c.alive) continue; c.age++;
+    const idx = I(c.x, c.y); const influence = (c.a / 255) * 0.2;
     fieldPsi[idx] += (c.r / 255) * influence; fieldLam[idx] += (c.g / 255) * influence; fieldSig[idx] += (c.b / 255) * influence;
     const normR = c.r/255, normG = c.g/255, normB = c.b/255;
     if (normR > normG && normR > normB) solidGrid[idx] = Math.min(6, solidGrid[idx] + 0.01 * normR);
     if (normB > normR && normB > normG) solidGrid[idx] = Math.max(0, solidGrid[idx] - 0.01 * normB);
-    if (normG > normR && normG > normB && solidGrid[idx] > 0) {
-        const conversion = Math.min(solidGrid[idx], 0.01 * normG);
-        solidGrid[idx] -= conversion; fieldLam[idx] += conversion * 5;
-    }
+    if (normG > normR && normG > normB && solidGrid[idx] > 0) { const conversion = Math.min(solidGrid[idx], 0.01 * normG); solidGrid[idx] -= conversion; fieldLam[idx] += conversion * 5; }
   }
-
-  // 2. Fields diffuse, decay, transform
-  diffuseAndTransform(fieldPsi, fieldSig, fieldLam);
-  diffuseAndTransform(fieldLam, fieldPsi, fieldSig);
-  diffuseAndTransform(fieldSig, fieldLam, fieldPsi);
-
-  // 3. Update Cells (Charge, Life/Death)
+  diffuseAndTransform(fieldPsi, fieldSig, fieldLam); diffuseAndTransform(fieldLam, fieldPsi, fieldSig); diffuseAndTransform(fieldSig, fieldLam, fieldPsi);
   for (let i = livingCells.value.length - 1; i >= 0; i--) {
-    const c = livingCells.value[i];
-    if (!c.alive) continue;
-    const idx = I(c.x, c.y);
-    const resonance = (fieldPsi[idx]*(c.r/255))+(fieldLam[idx]*(c.g/255))+(fieldSig[idx]*(c.b/255));
+    const c = livingCells.value[i]; if (!c.alive) continue;
+    const idx = I(c.x, c.y); const resonance = (fieldPsi[idx]*(c.r/255))+(fieldLam[idx]*(c.g/255))+(fieldSig[idx]*(c.b/255));
     const dissonance = (fieldPsi[idx]*((255-c.r)/255))+(fieldLam[idx]*((255-c.g)/255))+(fieldSig[idx]*((255-c.b)/255));
-    const chargeDelta = (resonance - dissonance) * 0.8;
-    c.charge = Math.min(MAX_CHARGE, c.charge + chargeDelta - METABOLIC_COST);
+    const chargeDelta = (resonance - dissonance) * 0.8; c.charge = Math.min(MAX_CHARGE, c.charge + chargeDelta - METABOLIC_COST);
     const neighborCount = countAdjacent(c.x, c.y);
     if (neighborCount > 4) {
-      const crowdPenalty = (neighborCount - 4) * 0.5;
-      c.charge -= crowdPenalty;
+      const crowdPenalty = (neighborCount - 4) * 0.5; c.charge -= crowdPenalty;
       if (c.charge <= 0) { recordDecay(c, "overcrowd"); continue; }
     }
     if (c.charge <= 0) { recordDecay(c, "charge"); }
   }
-
-  // 4. Movement & Interaction
   const updatesPerTick = Math.max(1, Math.floor(livingCells.value.length / UPDATES_PER_TICK_DIVISOR));
   for (let i = 0; i < updatesPerTick; i++) {
     if (livingCells.value.length === 0) break;
     const cellIndex = Math.floor(rand() * livingCells.value.length);
-    const c = livingCells.value[cellIndex];
-    if (c && c.alive) attemptMove(c);
+    const c = livingCells.value[cellIndex]; if (c && c.alive) attemptMove(c);
   }
-
-  // 5. Pruning dead cells
-  if (tickCount.value % 60 === 0) {
-    livingCells.value = livingCells.value.filter(c => c.alive);
-  }
+  if (tickCount.value % 60 === 0) { livingCells.value = livingCells.value.filter(c => c.alive); }
 }
 
 function I(x: number, y: number): number { const s = S(); return ( (x & (s - 1)) + (y & (s - 1)) * s ) >>> 0; }
@@ -396,30 +402,26 @@ function I(x: number, y: number): number { const s = S(); return ( (x & (s - 1))
 function diffuseAndTransform(field: Float32Array, feedField: Float32Array, transformField: Float32Array) {
     const s = S(); tempField.set(field);
     for (let y = 0; y < s; y++) { for (let x = 0; x < s; x++) {
-        const i = I(x, y);
-        const neighbors = (tempField[I(x + 1, y)] + tempField[I(x - 1, y)] + tempField[I(x, y + 1)] + tempField[I(x, y - 1)]) * 0.25;
+        const i = I(x, y); const neighbors = (tempField[I(x + 1, y)] + tempField[I(x - 1, y)] + tempField[I(x, y + 1)] + tempField[I(x, y - 1)]) * 0.25;
         field[i] = (1 - FIELD_DIFFUSION) * tempField[i] + FIELD_DIFFUSION * neighbors; field[i] *= FIELD_DECAY;
         const transform = Math.sin(feedField[i]) * transformField[i] * FIELD_TRANSFORM_RATE;
-        if (!isNaN(transform)) field[i] += transform;
-        field[i] = isNaN(field[i]) ? 0 : Math.max(0, field[i]);
+        if (!isNaN(transform)) field[i] += transform; field[i] = isNaN(field[i]) ? 0 : Math.max(0, field[i]);
     }}
 }
 function getFieldGradient(field: Float32Array, x: number, y: number) {
-  const gx = (field[I(x + 1, y)] - field[I(x - 1, y)]) * 0.5;
-  const gy = (field[I(x, y + 1)] - field[I(x, y - 1)]) * 0.5;
-  return { gx, gy };
+  const gx = (field[I(x + 1, y)] - field[I(x - 1, y)]) * 0.5; const gy = (field[I(x, y + 1)] - field[I(x, y - 1)]) * 0.5; return { gx, gy };
 }
-
 function attemptMove(c: Cell) {
     let bestScore = -Infinity; let bestDx = 0, bestDy = 0;
-    const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
-    const shuffledDirs = dirs.sort(() => rand() - 0.5);
-    for (const [dx, dy] of shuffledDirs) {
+    const dirs = [[0,1], [0,-1], [1,0], [-1,0]].sort(() => rand() - 0.5);
+    for (const [dx, dy] of dirs) {
       const nx = c.x + dx, ny = c.y + dy; const nIdx = I(nx, ny);
       const { gx: psi_gx, gy: psi_gy } = getFieldGradient(fieldPsi, nx, ny);
       const { gx: lam_gx, gy: lam_gy } = getFieldGradient(fieldLam, nx, ny);
       const { gx: sig_gx, gy: sig_gy } = getFieldGradient(fieldSig, nx, ny);
-      const fx = -psi_gy - sig_gy, fy = psi_gx + sig_gx;
+      const lamForce = c.g / 255;
+      const fx = (-psi_gy) + (lam_gy * lamForce) + (-sig_gy);
+      const fy = (psi_gx)  + (-lam_gx * lamForce) + (sig_gx);
       const moveAlignment = (fx * dx + fy * dy);
       const fieldResonance = (fieldPsi[nIdx]*(c.r/255))+(fieldLam[nIdx]*(c.g/255))+(fieldSig[nIdx]*(c.b/255));
       const terrainPenalty = solidGrid[nIdx] * 2;
@@ -427,20 +429,19 @@ function attemptMove(c: Cell) {
       if (score > bestScore) { bestScore = score; bestDx = dx; bestDy = dy; }
     }
     if (bestDx !== 0 || bestDy !== 0) {
-      const targetX = c.x + bestDx, targetY = c.y + bestDy; const targetIdx = I(targetX, targetY);
-      const targetCell = spatialMap[targetIdx];
+      const targetX = c.x + bestDx, targetY = c.y + bestDy;
+      const targetCell = spatialMap[I(targetX, targetY)];
       if (targetCell === null) {
-        spatialMap[I(c.x, c.y)] = null; c.x = targetX; c.y = targetY; spatialMap[targetIdx] = c;
+        spatialMap[I(c.x, c.y)] = null; c.x = targetX; c.y = targetY; spatialMap[I(targetX, targetY)] = c;
       } else if (targetCell.alive) { handleInteraction(c, targetCell); }
     }
 }
-
 function handleInteraction(attacker: Cell, defender: Cell) {
-  const resonance = 1 - (Math.abs(attacker.r - defender.r) + Math.abs(attacker.g - defender.g) + Math.abs(attacker.b - defender.b)) / (255 * 3);
+  stats.value.conflicts++; const resonance = 1 - (Math.abs(attacker.r - defender.r) + Math.abs(attacker.g - defender.g) + Math.abs(attacker.b - defender.b)) / (765);
   if (resonance > 0.8 && (attacker.charge + defender.charge) > MAX_CHARGE * 1.5 && tickCount.value > attacker.lastSpawnTick + SPAWN_COOLDOWN && tickCount.value > defender.lastSpawnTick + SPAWN_COOLDOWN) {
     const spawnLoc = findEmptyAdjacent(attacker.x, attacker.y) || findEmptyAdjacent(defender.x, defender.y);
     if (spawnLoc) {
-      spawn(spawnLoc.x, spawnLoc.y, attacker, defender);
+      spawn(spawnLoc.x, spawnLoc.y, { parents: [attacker, defender] });
       attacker.charge *= 0.6; defender.charge *= 0.6;
       attacker.lastSpawnTick = tickCount.value; defender.lastSpawnTick = tickCount.value;
       stats.value.spawns++;
@@ -449,8 +450,7 @@ function handleInteraction(attacker: Cell, defender: Cell) {
     const attIdx = I(attacker.x, attacker.y), defIdx = I(defender.x, defender.y);
     const attFieldAdv = (fieldPsi[attIdx]*(attacker.r/255))+(fieldLam[attIdx]*(attacker.g/255))+(fieldSig[attIdx]*(attacker.b/255));
     const defFieldAdv = (fieldPsi[defIdx]*(defender.r/255))+(fieldLam[defIdx]*(defender.g/255))+(fieldSig[defIdx]*(defender.b/255));
-    const attScore = attacker.charge * (attacker.a / 255) + attFieldAdv;
-    const defScore = defender.charge * (defender.a / 255) + defFieldAdv;
+    const attScore = attacker.charge * (attacker.a / 255) + attFieldAdv; const defScore = defender.charge * (defender.a / 255) + defFieldAdv;
     if (attScore > defScore) {
       attacker.charge = Math.min(MAX_CHARGE, attacker.charge + defender.charge * 0.5); recordDecay(defender, "conflict");
     } else {
@@ -458,33 +458,31 @@ function handleInteraction(attacker: Cell, defender: Cell) {
     }
   }
 }
-
-function spawn(x: number, y: number, p1?: Cell, p2?: Cell): Cell {
+function spawn(x: number, y: number, options: { parents?: [Cell, Cell], color?: {r:number, g:number, b:number, a:number} } = {}): Cell {
   let r, g, b, a; let parents: [number, number] | [] = [];
-  if (p1 && p2) {
-    parents = [p1.id, p2.id]; const totalCharge = p1.charge + p2.charge || 1;
+  if (options.parents) {
+    const [p1, p2] = options.parents; parents = [p1.id, p2.id]; const totalCharge = p1.charge + p2.charge || 1;
     const w1 = p1.charge / totalCharge, w2 = p2.charge / totalCharge;
     r = Math.floor(p1.r * w1 + p2.r * w2); g = Math.floor(p1.g * w1 + p2.g * w2);
     b = Math.floor(p1.b * w1 + p2.b * w2); a = Math.floor(p1.a * w1 + p2.a * w2);
+  } else if (options.color) {
+    ({r, g, b, a} = options.color);
   } else { r = Math.floor(rand()*255); g = Math.floor(rand()*255); b = Math.floor(rand()*255); a = 150 + Math.floor(rand()*105); }
-  const newCell: Cell = { id: nextCellId++, r, g, b, a, x, y, parents, charge: MAX_CHARGE / 2, alive: true, birthTick: tickCount.value, age: 0, lastSpawnTick: tickCount.value };
+  const newCell: Cell = { id: nextCellId++, r, g, b, a, x, y, parents, charge: MAX_CHARGE, alive: true, birthTick: tickCount.value, age: 0, lastSpawnTick: tickCount.value };
   livingCells.value.push(newCell); cellById[newCell.id] = newCell; spatialMap[I(x, y)] = newCell;
   familyTree[newCell.id] = { parents, children: [] };
-  if (p1 && p2) { familyTree[p1.id]?.children.push(newCell.id); familyTree[p2.id]?.children.push(newCell.id); }
+  if (options.parents) { const [p1, p2] = options.parents; familyTree[p1.id]?.children.push(newCell.id); familyTree[p2.id]?.children.push(newCell.id); }
   return newCell;
 }
-
 function recordDecay(c: Cell, reason: DeathReason) {
   if (!c.alive) return; c.alive = false;
   spatialMap[I(c.x, c.y)] = null;
-  const idx = I(c.x, c.y);
-  const energy = (c.charge + c.a) / 255;
+  const idx = I(c.x, c.y); const energy = (c.charge + c.a) / 255;
   fieldPsi[idx] += (c.r/255)*energy; fieldLam[idx] += (c.g/255)*energy; fieldSig[idx] += (c.b/255)*energy;
   solidGrid[idx] = Math.min(6, solidGrid[idx] + (c.a / 255) * 0.2);
   if(reason === 'conflict') stats.value.conflicts++; if(reason === 'charge') stats.value.chargeDecays++; if(reason === 'overcrowd') stats.value.overcrowdDecays++;
   stats.value.deadCount++; stats.value.totalLifespan += c.age;
 }
-
 function findEmptyAdjacent(x:number, y:number): {x:number, y:number} | null {
     const dirs = [[0,1], [0,-1], [1,0], [-1,0]].sort(() => rand() - 0.5);
     for (const [dx, dy] of dirs) {
@@ -494,8 +492,7 @@ function findEmptyAdjacent(x:number, y:number): {x:number, y:number} | null {
 function countAdjacent(x:number, y:number): number {
     let count = 0;
     for (let dy = -1; dy <= 1; dy++) { for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        if (spatialMap[I(x + dx, y + dy)]) count++;
+        if (dx === 0 && dy === 0) continue; if (spatialMap[I(x + dx, y + dy)]) count++;
     }} return count;
 }
 
@@ -504,27 +501,19 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
   if (!frameImg) return; ctx.imageSmoothingEnabled = false; const s = S();
   for (let y = 0; y < s; y++) { for (let x = 0; x < s; x++) {
       const off = (x + y * s) * 4; const ii = I(x, y); const rock = solidGrid[ii] * 30;
-      frame[off] = Math.min(255, fieldPsi[ii] * 40 + rock);
-      frame[off + 1] = Math.min(255, fieldLam[ii] * 40 + rock);
-      frame[off + 2] = Math.min(255, fieldSig[ii] * 40 + rock);
-      frame[off + 3] = 255;
+      frame[off] = Math.min(255, fieldPsi[ii] * 40 + rock); frame[off + 1] = Math.min(255, fieldLam[ii] * 40 + rock);
+      frame[off + 2] = Math.min(255, fieldSig[ii] * 40 + rock); frame[off + 3] = 255;
   }}
   for (const c of livingCells.value) { if (!c.alive) continue;
     const off = (I(c.x, c.y)) * 4;
     frame[off] = c.r; frame[off + 1] = c.g; frame[off + 2] = c.b; frame[off + 3] = c.a;
-    if (highlightedGroup.value && groupKey(c) === highlightedGroup.value) {
-      frame[off]=Math.min(255, c.r+80); frame[off+1]=Math.min(255, c.g+80); frame[off+2]=Math.min(255, c.b+80);
-    }
-    if (selectedCell.value && c.id === selectedCell.value.id) {
-      frame[off]=255; frame[off+1]=255; frame[off+2]=0;
-    }
+    if (highlightedGroup.value && groupKey(c) === highlightedGroup.value) { frame[off]=Math.min(255, c.r+80); frame[off+1]=Math.min(255, c.g+80); frame[off+2]=Math.min(255, c.b+80); }
+    if (selectedCell.value && c.id === selectedCell.value.id) { frame[off]=255; frame[off+1]=255; frame[off+2]=0; }
   }
   ctx.putImageData(frameImg, 0, 0);
 }
 
-// --- UI, Computed, Lifecycle, etc. ---
-const pan = ref({ x: 0, y: 0 }); const baseScale = ref(1); const zoomFactor = ref(1);
-const ticksPerSecond = ref(30);
+// --- Lifecycle, UI, Computed Properties ---
 onMounted(async () => {
   try {
     const gallery = await fetchBbyBookGallery();
@@ -536,19 +525,8 @@ onMounted(async () => {
   animationFrameId = requestAnimationFrame(mainLoop);
 });
 onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); });
-watch(boardSize, () => applyBoardSize()); watch(selectedCardLabel, () => loadSelectedImage());
-const totalScale = computed(() => Math.max(1, Math.floor(baseScale.value * zoomFactor.value)));
-const canvasStyle = computed(() => ({ transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, transformOrigin: "top left" }));
-function zoomIn() { zoomFactor.value = Math.min(16, zoomFactor.value * 1.25); }
-function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
-function resetView(){ pan.value = { x: 0, y: 0 }; zoomFactor.value = 1; computeBaseScale(); }
-let isPanning = false; let lastPan = { x: 0, y: 0 };
-function startPan(e: MouseEvent) { if (e.button !== 1 && e.button !== 2) return; isPanning = true; lastPan = { x: e.clientX, y: e.clientY }; }
-function onMouseMove(e: MouseEvent) { lastMouseEvent = e; if (isPanning) { pan.value.x += e.clientX - lastPan.x; pan.value.y += e.clientY - lastPan.y; lastPan = { x: e.clientX, y: e.clientY }; } }
-function endPan() { isPanning = false; }
-function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
-function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
-function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
+watch(boardSize, () => applyBoardSize());
+watch(selectedCardLabel, () => loadSelectedImage());
 function selectCard(label: string) { selectedCardLabel.value = label; }
 function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value); if (!selected) return;
@@ -556,14 +534,13 @@ function loadSelectedImage() {
   img.onload = () => {
     const tempCanvas = document.createElement("canvas");
     const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = img.width; tempCanvas.height = img.height;
-    ctx.drawImage(img, 0, 0); loadedImageData = ctx.getImageData(0, 0, img.width, img.height);
+    tempCanvas.width = img.width; tempCanvas.height = img.height; ctx.drawImage(img, 0, 0);
+    loadedImageData = ctx.getImageData(0, 0, img.width, img.height);
   };
   img.src = selected.stamp_url || selected.url;
 }
 function handleCanvasClick(event: MouseEvent) {
-    const canvas = gameCanvas.value; if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
+    const canvas = gameCanvas.value; if (!canvas) return; const rect = canvas.getBoundingClientRect();
     const worldX = Math.floor((event.clientX - rect.left - pan.value.x) / totalScale.value);
     const worldY = Math.floor((event.clientY - rect.top - pan.value.y) / totalScale.value);
     const clickedCell = spatialMap[I(worldX, worldY)];
@@ -571,21 +548,19 @@ function handleCanvasClick(event: MouseEvent) {
 }
 function placeImageAt(worldX: number, worldY: number) {
     if (!loadedImageData) return;
-    const startX = worldX - Math.floor(loadedImageData.width / 2);
-    const startY = worldY - Math.floor(loadedImageData.height / 2);
+    const startX = worldX - Math.floor(loadedImageData.width / 2); const startY = worldY - Math.floor(loadedImageData.height / 2);
     for (let y = 0; y < loadedImageData.height; y++) { for (let x = 0; x < loadedImageData.width; x++) {
         const i = (y * loadedImageData.width + x) * 4; const a = loadedImageData.data[i + 3];
         if (a > 50) {
             const pX = startX + x, pY = startY + y;
             if (!spatialMap[I(pX, pY)]) {
                 const r = loadedImageData.data[i], g = loadedImageData.data[i+1], b = loadedImageData.data[i+2];
-                spawn(pX, pY).charge = MAX_CHARGE; // Spawn primordial with full charge
+                spawn(pX, pY, { color: {r, g, b, a} });
             }
         }
     }}
 }
 const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
-const avgCharge = computed(() => livingCells.value.length ? livingCells.value.reduce((acc, c) => c.alive ? acc + c.charge : acc, 0) / livingCells.value.filter(c=>c.alive).length || 0 : 0);
 const avgLifespan = computed(() => stats.value.deadCount > 0 ? formatTicks(stats.value.totalLifespan / stats.value.deadCount) : "---");
 const selectedCell = ref<Cell | null>(null);
 function selectCellById(id: number) { const cell = cellById[id]; if (cell && cell.alive) selectedCell.value = cell; }
@@ -593,8 +568,8 @@ const selectedFamily = computed(() => {
   if (!selectedCell.value) return { parents: [], children: [] };
   const entry = familyTree[selectedCell.value.id] || { parents: [], children: [] };
   return {
-    parents: entry.parents.map(id => cellById[id]).filter(Boolean),
-    children: entry.children.map(id => cellById[id]).filter(Boolean),
+    parents: entry.parents.map(id => cellById[id]).filter(c => c && c.alive),
+    children: entry.children.map(id => cellById[id]).filter(c => c && c.alive),
   };
 });
 interface ColourGroupStat { colour: string; count: number; percentage: number; avgAge: number; avgCharge: number; avgMass: number; }
@@ -610,10 +585,8 @@ const groupStats = computed<ColourGroupStat[]>(() => {
   }
   const total = living.length;
   return Object.entries(groups).map(([colour, grp]) => ({ colour, count: grp.count,
-    percentage: total ? (grp.count / total) * 100 : 0,
-    avgAge: grp.count ? grp.totalAge / grp.count : 0,
-    avgCharge: grp.count ? grp.totalCharge / grp.count : 0,
-    avgMass: grp.count ? grp.totalMass / grp.count : 0,
+    percentage: total ? (grp.count / total) * 100 : 0, avgAge: grp.count ? grp.totalAge / grp.count : 0,
+    avgCharge: grp.count ? grp.totalCharge / grp.count : 0, avgMass: grp.count ? grp.totalMass / grp.count : 0,
   }));
 });
 const sortedGroupStats = computed(() => [...groupStats.value].sort((a, b) => b.count - a.count));
@@ -642,7 +615,10 @@ const updateScope = throttle((event: MouseEvent) => {
     hoverInfo.value = { x: hx, y: hy, psi: fieldPsi[ii], lam: fieldLam[ii], sig: fieldSig[ii], solid: solidGrid[ii], cell: spatialMap[ii] || null };
   }
   const stageRect = stageEl.value?.getBoundingClientRect(); if (!stageRect) return;
-  box.style.left = `${event.clientX + 20}px`; box.style.top = `${event.clientY + 20}px`;
+  const boxX = event.clientX - stageRect.left, boxY = event.clientY - stageRect.top;
+  const offsetX = (boxX / stageRect.width < 0.5) ? 20 : -box.offsetWidth - 20;
+  const offsetY = (boxY / stageRect.height < 0.5) ? 20 : -box.offsetHeight - 20;
+  box.style.left = `${event.clientX + offsetX}px`; box.style.top = `${event.clientY + offsetY}px`;
 }, 16);
 </script>
 

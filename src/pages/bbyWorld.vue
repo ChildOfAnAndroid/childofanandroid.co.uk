@@ -340,6 +340,7 @@ let dyeGField      = new Float32Array(S()*S());
 let dyeBField      = new Float32Array(S()*S());
 
 const DYE_RATE = 0.001; // how quickly cells tint terrain
+const BALANCE_RATE = 0.005; // environmental pressure toward colour parity
 
 function I(x:number,y:number){ const s=S(); return ((x & (s-1)) + ((y & (s-1)) * s)) >>> 0; }
 
@@ -543,11 +544,24 @@ function moveSolid(from:number, to:number, amt:number){
   return moveAmt;
 }
 
-function worldTick(){
+function worldTick(totalR=0,totalG=0,totalB=0){
   // Baby colour biases fields *gently*
-  const skyR = (Number(currentColour.r)||0)/255 * 0.004;
-  const skyG = (Number(currentColour.g)||0)/255 * 0.004;
-  const skyB = (Number(currentColour.b)||0)/255 * 0.004;
+  let skyR = (Number(currentColour.r)||0)/255 * 0.004;
+  let skyG = (Number(currentColour.g)||0)/255 * 0.004;
+  let skyB = (Number(currentColour.b)||0)/255 * 0.004;
+
+  // Apply negative feedback so no single colour dominates the world.
+  const total = totalR + totalG + totalB;
+  if (total > 0) {
+    const ideal = total / 3;
+    const adjR = ((ideal - totalR) / total) * BALANCE_RATE;
+    const adjG = ((ideal - totalG) / total) * BALANCE_RATE;
+    const adjB = ((ideal - totalB) / total) * BALANCE_RATE;
+    skyR += adjR;
+    skyG += adjG;
+    skyB += adjB;
+  }
+
   // The world previously began completely barren which meant freshly born
   // cells had nothing to metabolise unless they immediately encountered
   // another deposit.  Inject a tiny baseline amount of each field every tick
@@ -574,7 +588,16 @@ function worldTick(){
 
 function update() {
   tickCount.value++;
-  worldTick();
+
+  // Tally colour populations to inform environmental balancing
+  let totalR = 0, totalG = 0, totalB = 0;
+  for (const c of livingCells.value) {
+    totalR += c.r;
+    totalG += c.g;
+    totalB += c.b;
+  }
+
+  worldTick(totalR, totalG, totalB);
 
   // metabolism & micro-reactions
   for (let i = livingCells.value.length - 1; i >= 0; i--) {

@@ -1,4 +1,4 @@
-<!-- CHARIS CAT // bbyWorld — 2025 (Abstract Engine) -->
+<!-- CHARIS CAT // bbyWorld — 2025 (Abstract Engine - Stable) -->
 <template>
   <div class="page-container bbyworld-page">
     <div class="world-layout">
@@ -140,7 +140,7 @@
             ref="gameCanvas"
             :width="boardSize"
             :height="boardSize"
-            @click="placeImage"
+            @click="handleCanvasClick"
             :style="canvasStyle"
           />
         </div>
@@ -181,27 +181,26 @@ const { fetchBbyBookGallery } = bbyUse();
 // ==================== ABSTRACT PHYSICS & SIMULATION CORE ================
 // =======================================================================
 
-// --- The fundamental particle of matter in this universe ---
 type Particle = {
   id: number;
-  r: number; g: number; b: number; a: number; // The particle's "physical signature"
-  x: number; y: number; // Position
-  px: number; py: number; // Previous position (for Verlet integration)
-  charge: number; // Internal energy, life force
+  r: number; g: number; b: number; a: number;
+  x: number; y: number;
+  px: number; py: number;
+  charge: number;
   alive: boolean;
   birthTick: number;
 };
 
-// --- World State ---
 const livingParticles = ref<Particle[]>([]);
 let nextParticleId = 1;
 const stats = ref({ spawns: 0, decays: 0 });
 let tickCount = ref(0);
 
-// --- The Fabric of the Universe: Three Interacting Abstract Fields ---
-let fieldPsi = new Float32Array(0); // Influenced by Red
-let fieldLam = new Float32Array(0); // Influenced by Green
-let fieldSig = new Float32Array(0); // Influenced by Blue
+// --- The Fabric of the Universe ---
+let fieldPsi = new Float32Array(0);
+let fieldLam = new Float32Array(0);
+let fieldSig = new Float32Array(0);
+let tempField = new Float32Array(0); // OPTIMIZATION: pre-allocated buffer
 
 // --- Renderer buffer ---
 let frame = new Uint8ClampedArray(0);
@@ -210,13 +209,11 @@ let frameImg: ImageData | null = null;
 // --- Physics Constants ---
 const WORLD_DRAG = 0.97;
 const MAX_CHARGE = 255;
-const SPAWN_ENERGY_THRESHOLD = 1.8; // High local field density needed to spawn
+const SPAWN_ENERGY_THRESHOLD = 1.8;
 const SPAWN_CHANCE = 0.0001;
-const METABOLIC_COST = 0.15; // Base cost to exist
+const METABOLIC_COST = 0.15;
 const FIELD_DIFFUSION = 0.15;
 const FIELD_DECAY = 0.995;
-// How fields transform each other - the core of the chaos
-// Psi -> Lam, Lam -> Sig, Sig -> Psi
 const FIELD_TRANSFORM_RATE = 0.02;
 
 // --- RNG ---
@@ -232,6 +229,7 @@ function allocateWorldArrays(size:number){
   fieldPsi = new Float32Array(len);
   fieldLam = new Float32Array(len);
   fieldSig = new Float32Array(len);
+  tempField = new Float32Array(len); // OPTIMIZATION: allocate buffer once
 
   const ctx = gameCanvas.value?.getContext("2d");
   if (ctx) {
@@ -242,9 +240,12 @@ function allocateWorldArrays(size:number){
 
 function clearWorld(){
   livingParticles.value.length = 0;
-  fieldPsi.fill(0);
-  fieldLam.fill(0);
-  fieldSig.fill(0);
+  // Add cosmic background noise
+  for (let i = 0; i < S() * S(); i++) {
+    fieldPsi[i] = rand() * 0.1;
+    fieldLam[i] = rand() * 0.1;
+    fieldSig[i] = rand() * 0.1;
+  }
   stats.value = { spawns: 0, decays: 0 };
   tickCount.value = 0;
 }
@@ -263,6 +264,7 @@ function computeBaseScale(){
   const stage = stageEl.value;
   if (!stage) return;
   const s = S();
+  if (s <= 0) return;
   baseScale.value = Math.max(1, Math.floor(Math.min(stage.clientWidth / s, stage.clientHeight / s)));
 }
 
@@ -278,12 +280,12 @@ function mainLoop(timestamp: number) {
     animationFrameId = requestAnimationFrame(mainLoop);
     return;
   }
-
+  const tickInterval = 1000 / ticksPerSecond.value;
+  if(lastTime === 0) lastTime = timestamp;
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
 
-  const tickInterval = 1000 / ticksPerSecond.value;
   let performed = 0;
   while (timeSinceLastTick >= tickInterval && performed < MAX_UPDATES_PER_FRAME) {
     update();
@@ -306,23 +308,23 @@ function update() {
   for (const p of livingParticles.value) {
       if (!p.alive) continue;
       const idx = I(Math.floor(p.x), Math.floor(p.y));
-      const influence = (p.a / 255) * 0.1; // Mass determines influence strength
+      const influence = (p.a / 255) * 0.1;
       fieldPsi[idx] += (p.r / 255) * influence;
       fieldLam[idx] += (p.g / 255) * influence;
       fieldSig[idx] += (p.b / 255) * influence;
   }
 
   // --- 2. Fields diffuse, decay, and chaotically transform each other ---
-  diffuseAndTransform(fieldPsi, fieldSig, fieldLam); // Psi is fed by Sig, transforms into Lam
-  diffuseAndTransform(fieldLam, fieldPsi, fieldSig); // Lam is fed by Psi, transforms into Sig
-  diffuseAndTransform(fieldSig, fieldLam, fieldPsi); // Sig is fed by Lam, transforms into Psi
+  diffuseAndTransform(fieldPsi, fieldSig, fieldLam);
+  diffuseAndTransform(fieldLam, fieldPsi, fieldSig);
+  diffuseAndTransform(fieldSig, fieldLam, fieldPsi);
 
   // --- 3. Update Particles ---
   for (let i = livingParticles.value.length - 1; i >= 0; i--) {
     const p = livingParticles.value[i];
     if (!p.alive) continue;
 
-    const mass = (p.a / 255) * 2 + 0.1; // Mass adds inertia
+    const mass = (p.a / 255) * 2 + 0.1;
 
     // a) Calculate Force (Perpendicular to gradient)
     const { gx: psi_gx, gy: psi_gy } = getFieldGradient(fieldPsi, p.x, p.y);
@@ -365,7 +367,7 @@ function update() {
   }
 
   // --- 4. Handle Phase Transition Spawning ---
-  if (livingParticles.value.length < 2000) { // Cap particles for performance
+  if (livingParticles.value.length < (s * s * 0.25)) { // Cap particles
     const spawnAttempts = Math.floor(s * s * SPAWN_CHANCE);
     for (let i = 0; i < spawnAttempts; i++) {
         const x = Math.floor(rand() * s);
@@ -383,18 +385,25 @@ function update() {
   }
 
   // Prune dead particles
-  const oldLength = livingParticles.value.length;
-  livingParticles.value = livingParticles.value.filter(p => p.alive);
-  stats.value.decays += oldLength - livingParticles.value.length;
+  if (tickCount.value % 60 === 0) {
+    const oldLength = livingParticles.value.length;
+    livingParticles.value = livingParticles.value.filter(p => p.alive);
+    stats.value.decays += oldLength - livingParticles.value.length;
+  }
 }
 
-function I(x: number, y: number) { const s = S(); return ((x & (s-1)) + (y * s)) >>> 0; }
+// CRITICAL FIX: This function now correctly wraps both x and y coordinates.
+function I(x: number, y: number): number {
+    const s = S();
+    return ( (x & (s - 1)) + (y & (s - 1)) * s ) >>> 0;
+}
 
 // --- Abstract Physics Subroutines ---
 
+// OPTIMIZATION: This function now uses the pre-allocated tempField to avoid garbage collection.
 function diffuseAndTransform(field: Float32Array, feedField: Float32Array, transformField: Float32Array) {
     const s = S();
-    const tempField = new Float32Array(field);
+    tempField.set(field); // Copy current state to buffer
     for (let y = 0; y < s; y++) {
         for (let x = 0; x < s; x++) {
             const i = I(x, y);
@@ -404,8 +413,10 @@ function diffuseAndTransform(field: Float32Array, feedField: Float32Array, trans
             ) * 0.25;
             field[i] = (1 - FIELD_DIFFUSION) * tempField[i] + FIELD_DIFFUSION * neighbors;
             field[i] *= FIELD_DECAY;
-            field[i] += Math.sin(feedField[i]) * transformField[i] * FIELD_TRANSFORM_RATE;
-            field[i] = Math.max(0, field[i]);
+            const transform = Math.sin(feedField[i]) * transformField[i] * FIELD_TRANSFORM_RATE;
+            if (!isNaN(transform)) field[i] += transform;
+            if (isNaN(field[i])) field[i] = 0; // Failsafe
+            else field[i] = Math.max(0, field[i]);
         }
     }
 }
@@ -421,23 +432,18 @@ function spawn(x: number, y: number, fieldIndex: number): Particle {
   const lam = fieldLam[fieldIndex];
   const sig = fieldSig[fieldIndex];
   
-  const r_raw = Math.floor(Math.abs(Math.sin(psi * 3.14) * 255));
-  const g_raw = Math.floor(Math.abs(Math.cos(lam * 3.14) * 255));
-  const b_raw = Math.floor(Math.abs(Math.sin(sig * 3.14) * 255));
+  const r_raw = Math.floor(Math.abs(Math.sin(psi * Math.PI) * 255));
+  const g_raw = Math.floor(Math.abs(Math.cos(lam * Math.PI) * 255));
+  const b_raw = Math.floor(Math.abs(Math.sin(sig * Math.PI) * 255));
 
   const r = r_raw ^ g_raw;
   const g = g_raw ^ b_raw;
   const b = b_raw ^ r;
 
-  const particle: Particle = {
-    id: nextParticleId++,
-    r, g, b, a: 150 + Math.floor(rand() * 105),
-    x, y, px: x, py: y,
-    charge: MAX_CHARGE / 2,
-    alive: true,
-    birthTick: tickCount.value,
+  return {
+    id: nextParticleId++, r, g, b, a: 150 + Math.floor(rand() * 105),
+    x, y, px: x, py: y, charge: MAX_CHARGE / 2, alive: true, birthTick: tickCount.value,
   };
-  return particle;
 }
 
 function recordDecay(p: Particle) {
@@ -488,13 +494,9 @@ onMounted(async () => {
   try {
     const gallery = await fetchBbyBookGallery();
     cards.value = gallery.map(card => ({
-      label: card.factName,
-      url: card.url,
-      stamp_url: card.stamp_url,
+      label: card.factName, url: card.url, stamp_url: card.stamp_url,
     }));
-    if (cards.value.length > 0) {
-      selectCard(cards.value[0].label);
-    }
+    if (cards.value.length > 0) selectCard(cards.value[0].label);
   } catch (error) { console.error("Failed to fetch gallery:", error); }
   applyBoardSize();
   animationFrameId = requestAnimationFrame(mainLoop);
@@ -509,7 +511,7 @@ const canvasStyle = computed(() => ({
   transformOrigin: "top left",
 }));
 
-function zoomIn() { zoomFactor.value = Math.min(8, zoomFactor.value * 1.25); }
+function zoomIn() { zoomFactor.value = Math.min(16, zoomFactor.value * 1.25); }
 function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
 function resetView(){ pan.value = { x: 0, y: 0 }; zoomFactor.value = 1; computeBaseScale(); }
 
@@ -537,33 +539,49 @@ function loadSelectedImage() {
   img.src = selected.stamp_url || selected.url;
 }
 
-function placeImage(event: MouseEvent) {
-    const canvas = gameCanvas.value; if (!canvas || !loadedImageData) return;
+function handleCanvasClick(event: MouseEvent) {
+    const canvas = gameCanvas.value; if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const clickX = (event.clientX - rect.left) / totalScale.value + (pan.value.x / totalScale.value * -1);
-    const clickY = (event.clientY - rect.top) / totalScale.value + (pan.value.y / totalScale.value * -1);
-    const startX = clickX - loadedImageData.width / 2;
-    const startY = clickY - loadedImageData.height / 2;
+    const worldX = (event.clientX - rect.left - pan.value.x) / totalScale.value;
+    const worldY = (event.clientY - rect.top - pan.value.y) / totalScale.value;
 
+    const clickedParticle = livingParticles.value.find(p => {
+        const dx = p.x - worldX;
+        const dy = p.y - worldY;
+        return (dx * dx + dy * dy) < 2; // Click radius
+    });
+
+    if (clickedParticle) {
+        selectedParticle.value = clickedParticle;
+    } else {
+        placeImageAt(worldX, worldY);
+    }
+}
+
+function placeImageAt(worldX: number, worldY: number) {
+    if (!loadedImageData) return;
+    const startX = worldX - loadedImageData.width / 2;
+    const startY = worldY - loadedImageData.height / 2;
     for (let y = 0; y < loadedImageData.height; y++) {
         for (let x = 0; x < loadedImageData.width; x++) {
             const i = (y * loadedImageData.width + x) * 4;
             const a = loadedImageData.data[i + 3];
             if (a > 50) {
-                const p: Particle = {
+                const pX = startX + x;
+                const pY = startY + y;
+                livingParticles.value.push({
                     id: nextParticleId++, alive: true, birthTick: tickCount.value,
                     r: loadedImageData.data[i], g: loadedImageData.data[i+1], b: loadedImageData.data[i+2], a,
-                    x: startX + x, y: startY + y, px: startX + x, py: startY + y,
+                    x: pX, y: pY, px: pX, py: pY,
                     charge: MAX_CHARGE,
-                };
-                livingParticles.value.push(p);
+                });
             }
         }
     }
 }
 
 const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
-const avgCharge = computed(() => livingParticles.value.length ? livingParticles.value.reduce((acc, p) => acc + p.charge, 0) / livingParticles.value.length : 0);
+const avgCharge = computed(() => livingParticles.value.length ? livingParticles.value.reduce((acc, p) => p.alive ? acc + p.charge : acc, 0) / livingParticles.value.filter(p=>p.alive).length : 0);
 const worldFieldDensity = computed(() => {
     let total = 0;
     for(let i=0; i<fieldPsi.length; i++) total += fieldPsi[i] + fieldLam[i] + fieldSig[i];
@@ -574,11 +592,7 @@ function particleVelocity(p: Particle): number { const vx = p.x - p.px; const vy
 
 // --- Group Stats Implementation ---
 interface ColourGroupStat {
-  colour: string;
-  count: number;
-  percentage: number;
-  avgCharge: number;
-  avgMass: number;
+  colour: string; count: number; percentage: number; avgCharge: number; avgMass: number;
 }
 const GROUP_STEP = 48;
 const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
@@ -588,15 +602,15 @@ function groupKey(p: Particle) { return rgbToHex(quant(p.r), quant(p.g), quant(p
 const groupStats = computed<ColourGroupStat[]>(() => {
   const base = { count: 0, totalCharge: 0, totalMass: 0 };
   const groups: Record<string, typeof base> = {};
-  for (const p of livingParticles.value) {
-    if (!p.alive) continue;
+  const living = livingParticles.value.filter(p => p.alive);
+  for (const p of living) {
     const key = groupKey(p);
     const g = groups[key] || (groups[key] = { ...base });
     g.count++;
     g.totalCharge += p.charge;
     g.totalMass += p.a / 255;
   }
-  const total = livingParticles.value.length;
+  const total = living.length;
   return Object.entries(groups).map(([colour, grp]) => ({
     colour,
     count: grp.count,
@@ -614,16 +628,10 @@ function selectGroup(colour: string) {
 </script>
 
 <style scoped>
-.bbyworld-page {
-  display:flex;
-  width:100%;
-  height:var(--full-height);
-  box-sizing:border-box;
-  padding:var(--padding);
-}
+.bbyworld-page { display:flex; width:100%; height:var(--full-height); box-sizing:border-box; padding:var(--padding); }
 .world-layout{display:flex;flex-direction:row;width:100%;height:100%;gap:var(--spacing);overflow:hidden}
 .world-left{flex:1 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
-.world-right{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0;position:relative}
+.world-right{flex:1 1 0;display:flex;align-items:center;justify-content:center;height:100%;min-width:0;position:relative}
 .vertical-panel{position:relative;width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
@@ -634,14 +642,8 @@ function selectGroup(colour: string) {
 .group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
 .colour-cell{display:flex;align-items:center;gap:.25rem}
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px; flex-shrink: 0;}
-.world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
-canvas {
-  image-rendering:pixelated;
-  image-rendering:crisp-edges;
-  display:block;
-  /* width: 100%;
-  height: 100%; */
-}
+.world-stage{position:relative;width:100%;height:100%;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black); display: flex; align-items: center; justify-content: center;}
+canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .legend{font-size:var(--small-font-size);display:flex;flex-direction:column;gap:.25rem;line-height:1.2}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
@@ -657,5 +659,5 @@ canvas {
 .card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
 .cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .cell-colour{display:flex;align-items:center;gap:.25rem}
-@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
+@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:1 1 auto}}
 </style>

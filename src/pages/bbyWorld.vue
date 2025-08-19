@@ -107,6 +107,7 @@
               <div>fert: {{ selectedCell.fertility.toFixed(2) }}</div>
               <div>met: {{ selectedCell.metabolism.toFixed(2) }}</div>
               <div>cargo: {{ selectedCell.cargo.toFixed(1) }}</div>
+              <div>spd: {{ selectedCell.speed }}</div>
             </div>
           </div>
 
@@ -314,6 +315,7 @@ type GridCell = {
   energy:number; alive:boolean; birthTick:number; age:number;
   aggression:number; fertility:number; metabolism:number;
   strength:number;         // alpha→weight 0..1
+  speed:number;            // movement steps per tick
   heading: Heading;        // chain direction
   turnBias:number;         // smoothness (smaller = straighter)
   coop:number;             // cooperation affinity
@@ -1081,10 +1083,15 @@ function update() {
   for (let i = 0; i < updatesPerTick; i++) {
     const cell = pickRandomLivingCell();
     if (cell && cell.alive) {
-      const [dx, dy, newH] = chooseChainDir(cell);
-      if (attemptMove(cell, dx, dy)) {
-        cell.heading = newH;
-        deposit(cell);
+      const steps = cell.speed || 1;
+      for (let s = 0; s < steps; s++) {
+        const [dx, dy, newH] = chooseChainDir(cell);
+        if (attemptMove(cell, dx, dy)) {
+          cell.heading = newH;
+          deposit(cell);
+        } else {
+          break;
+        }
       }
     }
   }
@@ -1141,6 +1148,7 @@ function randomDecayRate(){
 function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, parentLifespan?: number): GridCell {
   const A = Math.max(VISIBLE_ALPHA, a);
   const strength = (A/255);              // weight 0..1
+  const speed = 1 + Math.floor((255 - A) / 85); // lighter pixels hop further
   let energy = 60 + strength*140;
   let metabolism = 0.18 + (g/255)*0.20;  // green=hungry growth
   let aggression  = (r/255)*0.9;         // red=fighty
@@ -1156,7 +1164,8 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
     id: nextCellId++,
     r, g, b, a: A, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
     aggression, fertility, metabolism,
-    strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
+    strength, speed,
+    heading, turnBias: 0.3 + (1 - strength) * 0.4,
     coop: 0,
     cargo: 0,
     friends: {},

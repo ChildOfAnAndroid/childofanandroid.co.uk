@@ -1,35 +1,72 @@
-<!-- CHARIS CAT // bbyWorld - 2025 -->
+<!-- CHARIS CAT // bbyWorld — 2025 -->
 <template>
   <div class="page-container bbyworld-page">
-    <h1 class="page-title">bbyWorld</h1>
+    <div class="world-layout">
+      <div class="world-left">
+        <div class="vertical-panel">
+          <h1 class="page-title">bbyWorld</h1>
 
-    <div class="world-controls">
-      <label for="card-select">select a bby to place:</label>
-      <select
-        id="card-select"
-        v-model="selectedCardLabel"
-        @change="loadSelectedImage"
-      >
-        <option v-for="card in cards" :value="card.label" :key="card.label">
-          {{ card.label }}
-        </option>
-      </select>
+          <div class="grp">
+            <label class="section" for="card-select">select a bby to place:</label>
+            <select id="card-select" v-model="selectedCardLabel" @change="loadSelectedImage">
+              <option v-for="card in cards" :value="card.label" :key="card.label">
+                {{ card.label }}
+              </option>
+            </select>
+          </div>
+
+          <div class="grp">
+            <label class="section">stats</label>
+            <div class="world-stats">
+              <span>CELLS: {{ livingCells.length }}</span>
+              <span>WAR: {{ stats.warDeaths }}</span>
+              <span>BBY: {{ stats.babyMerges }}</span>
+              <span>SQUISH: {{ stats.squishDeaths }}</span>
+              <span>AVG LIFE: {{ avgLifespan }}</span>
+            </div>
+          </div>
+
+          <div class="grp">
+            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
+            <div class="row2">
+              <button class="action" @click="slowDown">-</button>
+              <button class="action" @click="speedUp">+</button>
+            </div>
+          </div>
+
+          <div class="grp">
+            <label class="section">zoom</label>
+            <div class="row3">
+              <button class="action" @click="zoomOut">-</button>
+              <div class="zoom-display">{{ (zoom*100).toFixed(0) }}%</div>
+              <button class="action" @click="zoomIn">+</button>
+            </div>
+            <button class="action" @click="scopeActive = !scopeActive" :class="{active: scopeActive}">scope</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="world-right">
+        <div
+          class="world-stage"
+          @mousedown="startPan"
+          @mousemove="onMouseMove"
+          @mouseup="endPan"
+          @mouseleave="endPan"
+          @wheel.prevent="onWheelZoom"
+          @contextmenu.prevent
+        >
+          <canvas
+            ref="gameCanvas"
+            :width="canvasW"
+            :height="canvasH"
+            @click="placeImage"
+            :style="canvasStyle"
+          />
+          <canvas v-show="scopeActive" ref="scopeCanvas" class="zoom-scope" />
+        </div>
+      </div>
     </div>
-
-    <div class="world-stats">
-      <span>CELLS: {{ livingCells.length }}</span>
-      <span>WAR: {{ stats.warDeaths }}</span>
-      <span>BBY: {{ stats.babyMerges }}</span>
-      <span>SQUISH: {{ stats.squishDeaths }}</span>
-      <span>AVG LIFE: {{ avgLifespan }}</span>
-    </div>
-
-    <canvas
-      ref="gameCanvas"
-      :width="canvasW"
-      :height="canvasH"
-      @click="placeImage"
-    />
   </div>
 </template>
 
@@ -37,49 +74,116 @@
 import { onMounted, ref, computed, onUnmounted } from "vue";
 import { bbyUse } from '@/composables/bbyUse.ts';
 
-const { fetchBbyBookGallery } = bbyUse();
+// pull Baby’s currentColour + gallery
+const { fetchBbyBookGallery, currentColour } = bbyUse();
+
+/* ===================== CORE CONFIG ===================== */
+const gridSize = 256;            // sim resolution
+const canvasW  = gridSize;       // draw 1:1, scale via CSS transform
+const canvasH  = gridSize;
+
+const MAX_STAMP = 64;
+const ALPHA_MIN = 12;
+
+/* ===================== UI/Viewport ===================== */
+const gameCanvas = ref<HTMLCanvasElement | null>(null);
+const scopeCanvas = ref<HTMLCanvasElement | null>(null);
+const zoom = ref(1);
+const pan = ref({ x: 0, y: 0 });
+const canvasStyle = computed(() => ({
+  transform: `translate(${pan.value.x}px, ${pan.value.y}px) scale(${zoom.value})`,
+  transformOrigin: "top left",
+}));
+const scopeActive = ref(false);
+function zoomIn() { zoom.value = Math.min(8, zoom.value * 1.25); }
+function zoomOut() { zoom.value = Math.max(0.5, zoom.value / 1.25); }
+function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
+
+let isPanning = false;
+let lastPan = { x: 0, y: 0 };
+function startPan(e: MouseEvent) {
+  if (e.button !== 1 && e.button !== 2) return;
+  isPanning = true;
+  lastPan = { x: e.clientX, y: e.clientY };
+}
+function onMouseMove(e: MouseEvent) {
+  if (isPanning) {
+    pan.value.x += e.clientX - lastPan.x;
+    pan.value.y += e.clientY - lastPan.y;
+    lastPan = { x: e.clientX, y: e.clientY };
+  }
+  updateScope(e);
+}
+function endPan() { isPanning = false; }
+
+/* ===================== Speed ===================== */
+const ticksPerSecond = ref(30);
+const tickInterval = computed(() => 1000 / ticksPerSecond.value);
+function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
+function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
+
+/* ===================== Cards / Stamps ===================== */
+const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);
+const selectedCardLabel = ref<string | null>(null);
+let loadedImageData: ImageData | null = null;
+
+/* ===================== Cell / World Types ===================== */
+type Species = "plasma"|"water"|"plant"|"blend";
+type Heading = 0|1|2|3;
+const HEADING_VECS: [number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
 
 type GridCell = {
-  r: number; g: number; b: number;
-  x: number; y: number;
-  energy: number; alive: boolean; birthTick: number;
+  r:number; g:number; b:number; a:number;
+  x:number; y:number;
+  energy:number; alive:boolean; birthTick:number; age:number;
+  species: Species;
+  aggression:number; fertility:number; metabolism:number;
+  strength:number;         // alpha→weight 0..1
+  heading: Heading;        // chain direction
+  turnBias:number;         // smoothness (smaller = straighter)
 };
 
-// --- CORE CONFIGURATION ---
-const gridSize = 256;
-const canvasScale = 4;
-const canvasW = gridSize * canvasScale;
-const canvasH = gridSize * canvasScale;
-
-const gameCanvas = ref<HTMLCanvasElement | null>(null);
-const cards = ref<{ label: string; url: string }[]>([]);
-const selectedCardLabel = ref<string | null>(null);
-
-// --- DATA STRUCTURES ---
+/* ===================== World State ===================== */
 const livingCells = ref<GridCell[]>([]);
 const spatialMap = new Map<string, GridCell>();
-let loadedImageData: ImageData | null = null;
 
 const stats = ref({
   warDeaths: 0, babyMerges: 0, squishDeaths: 0,
   totalLifespan: 0, deadCount: 0,
 });
 
-// --- GAME LOOP VARIABLES ---
 let animationFrameId: number | null = null;
 let lastTime = 0;
-const ticksPerSecond = 30;
-const tickInterval = 1000 / ticksPerSecond;
 let timeSinceLastTick = 0;
 let tickCount = 0;
 
+/* Fields + solids */
+const heatField      = new Float32Array(gridSize * gridSize);
+const moistureField  = new Float32Array(gridSize * gridSize);
+const nutrientField  = new Float32Array(gridSize * gridSize);
+const solidGrid      = new Float32Array(gridSize * gridSize);
+function I(x:number,y:number){ return ((x & (gridSize-1)) + ((y & (gridSize-1)) * gridSize)) >>> 0; }
+
+/* Renderer buffer */
+const frame = new Uint8ClampedArray(gridSize * gridSize * 4);
+let frameImg: ImageData | null = null;
+
+/* ===================== RNG (no visible seed UI) ===================== */
+let rng = mulberry32(1337);
+function mulberry32(a:number){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;};}
+function rand(){ return rng(); }
+
+/* ===================== Mount ===================== */
+const scopeSize = 32;
+const scopeScale = 4;
+
 onMounted(async () => {
-  console.log("Component mounted.");
   try {
     const gallery = await fetchBbyBookGallery();
     cards.value = gallery.map(card => ({
       label: card.factName,
       url: card.url,
+      stamp_url: card.stamp_url,
     }));
     if (cards.value.length > 0) {
       selectedCardLabel.value = cards.value[0].label;
@@ -88,91 +192,166 @@ onMounted(async () => {
   } catch (error) {
     console.error("Failed to fetch bbyBook gallery:", error);
   }
+
+  const scope = scopeCanvas.value;
+  if (scope) {
+    scope.width = scopeSize * scopeScale;
+    scope.height = scopeSize * scopeScale;
+  }
+
+  const ctx = gameCanvas.value?.getContext("2d");
+  if (ctx) frameImg = ctx.createImageData(gridSize, gridSize);
+
   animationFrameId = requestAnimationFrame(mainLoop);
 });
 
 onUnmounted(() => {
-  if (animationFrameId) {
-    cancelAnimationFrame(animationFrameId);
-  }
+  if (animationFrameId) cancelAnimationFrame(animationFrameId);
 });
 
+/* ===================== Main Loop ===================== */
 function mainLoop(timestamp: number) {
   const ctx = gameCanvas.value?.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) { animationFrameId = requestAnimationFrame(mainLoop); return; }
 
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
 
-  while (timeSinceLastTick >= tickInterval) {
+  while (timeSinceLastTick >= tickInterval.value) {
     update();
-    timeSinceLastTick -= tickInterval;
+    timeSinceLastTick -= tickInterval.value;
   }
   drawGrid(ctx);
   animationFrameId = requestAnimationFrame(mainLoop);
 }
 
-function update() {
-  tickCount++;
-  const updatesPerTick = Math.ceil(livingCells.value.length / 100);
-  for (let i = 0; i < updatesPerTick; i++) {
-    const cell = pickRandomLivingCell();
-    if (cell) {
-      const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
-      const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)];
-      tryMove(cell, dx, dy);
+/* ===================== Simulation ===================== */
+function diffuseDecay(src:Float32Array, mix=0.25, decay=0.996){
+  for (let y=0;y<gridSize;y++){
+    for (let x=0;x<gridSize;x++){
+      const i = I(x,y);
+      const s = (src[I(x+1,y)] + src[I(x-1,y)] + src[I(x,y+1)] + src[I(x,y-1)]) * 0.25;
+      src[i] = (1-mix)*src[i] + mix*s;
+      src[i] *= decay;
     }
   }
 }
 
-/**
- * Loads the selected image and processes it into pixel data.
- * Prefer the `.stamp.png` version, falling back to the original if missing.
- * If the loaded image is too large, scale down while preserving aspect ratio.
- */
+function worldTick(){
+  // Baby colour biases fields *gently*
+  const skyR = (Number(currentColour.r)||0)/255 * 0.004;
+  const skyG = (Number(currentColour.g)||0)/255 * 0.004;
+  const skyB = (Number(currentColour.b)||0)/255 * 0.004;
+
+  for (let y=0;y<gridSize;y++){
+    for (let x=0;x<gridSize;x++){
+      const i = I(x,y);
+      if (solidGrid[i] > 0){
+        nutrientField[i] += Math.min(0.02*solidGrid[i], 0.05);
+        heatField[i] *= 0.999;
+      }
+      heatField[i]     += skyR;
+      moistureField[i] += skyB;
+      nutrientField[i] += skyG;
+    }
+  }
+  diffuseDecay(heatField,     0.20, 0.996);
+  diffuseDecay(moistureField, 0.30, 0.997);
+  diffuseDecay(nutrientField, 0.18, 0.996);
+}
+
+function update() {
+  tickCount++;
+  worldTick();
+
+  // metabolism & micro-reactions
+  for (const c of livingCells.value){
+    c.energy -= c.metabolism;
+    c.age += 1;
+    if (c.energy <= 0){ recordDeath(c, "squish"); continue; }
+
+    const ii = I(c.x,c.y);
+    if (c.species === "water")  heatField[ii] *= 0.985;
+    if (c.species === "plasma") nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.008);
+    if (c.species === "plant")  nutrientField[ii] += 0.004;
+  }
+
+  // move slice
+  const updatesPerTick = Math.ceil(livingCells.value.length / 100) || 1;
+  for (let i = 0; i < updatesPerTick; i++) {
+    const cell = pickRandomLivingCell();
+    if (cell) {
+      const [dx, dy, newH] = chooseChainDir(cell);
+      if (attemptMove(cell, dx, dy)) {
+        cell.heading = newH;
+        deposit(cell);
+      }
+    }
+  }
+}
+
+/* ===================== Image / Stamping ===================== */
 function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value);
   if (!selected) return;
+
+  const tryUrls: string[] = [];
+  if (selected.stamp_url) tryUrls.push(selected.stamp_url);
+  tryUrls.push(selected.url.replace(/\.png$/i, '.stamp.png'));
+  tryUrls.push(selected.url);
+
   const img = new Image();
   img.crossOrigin = "Anonymous";
+  let idx = 0;
+
   img.onload = () => {
-    const outW = img.width;   // use native size
-    const outH = img.height;
+    const scale = Math.min(1, MAX_STAMP / Math.max(img.width, img.height));
+    const outW = Math.max(1, Math.floor(img.width * scale));
+    const outH = Math.max(1, Math.floor(img.height * scale));
 
     const tempCanvas = document.createElement("canvas");
     const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = outW;
-    tempCanvas.height = outH;
-
-    // exact pixel mapping, no smoothing
+    tempCanvas.width = outW; tempCanvas.height = outH;
     (ctx as any).imageSmoothingEnabled = false;
-    (ctx as any).mozImageSmoothingEnabled = false;
-    (ctx as any).webkitImageSmoothingEnabled = false;
 
     ctx.drawImage(img, 0, 0, outW, outH);
-
     loadedImageData = ctx.getImageData(0, 0, outW, outH);
-    console.log(`Stamp "${selected.label}" ready at native ${outW}x${outH}, 1px=1px.`);
+    console.log(`Stamp "${selected.label}" ready at ${outW}x${outH}`);
   };
 
-  // Prefer the .stamp.png version; fall back to the original if it doesn't exist
-  const stampUrl = selected.url.replace(/\.png$/, '.stamp.png');
-
-  img.onerror = () => {
-    // If the stamp fails (404 or CORS), fall back once to the original
-    console.warn(`Stamp not found, falling back to original: ${selected.url}`);
-    img.onerror = null; // prevent infinite loop
-    img.src = selected.url;
-  };
-
-  console.log(`Loading stamp for bbyWorld: ${stampUrl}`);
-  img.src = stampUrl;
+  img.onerror = () => { idx++; if (idx < tryUrls.length) img.src = tryUrls[idx]; };
+  img.src = tryUrls[idx];
 }
 
-/**
- * Places the loaded image, centering it on the cursor.
- */
+function speciesFromRGB(r:number,g:number,b:number): Species {
+  const R = r/255, G = g/255, B = b/255;
+  const m = Math.max(R,G,B), sum = R+G+B;
+  if (sum === 0) return "blend";
+  const close = (a:number,b:number)=> Math.abs(a-b) < 0.12;
+  if ((close(R,G)&&R>0.3) || (close(R,B)&&R>0.3) || (close(G,B)&&G>0.3)) return "blend";
+  return (m===R?"plasma":m===B?"water":"plant");
+}
+
+function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): GridCell {
+  const sp = speciesFromRGB(r,g,b);
+  const A = Math.max(ALPHA_MIN, a);
+  const strength = (A/255);              // weight 0..1
+  let energy = 60 + strength*140;
+  let metabolism = 0.18 + (g/255)*0.20;  // green=hungry growth
+  let aggression  = (r/255)*0.9;         // red=fighty
+  let fertility   = 0.25 + (b/255)*0.5;  // blue=bonding
+
+  if (sp === "plasma")   { energy += 20; metabolism += 0.05; fertility += 0.05; }
+  if (sp === "water")    { metabolism -= 0.05; aggression *= 0.5; fertility += 0.1; }
+  if (sp === "plant")    { metabolism += 0.08; aggression *= 0.6; }
+
+  const heading = (Math.floor(rand()*4) as Heading);
+  return { r,g,b,a, x:px,y:py, energy, alive:true, birthTick:tickCount, age:0,
+           species: sp, aggression, fertility, metabolism,
+           strength, heading, turnBias: 0.3 + (1 - strength)*0.4 };
+}
+
 function placeImage(event: MouseEvent) {
   if (!loadedImageData) return;
   const canvas = gameCanvas.value;
@@ -181,141 +360,290 @@ function placeImage(event: MouseEvent) {
   const rect = canvas.getBoundingClientRect();
   const clickX = (event.clientX - rect.left) * (canvas.width / rect.width);
   const clickY = (event.clientY - rect.top) * (canvas.height / rect.height);
-  
-  const mouseGridX = Math.floor(clickX / canvasScale);
-  const mouseGridY = Math.floor(clickY / canvasScale);
-  
+
+  const mouseGridX = Math.floor(clickX);
+  const mouseGridY = Math.floor(clickY);
+
   const stampWidth = loadedImageData.width;
   const stampHeight = loadedImageData.height;
+  const pixels = loadedImageData.data;
 
-  // Calculate top-left corner to center the image on the cursor
   const startGridX = mouseGridX - Math.floor(stampWidth / 2);
   const startGridY = mouseGridY - Math.floor(stampHeight / 2);
-  
-  const pixels = loadedImageData.data;
 
   for (let y = 0; y < stampHeight; y++) {
     for (let x = 0; x < stampWidth; x++) {
       const i = (y * stampWidth + x) * 4;
-      const alpha = pixels[i + 3];
-
-      if (alpha > 0) {
+      const a = pixels[i + 3];
+      if (a > ALPHA_MIN) {
         const newX = startGridX + x;
         const newY = startGridY + y;
-        const mapKey = `${newX},${newY}`;
-
-        if (newX >= 0 && newX < gridSize && newY >= 0 && newY < gridSize && !spatialMap.has(mapKey)) {
-          const newCell: GridCell = {
-            r: pixels[i], g: pixels[i+1], b: pixels[i+2],
-            x: newX, y: newY, energy: 100, alive: true, birthTick: tickCount,
-          };
-          livingCells.value.push(newCell);
-          spatialMap.set(mapKey, newCell);
+        const key = `${newX},${newY}`;
+        if (newX>=0 && newX<gridSize && newY>=0 && newY<gridSize && !spatialMap.get(key)) {
+          const cell = makeCell(newX, newY, pixels[i], pixels[i+1], pixels[i+2], a);
+          livingCells.value.push(cell);
+          spatialMap.set(key, cell);
         }
       }
     }
   }
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D) {
-  ctx.clearRect(0, 0, canvasW, canvasH);
-  for (const cell of livingCells.value) {
-    ctx.fillStyle = `rgb(${cell.r}, ${cell.g}, ${cell.b})`;
-    ctx.fillRect(cell.x * canvasScale, cell.y * canvasScale, canvasScale, canvasScale);
+/* ===================== Movement / Chains ===================== */
+function chooseChainDir(cell:GridCell): [number,number,Heading] {
+  const prefs: {h:Heading, score:number}[] = [];
+  for (let h=0 as Heading; h<4; h=(h+1) as Heading){
+    const [dx,dy] = HEADING_VECS[h];
+    const nx = (cell.x + dx + gridSize) % gridSize;
+    const ny = (cell.y + dy + gridSize) % gridSize;
+    const i = I(nx,ny);
+
+    const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
+    let want = 0;
+    if (cell.species === "plasma") want =  (+heat*1.2) + (-wet*0.8) + (+nut*0.2);
+    else if (cell.species === "water") want = (-heat*0.7) + (+wet*1.2) + (+nut*0.4);
+    else if (cell.species === "plant") want = (-heat*0.6) + (+wet*0.8) + (+nut*1.1);
+    else                               want = (+heat*0.4) + (+wet*0.6) + (+nut*0.6);
+
+    const solidPenalty = solidGrid[i] * (0.3 + 0.7*cell.strength);
+    const same = (h === cell.heading) ? 1 : 0;
+    const turnPenalty = (h === cell.heading ? 0 : cell.turnBias);
+
+    let score = want + same*0.15 - turnPenalty - solidPenalty;
+    score += (1 - cell.strength) * wet * 0.2;     // buoyancy helps light cells in wet
+    score += (rand()-0.5)*0.05;                   // tiny noise
+
+    prefs.push({h: h as Heading, score});
   }
+  prefs.sort((a,b)=>b.score - a.score);
+  const best = prefs[0];
+  const [dx,dy] = HEADING_VECS[best.h];
+  return [dx,dy,best.h];
 }
 
-function pickRandomLivingCell(): GridCell | null {
-  if (livingCells.value.length === 0) return null;
-  const randomIndex = Math.floor(Math.random() * livingCells.value.length);
-  return livingCells.value[randomIndex];
-}
-
-function tryMove(cell: GridCell, dx: number, dy: number): boolean {
+function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const newX = (cell.x + dx + gridSize) % gridSize;
   const newY = (cell.y + dy + gridSize) % gridSize;
-  const target = spatialMap.get(`${newX},${newY}`);
+  const key = `${newX},${newY}`;
+  const target = spatialMap.get(key);
+  const tIndex = I(newX,newY);
 
-  const performMove = (movingCell: GridCell, toX: number, toY: number) => {
-    spatialMap.delete(`${movingCell.x},${movingCell.y}`);
-    movingCell.x = toX;
-    movingCell.y = toY;
-    spatialMap.set(`${toX},${toY}`, movingCell);
-  };
+  // solids: water erodes/pushes; others can get bogged
+  if (solidGrid[tIndex] > 0){
+    if (cell.species === "water"){
+      const erode = Math.min(solidGrid[tIndex], 0.05 + 0.1*(cell.energy/200));
+      solidGrid[tIndex] -= erode;
+      moistureField[tIndex] += erode*0.5;
 
-  if (!target) {
+      const px = (newX + dx + gridSize) % gridSize;
+      const py = (newY + dy + gridSize) % gridSize;
+      if (!spatialMap.get(`${px},${py}`)){
+        const moved = solidGrid[tIndex]*0.6;
+        solidGrid[I(px,py)] += moved;
+        solidGrid[tIndex]   -= moved;
+      }
+      if (!target && solidGrid[tIndex] < 0.2) {
+        performMove(cell, newX, newY);
+        return true;
+      }
+    } else {
+      const stuckP = Math.min(0.9, (0.2 + 0.6*cell.strength) * Math.min(1, solidGrid[tIndex]/3));
+      if (rand() < stuckP) return false;
+    }
+  }
+
+  if (!target){
     performMove(cell, newX, newY);
     return true;
   }
-  if (target.alive) {
-    const pushed = tryMove(target, dx, dy);
-    if (pushed) {
-      performMove(cell, newX, newY);
-      return true;
+
+  if (target.alive){
+    const pCompat = Math.min(1, compatibility(cell,target) * 0.8 + (cell.fertility+target.fertility)*0.1);
+    const pWar    = Math.min(1, (cell.aggression+target.aggression)*0.35 + (heatField[tIndex]*0.25));
+
+    if (pCompat >= pWar){
+      const baby = mergeBaby(cell, target, newX, newY);
+      recordDeath(cell, "squish");
+      recordDeath(target, "squish");
+      livingCells.value.push(baby);
+      spatialMap.set(key, baby);
+      stats.value.babyMerges++;
+      return false;
     } else {
-      if (Math.random() < 0.5) { // WAR
-        if (cell.energy > target.energy) {
-          recordDeath(target, "war");
-          cell.energy -= 10;
-          performMove(cell, newX, newY);
-          return true;
-        } else {
-          recordDeath(cell, "war");
-          return false;
-        }
-      } else { // BABY merge
-        const strength = cell.energy + target.energy;
-        const baby: GridCell = {
-          r: Math.round((cell.r * cell.energy + target.r * target.energy) / strength),
-          g: Math.round((cell.g * cell.energy + target.g * target.energy) / strength),
-          b: Math.round((cell.b * cell.energy + target.b * target.energy) / strength),
-          x: newX, y: newY,
-          energy: Math.min(strength, 200),
-          alive: true, birthTick: tickCount,
-        };
-        recordDeath(cell, "squish");
-        recordDeath(target, "squish");
-        livingCells.value.push(baby);
-        spatialMap.set(`${newX},${newY}`, baby);
-        stats.value.babyMerges++;
+      const envBoost = (
+        (cell.r-target.r)/255 * heatField[tIndex] +
+        (cell.b-target.b)/255 * moistureField[tIndex] +
+        (cell.g-target.g)/255 * nutrientField[tIndex]
+      ) * 30;
+
+      const cellScore = cell.energy * (0.8 + 0.5*cell.aggression) + envBoost;
+      const tarScore  = target.energy*(0.8 + 0.5*target.aggression) - envBoost;
+
+      if (cellScore >= tarScore){
+        recordDeath(target, "war");
+        cell.energy = Math.min(cell.energy + 20, 260);
+        performMove(cell, newX, newY);
+        return true;
+      } else {
+        recordDeath(cell, "war");
         return false;
       }
     }
   }
+
   return false;
+}
+
+function performMove(moving:GridCell, toX:number, toY:number){
+  spatialMap.delete(`${moving.x},${moving.y}`);
+  moving.x = toX; moving.y = toY;
+  spatialMap.set(`${toX},${toY}`, moving);
+}
+
+/* ===================== Interactions ===================== */
+function pickRandomLivingCell(): GridCell | null {
+  if (livingCells.value.length === 0) return null;
+  return livingCells.value[Math.floor(rand()*livingCells.value.length)];
+}
+
+function compatibility(a:GridCell,b:GridCell){
+  // cross-channel complement: blue↔red, red↔green, green↔blue
+  const AR=a.r/255, AG=a.g/255, AB=a.b/255;
+  const BR=b.r/255, BG=b.g/255, BB=b.b/255;
+  const comp = (AR*BB + AG*BR + AB*BG);
+  const dist = Math.hypot(AR-BR, AG-BG, AB-BB);
+  return 0.6*comp + 0.4*dist;
+}
+
+function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
+  const totalE = Math.max(1, cell.energy + target.energy);
+  const babyR = Math.min(255, Math.round((cell.r*cell.energy + target.r*target.energy)/totalE + (rand()*6-3)));
+  const babyG = Math.min(255, Math.round((cell.g*cell.energy + target.g*target.energy)/totalE + (rand()*6-3)));
+  const babyB = Math.min(255, Math.round((cell.b*cell.energy + target.b*target.energy)/totalE + (rand()*6-3)));
+  const babyA = Math.min(255, Math.round((cell.a + target.a)/2 + (rand()*20-10)));
+  const kid = makeCell(x,y,babyR,babyG,babyB,babyA);
+  kid.energy = Math.min(totalE * 0.85, 240);
+  kid.aggression += (rand()*0.1-0.05);
+  kid.fertility  += (rand()*0.1-0.05);
+  kid.metabolism += (rand()*0.04-0.02);
+  return kid;
 }
 
 function recordDeath(cell: GridCell, reason: "war" | "squish") {
   if (!cell.alive) return;
   cell.alive = false;
-  
+
   stats.value.totalLifespan += tickCount - cell.birthTick;
   stats.value.deadCount++;
   if (reason === "war") stats.value.warDeaths++;
   if (reason === "squish") stats.value.squishDeaths++;
 
+  const i = I(cell.x, cell.y);
+  const solidAdd = 0.2 + 0.8*cell.strength; // alpha = stronger rock
+  solidGrid[i] = Math.min(solidGrid[i] + solidAdd, 6);
+
+  const energy = cell.energy;
+  moistureField[i] += (cell.species==="water") ? energy*0.02 : 0.01*energy;
+  heatField[i]     += (cell.species==="plasma")? energy*0.03 : 0.005*energy;
+  nutrientField[i] += (cell.species==="plant") ? energy*0.04 : 0.01*energy;
+
   spatialMap.delete(`${cell.x},${cell.y}`);
   const index = livingCells.value.findIndex(c => c === cell);
   if (index > -1) livingCells.value.splice(index, 1);
-
-  burstEnergy(cell.x, cell.y, cell.energy, { r: cell.r, g: cell.g, b: cell.b });
 }
 
-function burstEnergy(x: number, y: number, energy: number, color: {r:number,g:number,b:number}) {
-  const dirs = [[1,0], [-1,0], [0,1], [0,-1], [1,1], [-1,1], [1,-1], [-1,-1]];
-  for (let [dx,dy] of dirs) {
-    const nx = (x + dx + gridSize) % gridSize;
-    const ny = (y + dy + gridSize) % gridSize;
-    const neighbour = spatialMap.get(`${nx},${ny}`);
-    if (neighbour?.alive) {
-      neighbour.energy = Math.min(neighbour.energy + (energy * (0.2 + Math.random() * 0.5)), 200);
-      neighbour.r = Math.round((neighbour.r*3 + color.r) / 4);
-      neighbour.g = Math.round((neighbour.g*3 + color.g) / 4);
-      neighbour.b = Math.round((neighbour.b*3 + color.b) / 4);
+function deposit(cell:GridCell){
+  const i = I(cell.x, cell.y);
+  if (cell.species === "plasma" ) heatField[i]     += 0.12 + 0.08*(cell.energy/200);
+  if (cell.species === "water"  ) moistureField[i] += 0.15 + 0.06*(cell.energy/200);
+  if (cell.species === "plant"  ) nutrientField[i] += 0.10 + 0.10*(cell.energy/200);
+  if (cell.species === "blend"  ) { heatField[i]+=0.05; moistureField[i]+=0.05; nutrientField[i]+=0.05; }
+}
+
+/* ===================== Draw ===================== */
+function drawGrid(ctx: CanvasRenderingContext2D) {
+  if (!frameImg) return;
+
+  const skyR = Number(currentColour.r)||0;
+  const skyG = Number(currentColour.g)||0;
+  const skyB = Number(currentColour.b)||0;
+
+  const SKY_SCALE = 0.03;     // much subtler sky tint
+  const FIELD_SCALE = 80;     // dim field glow
+  const FLOOR_ALPHA = 0.10;   // ~10% opacity
+
+  // base + faint field glow
+  for (let y=0;y<gridSize;y++){
+    for (let x=0;x<gridSize;x++){
+      const off = (x + y*gridSize)*4;
+      const ii = I(x,y);
+      const H = Math.min(255, Math.floor(heatField[ii]*FIELD_SCALE));
+      const W = Math.min(255, Math.floor(moistureField[ii]*FIELD_SCALE));
+      const N = Math.min(255, Math.floor(nutrientField[ii]*FIELD_SCALE));
+
+      const baseR = 16 + (skyR*SKY_SCALE)|0;
+      const baseG = 16 + (skyG*SKY_SCALE)|0;
+      const baseB = 18 + (skyB*SKY_SCALE)|0;
+
+      const glowR = baseR + H;
+      const glowG = baseG + N;
+      const glowB = baseB + W;
+
+      const a = FLOOR_ALPHA;
+      frame[off  ] = (baseR*(1-a) + glowR*a) | 0;
+      frame[off+1] = (baseG*(1-a) + glowG*a) | 0;
+      frame[off+2] = (baseB*(1-a) + glowB*a) | 0;
+      frame[off+3] = 255;
     }
   }
+
+  // solids darken
+  for (let y=0;y<gridSize;y++){
+    for (let x=0;x<gridSize;x++){
+      const m = solidGrid[I(x,y)];
+      if (m>0){
+        const off = (x + y*gridSize)*4;
+        const g = Math.max(0, 180 - Math.floor(m*25));
+        frame[off  ] = (frame[off  ]*0.6 + g*0.4)>>>0;
+        frame[off+1] = (frame[off+1]*0.6 + g*0.4)>>>0;
+        frame[off+2] = (frame[off+2]*0.6 + g*0.4)>>>0;
+      }
+    }
+  }
+
+  // cells on top
+  for (const c of livingCells.value){
+    const off = (c.x + c.y*gridSize)*4;
+    frame[off  ] = c.r;
+    frame[off+1] = c.g;
+    frame[off+2] = c.b;
+    frame[off+3] = 255;
+  }
+
+  frameImg.data.set(frame);
+  ctx.putImageData(frameImg, 0, 0);
 }
 
+/* ===================== Scope ===================== */
+function updateScope(event: MouseEvent) {
+  if (!scopeActive.value) return;
+  const canvas = gameCanvas.value;
+  const scope = scopeCanvas.value;
+  if (!canvas || !scope) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+  const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+  const ctx = scope.getContext('2d');
+  if (!ctx) return;
+  const half = scopeSize / 2;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, scope.width, scope.height);
+  ctx.drawImage(canvas, x - half, y - half, scopeSize, scopeSize, 0, 0, scope.width, scope.height);
+  scope.style.left = `${event.clientX + 20}px`;
+  scope.style.top = `${event.clientY + 20}px`;
+}
+
+/* ===================== Derived ===================== */
 const avgLifespan = computed(() => {
   return stats.value.deadCount > 0
     ? (stats.value.totalLifespan / stats.value.deadCount).toFixed(1)
@@ -325,33 +653,27 @@ const avgLifespan = computed(() => {
 
 <style scoped>
 .bbyworld-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing);
-  width: 100%;
+  display:flex;
+  width:100%;
+  height:var(--full-height);
+  box-sizing:border-box;
+  padding:var(--padding);
 }
-
-.page-title {
-  margin: 0;
-}
-
-.world-controls, .world-stats {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: var(--spacing);
-}
-
-canvas {
-  cursor: crosshair;
-  border: var(--border);
-  border-radius: var(--border-radius);
-  background: var(--bby-colour-black);
-  image-rendering: pixelated;
-  width: 100%;
-  height: auto;
-  max-width: 1024px;
-}
+.world-layout{display:flex;flex-direction:row;width:100%;height:100%;gap:var(--spacing);overflow:hidden}
+.world-left{flex:1 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
+.world-right{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0;position:relative}
+.vertical-panel{position:relative;width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
+.vertical-panel h1{margin:0;text-align:center;line-height:1.05}
+.world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
+.world-stage canvas{position:absolute;top:0;left:0;image-rendering:pixelated}
+.zoom-scope{position:absolute;width:128px;height:128px;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black);pointer-events:none;image-rendering:pixelated}
+.grp{display:flex;flex-direction:column;gap:.5rem}
+.section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
+.action{display:block;width:100%;padding:.4rem .5rem;transition:all .2s ease-out;text-align:center}
+.action.active,.action:active{background:var(--accent-hover);border-color:var(--accent-colour)!important}
+.row2{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem}
+.row3{display:grid;grid-template-columns:1fr auto 1fr;gap:.5rem;align-items:center}
+.zoom-display{text-align:center;font-size:var(--small-font-size)}
+@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

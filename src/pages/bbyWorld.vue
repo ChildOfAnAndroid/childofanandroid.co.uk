@@ -1316,10 +1316,11 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
         b = (b*(1-dyeAlpha) + bb*dyeAlpha) | 0;
       }
 
+      const terrainAlpha = Math.min(255, Math.floor((m / 6) * 255));
       frame[off  ] = r;
       frame[off+1] = g;
       frame[off+2] = b;
-      frame[off+3] = 255;
+      frame[off+3] = terrainAlpha;
     }
   }
 

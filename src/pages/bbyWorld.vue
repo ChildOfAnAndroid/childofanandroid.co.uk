@@ -1446,14 +1446,15 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const targetH = solidGrid[tIndex];
   const Rf = cell.r/255, Gf = cell.g/255, Bf = cell.b/255;
   const domB = colourDominance(Bf, Rf, Gf);
-  if (domB > 0 && targetH > currentH + 0.1) return false;
-  if (domB < 0 && targetH < currentH - 0.1) return false;
+  const heightDiff = targetH - currentH;
+  if (domB > 0 && heightDiff > 0.1) return false;
+  if (domB < 0 && heightDiff < -0.1) return false;
 
-  if (targetH > 0){
-    // NEW: Terrain causes damage (energy loss)
-    cell.energy -= targetH * 0.1;
+  if (targetH > 0) {
+    // Base drag from traversing solid ground; climbing costs more.
+    cell.energy -= targetH * (heightDiff > 0 ? 0.1 : 0.05);
 
-    if (domB > 0){
+    if (domB > 0) {
       const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)) * domB);
       erodeSolid(tIndex, erode);
       moistureField[tIndex] += erode*0.5;
@@ -1465,16 +1466,16 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
         const moved = solidGrid[tIndex]*0.6;
         moveSolid(tIndex, pi, moved);
       }
-      if (!target && solidGrid[tIndex] < 0.2) {
+      if (!target && solidGrid[tIndex] < currentH + 0.2) {
         performMove(cell, newX, newY);
         return true;
       }
-    } else {
-      // Likewise, strong cells should have a lower chance of getting stuck
-      // when moving through solids. The previous formula increased the stuck
-      // probability with strength. Flip it so strength reduces the likelihood
-      // of becoming trapped.
-      const stuckP = Math.min(0.9, 0.8 * (1 - cell.strength) * Math.min(1, solidGrid[tIndex]/3));
+    } else if (heightDiff > 0) {
+      // Height difference determines how likely the cell is to become stuck.
+      // Cells can climb terrain only up to a limit set by their strength.
+      const climbCap = cell.strength * 3;
+      if (heightDiff > climbCap) return false;
+      const stuckP = Math.min(0.9, 0.8 * (1 - cell.strength) * (heightDiff / climbCap));
       if (rand() < stuckP) return false;
     }
   }

@@ -353,6 +353,11 @@ function worldTick(){
   const skyR = (Number(currentColour.r)||0)/255 * 0.004;
   const skyG = (Number(currentColour.g)||0)/255 * 0.004;
   const skyB = (Number(currentColour.b)||0)/255 * 0.004;
+  // The world previously began completely barren which meant freshly born
+  // cells had nothing to metabolise unless they immediately encountered
+  // another deposit.  Inject a tiny baseline amount of each field every tick
+  // so there is always some resource to draw from.
+  const base = 0.0008;
 
   const s=S();
   for (let y=0;y<s;y++){
@@ -362,9 +367,9 @@ function worldTick(){
         nutrientField[i] += Math.min(0.02*solidGrid[i], 0.05);
         heatField[i] *= 0.999;
       }
-      heatField[i]     += skyR;
-      moistureField[i] += skyB;
-      nutrientField[i] += skyG;
+      heatField[i]     += skyR + base;
+      moistureField[i] += skyB + base;
+      nutrientField[i] += skyG + base;
     }
   }
   diffuseDecay(heatField,     0.20, 0.996);

@@ -189,7 +189,7 @@ let solidGrid      = new Float32Array(S()*S());
 function I(x:number,y:number){ const s=S(); return ((x & (s-1)) + ((y & (s-1)) * s)) >>> 0; }
 
 /* Renderer buffer */
-let frame = new Uint8ClampedArray(S()*S()*4);
+let frame = new Uint8ClampedArray(0);
 let frameImg: ImageData | null = null;
 
 /* ===================== RNG ===================== */
@@ -203,9 +203,14 @@ function allocateWorldArrays(size:number){
   moistureField  = new Float32Array(size*size);
   nutrientField  = new Float32Array(size*size);
   solidGrid      = new Float32Array(size*size);
-  frame          = new Uint8ClampedArray(size*size*4);
   const ctx = gameCanvas.value?.getContext("2d");
-  if (ctx) frameImg = ctx.createImageData(size, size);
+  if (ctx) {
+    frameImg = ctx.createImageData(size, size);
+    frame = frameImg.data;
+  } else {
+    frameImg = null;
+    frame = new Uint8ClampedArray(size*size*4);
+  }
 }
 
 function clearWorld(){
@@ -269,7 +274,7 @@ onMounted(async () => {
 
   // scope canvas
   const scope = scopeCanvas.value;
-  if (scope) { scope.width = 32 * 4; scope.height = 32 * 4; }
+  if (scope) { scope.width = 128; scope.height = 128; }
 
   animationFrameId = requestAnimationFrame(mainLoop);
 });
@@ -647,7 +652,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
 
   const s=S();
 
-  // base + faint field glow
+  // base + faint field glow and solids darken in one pass
   for (let y=0;y<s;y++){
     for (let x=0;x<s;x++){
       const off = (x + y*s)*4;
@@ -665,24 +670,22 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
       const glowB = baseB + W;
 
       const a = FLOOR_ALPHA;
-      frame[off  ] = (baseR*(1-a) + glowR*a) | 0;
-      frame[off+1] = (baseG*(1-a) + glowG*a) | 0;
-      frame[off+2] = (baseB*(1-a) + glowB*a) | 0;
-      frame[off+3] = 255;
-    }
-  }
+      let r = (baseR*(1-a) + glowR*a) | 0;
+      let g = (baseG*(1-a) + glowG*a) | 0;
+      let b = (baseB*(1-a) + glowB*a) | 0;
 
-  // solids darken
-  for (let y=0;y<s;y++){
-    for (let x=0;x<s;x++){
-      const m = solidGrid[I(x,y)];
+      const m = solidGrid[ii];
       if (m>0){
-        const off = (x + y*s)*4;
-        const g = Math.max(0, 180 - Math.floor(m*25));
-        frame[off  ] = (frame[off  ]*0.6 + g*0.4)>>>0;
-        frame[off+1] = (frame[off+1]*0.6 + g*0.4)>>>0;
-        frame[off+2] = (frame[off+2]*0.6 + g*0.4)>>>0;
+        const gVal = Math.max(0, 180 - Math.floor(m*25));
+        r = (r*0.6 + gVal*0.4)>>>0;
+        g = (g*0.6 + gVal*0.4)>>>0;
+        b = (b*0.6 + gVal*0.4)>>>0;
       }
+
+      frame[off  ] = r;
+      frame[off+1] = g;
+      frame[off+2] = b;
+      frame[off+3] = 255;
     }
   }
 
@@ -695,7 +698,6 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     frame[off+3] = 255;
   }
 
-  frameImg.data.set(frame);
   ctx.putImageData(frameImg, 0, 0);
 }
 
@@ -704,16 +706,39 @@ const updateScope = throttle((event: MouseEvent) => {
   if (!scopeActive.value) return;
   const canvas = gameCanvas.value;
   const scope = scopeCanvas.value;
-  if (!canvas || !scope) return;
+  if (!canvas || !scope || !frameImg) return;
   const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-  const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+  const hx = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
+  const hy = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
   const ctx = scope.getContext('2d');
   if (!ctx) return;
-  const half = 16; // half of sample size (32)
+  const SCOPE_SIZE = 5;
+  const half = Math.floor(SCOPE_SIZE / 2);
+  const pixelSize = scope.width / SCOPE_SIZE;
+  const s = S();
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, scope.width, scope.height);
-  ctx.drawImage(canvas, x - half, y - half, 32, 32, 0, 0, scope.width, scope.height);
+  for (let dy = 0; dy < SCOPE_SIZE; dy++) {
+    for (let dx = 0; dx < SCOPE_SIZE; dx++) {
+      const sx = hx - half + dx;
+      const sy = hy - half + dy;
+      let r = 0, g = 0, b = 0, a = 255;
+      if (sx >= 0 && sy >= 0 && sx < s && sy < s) {
+        const off = (sx + sy * s) * 4;
+        r = frame[off];
+        g = frame[off + 1];
+        b = frame[off + 2];
+        a = frame[off + 3];
+      }
+      ctx.fillStyle = `rgba(${r},${g},${b},${a/255})`;
+      ctx.fillRect(dx * pixelSize, dy * pixelSize, pixelSize, pixelSize);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, scope.width, scope.height);
+  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.strokeRect(half * pixelSize, half * pixelSize, pixelSize, pixelSize);
   scope.style.left = `${event.clientX + 20}px`;
   scope.style.top = `${event.clientY + 20}px`;
 }, 16);

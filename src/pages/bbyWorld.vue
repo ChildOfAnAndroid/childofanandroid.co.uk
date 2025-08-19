@@ -518,18 +518,22 @@ function update() {
     // instead of rapidly starving. Each colour channel draws from its
     // matching field, converting a small portion into energy.
     const Rf = c.r/255, Bf = c.b/255, Gf = c.g/255;
+    const isRedDominant   = Rf > 0.5 && Rf > Bf && Rf > Gf;
+    const isBlueDominant  = Bf > 0.5 && Bf > Rf && Bf > Gf;
+    const isGreenDominant = Gf > 0.5 && Gf > Rf && Gf > Bf;
+
     let gain = 0;
-    if (Rf > 0) {
+    if (isRedDominant) {
       const take = Math.min(0.02*Rf, heatField[ii]);
       heatField[ii] -= take;
       gain += take*10;
     }
-    if (Bf > 0) {
+    if (isBlueDominant) {
       const take = Math.min(0.02*Bf, moistureField[ii]);
       moistureField[ii] -= take;
       gain += take*10;
     }
-    if (Gf > 0) {
+    if (isGreenDominant) {
       const take = Math.min(0.02*Gf, nutrientField[ii]);
       nutrientField[ii] = Math.max(0, nutrientField[ii] - take);
       gain += take*10;
@@ -538,7 +542,7 @@ function update() {
     c.energy = Math.min(c.energy + gain, 260);
 
     // Blue cells slowly erode nearby solids and push debris outward
-    if (Bf > 0) {
+    if (isBlueDominant) {
       const erosion = 0.004 * Bf;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -574,7 +578,7 @@ function update() {
     }
 
     // Green cells chew through nearby ground, releasing nutrients
-    if (Gf > 0) {
+    if (isGreenDominant) {
       const erosion = 0.002 * Gf;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -593,7 +597,7 @@ function update() {
     }
 
     // Red cells bake the earth, hardening ground and drying it out
-    if (Rf > 0) {
+    if (isRedDominant) {
       const harden = 0.0025 * Rf;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -608,7 +612,7 @@ function update() {
 
     // Green cells crave space to grow – reward solitude but punish crowding
     const neighbours = countOccupiedAdjacent(c.x, c.y);
-    if (Gf > 0) {
+    if (isGreenDominant) {
       if (neighbours <= 1) {
         c.energy = Math.min(c.energy + Gf*0.5, 260);
       } else if (neighbours > 3) {
@@ -617,7 +621,7 @@ function update() {
     }
 
     // Blue cells slip toward lower ground and can't regain height easily
-    if (Bf > 0.4) {
+    if (isBlueDominant) {
       let lowest = solidGrid[ii];
       let bx = c.x, by = c.y;
       const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
@@ -886,11 +890,12 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
 
   const currentH = solidGrid[I(cell.x, cell.y)];
   const targetH = solidGrid[tIndex];
-  const Bf = cell.b/255;
-  if (Bf > 0.3 && targetH > currentH + 0.1) return false;
+  const Rf = cell.r/255, Gf = cell.g/255, Bf = cell.b/255;
+  const isBlueDominant = Bf > 0.5 && Bf > Rf && Bf > Gf;
+  if (isBlueDominant && targetH > currentH + 0.1) return false;
 
   if (targetH > 0){
-    if (Bf > 0.2){
+    if (isBlueDominant){
       const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)));
       solidGrid[tIndex] -= erode;
       moistureField[tIndex] += erode*0.5;

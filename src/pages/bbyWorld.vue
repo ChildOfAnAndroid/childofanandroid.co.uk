@@ -46,7 +46,9 @@
             <div class="group-stats">
               <div class="group-row header">
                 <span>colour</span>
+                <span>species</span>
                 <span>count</span>
+                <span>%</span>
                 <span>strength</span>
                 <span>agg</span>
                 <span>fert</span>
@@ -61,12 +63,24 @@
                   <span class="colour-swatch" :style="{ background: g.colour }"></span>
                   {{ g.colour }}
                 </span>
+                <span>{{ g.species }}</span>
                 <span>{{ g.count }}</span>
+                <span>{{ g.percentage.toFixed(1) }}%</span>
                 <span>{{ g.avgStrength.toFixed(2) }}</span>
                 <span>{{ g.avgAggression.toFixed(2) }}</span>
                 <span>{{ g.avgFertility.toFixed(2) }}</span>
                 <span>{{ g.avgMetabolism.toFixed(2) }}</span>
               </div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <label class="section">legend</label>
+            <div class="legend">
+              <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
+              <p><strong>Species:</strong> red → plasma, blue → water, green → plant, mixes → blend.</p>
+              <p><strong>Attraction:</strong> plasma seeks heat and avoids wet; water loves moisture but shuns heat; plants crave nutrients; blends balance all.</p>
+              <p><strong>Group stats:</strong> % shows each colour's share of living cells.</p>
             </div>
           </div>
 
@@ -218,7 +232,9 @@ const stats = ref({
 
 interface ColourGroupStat {
   colour: string;
+  species: Species;
   count: number;
+  percentage: number;
   avgStrength: number;
   avgAggression: number;
   avgFertility: number;
@@ -227,6 +243,13 @@ interface ColourGroupStat {
 
 function rgbToHex(r: number, g: number, b: number) {
   return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function hexToRgb(hex: string) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
 }
 
 const groupStats = computed<ColourGroupStat[]>(() => {
@@ -247,14 +270,20 @@ const groupStats = computed<ColourGroupStat[]>(() => {
     g.totalFertility += c.fertility;
     g.totalMetabolism += c.metabolism;
   }
-  return Object.entries(groups).map(([colour, g]) => ({
-    colour,
-    count: g.count,
-    avgStrength: g.count ? g.totalStrength / g.count : 0,
-    avgAggression: g.count ? g.totalAggression / g.count : 0,
-    avgFertility: g.count ? g.totalFertility / g.count : 0,
-    avgMetabolism: g.count ? g.totalMetabolism / g.count : 0,
-  }));
+  const total = livingCells.value.length;
+  return Object.entries(groups).map(([colour, grp]) => {
+    const { r, g, b } = hexToRgb(colour);
+    return {
+      colour,
+      species: speciesFromRGB(r, g, b),
+      count: grp.count,
+      percentage: total ? (grp.count / total) * 100 : 0,
+      avgStrength: grp.count ? grp.totalStrength / grp.count : 0,
+      avgAggression: grp.count ? grp.totalAggression / grp.count : 0,
+      avgFertility: grp.count ? grp.totalFertility / grp.count : 0,
+      avgMetabolism: grp.count ? grp.totalMetabolism / grp.count : 0,
+    };
+  });
 });
 
 const sortedGroupStats = computed(() =>
@@ -980,7 +1009,7 @@ const avgLifespan = computed(() => {
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-row{display:grid;grid-template-columns:repeat(6,auto);gap:.25rem}
+.group-row{display:grid;grid-template-columns:repeat(8,auto);gap:.25rem}
 .group-row.header{font-weight:700}
 .colour-cell{display:flex;align-items:center;gap:.25rem}
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
@@ -989,6 +1018,7 @@ const avgLifespan = computed(() => {
 .world-stage .stack canvas:not(.zoom-scope){grid-area:1/1;image-rendering:pixelated}
 .zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;image-rendering:pixelated;z-index:1000}
 .grp{display:flex;flex-direction:column;gap:.5rem}
+.legend{font-size:var(--small-font-size);display:flex;flex-direction:column;gap:.25rem;line-height:1.2}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
 .action{display:block;width:100%;padding:.4rem .5rem;transition:all .2s ease-out;text-align:center}
 .action.active,.action:active{background:var(--accent-hover);border-color:var(--accent-colour)!important}

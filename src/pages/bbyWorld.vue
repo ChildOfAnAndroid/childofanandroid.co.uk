@@ -197,10 +197,6 @@ function formatTicks(ticks: number) {
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);
 function S(){ return boardSize.value; }
-
-function ensurePowerOfTwo(n: number): number {
-  return 1 << Math.round(Math.log2(Math.max(1, n)));
-}
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLDivElement | null>(null);
 const scopeCanvas = ref<HTMLCanvasElement | null>(null);
@@ -291,9 +287,11 @@ function allocateWorldArrays(size:number){
 function computeBaseScale(){
   const stage = stageEl.value;
   if (!stage) return;
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
   const s = S();
-  if (s <= 0) return;
-  baseScale.value = Math.max(1, Math.floor(Math.min(stage.clientWidth / s, stage.clientHeight / s)));
+  if (w <= 0 || h <= 0 || s <= 0) return;
+  baseScale.value = Math.max(1, Math.floor(Math.min(w / s, h / s)));
 }
 
 function clearWorld(){
@@ -373,8 +371,11 @@ function mainLoop(timestamp: number) {
 /* ===================== Simulation Update ===================== */
 function update() {
   tickCount.value++;
-  for (const c of livingCells.value) {
-    if (!c.alive) continue; c.age++;
+
+  const aliveCellsThisTick = livingCells.value.filter(c => c.alive);
+
+  for (const c of aliveCellsThisTick) {
+    c.age++;
     const idx = I(c.x, c.y); const influence = (c.a / 255) * 0.2;
     fieldPsi[idx] += (c.r / 255) * influence; fieldLam[idx] += (c.g / 255) * influence; fieldSig[idx] += (c.b / 255) * influence;
     const normR = c.r/255, normG = c.g/255, normB = c.b/255;
@@ -382,26 +383,30 @@ function update() {
     if (normB > normR && normB > normG) solidGrid[idx] = Math.max(0, solidGrid[idx] - 0.01 * normB);
     if (normG > normR && normG > normB && solidGrid[idx] > 0) { const conversion = Math.min(solidGrid[idx], 0.01 * normG); solidGrid[idx] -= conversion; fieldLam[idx] += conversion * 5; }
   }
+
   diffuseAndTransform(fieldPsi, fieldSig, fieldLam); diffuseAndTransform(fieldLam, fieldPsi, fieldSig); diffuseAndTransform(fieldSig, fieldLam, fieldPsi);
   
-  // Create a new array for living cells for the next tick
   const nextLivingCells = [];
-  for (const c of livingCells.value) {
-    if (!c.alive) continue;
+  for (const c of aliveCellsThisTick) {
     const idx = I(c.x, c.y); const resonance = (fieldPsi[idx]*(c.r/255))+(fieldLam[idx]*(c.g/255))+(fieldSig[idx]*(c.b/255));
     const dissonance = (fieldPsi[idx]*((255-c.r)/255))+(fieldLam[idx]*((255-c.g)/255))+(fieldSig[idx]*((255-c.b)/255));
     const chargeDelta = (resonance - dissonance) * 0.8; c.charge = Math.min(MAX_CHARGE, c.charge + chargeDelta - METABOLIC_COST);
     const neighborCount = countAdjacent(c.x, c.y);
+
+    let stillAlive = true;
     if (neighborCount > 4) {
       const crowdPenalty = (neighborCount - 4) * 0.5; c.charge -= crowdPenalty;
       if (c.charge <= 0) {
         recordDecay(c, "overcrowd");
-        continue; // Skip pushing to nextLivingCells
+        stillAlive = false;
       }
     }
-    if (c.charge <= 0) {
+    if (stillAlive && c.charge <= 0) {
       recordDecay(c, "charge");
-    } else {
+      stillAlive = false;
+    }
+
+    if(stillAlive) {
       nextLivingCells.push(c);
     }
   }
@@ -415,15 +420,9 @@ function update() {
   }
 }
 
-// Use fast bitwise wrapping when board size is a power of two.
 function I(x: number, y: number): number {
   const s = S();
-  if ((s & (s - 1)) === 0) {
-    return ((x & (s - 1)) + ((y & (s - 1)) * s)) >>> 0;
-  }
-  const wrappedX = (x % s + s) % s;
-  const wrappedY = (y % s + s) % s;
-  return wrappedY * s + wrappedX;
+  return ((x & (s - 1)) + (y & (s - 1)) * s) >>> 0;
 }
 
 // --- Physics & Cell Subroutines ---
@@ -475,6 +474,7 @@ function handleInteraction(attacker: Cell, defender: Cell) {
       stats.value.spawns++;
     }
   } else {
+    stats.value.conflicts++;
     const attIdx = I(attacker.x, attacker.y), defIdx = I(defender.x, defender.y);
     const attFieldAdv = (fieldPsi[attIdx]*(attacker.r/255))+(fieldLam[attIdx]*(attacker.g/255))+(fieldSig[attIdx]*(attacker.b/255));
     const defFieldAdv = (fieldPsi[defIdx]*(defender.r/255))+(fieldLam[defIdx]*(defender.g/255))+(fieldSig[defIdx]*(defender.b/255));
@@ -486,22 +486,51 @@ function handleInteraction(attacker: Cell, defender: Cell) {
     }
   }
 }
+
+// FIXED: This function now uses the advanced color blending from version 1 to prevent collapsing to white.
 function spawn(x: number, y: number, options: { parents?: [Cell, Cell], color?: {r:number, g:number, b:number, a:number} } = {}): Cell {
   let r, g, b, a; let parents: [number, number] | [] = [];
+
   if (options.parents) {
-    const [p1, p2] = options.parents; parents = [p1.id, p2.id]; const totalCharge = p1.charge + p2.charge || 1;
+    const [p1, p2] = options.parents;
+    parents = [p1.id, p2.id];
+    const totalCharge = p1.charge + p2.charge || 1;
     const w1 = p1.charge / totalCharge, w2 = p2.charge / totalCharge;
-    r = Math.floor(p1.r * w1 + p2.r * w2); g = Math.floor(p1.g * w1 + p2.g * w2);
-    b = Math.floor(p1.b * w1 + p2.b * w2); a = Math.floor(p1.a * w1 + p2.a * w2);
+
+    const blendChannel = (c1: number, c2: number, mut: number) => {
+      const avg = c1 * w1 + c2 * w2;
+      const diff = c1 - c2;
+      const drift = diff * (rand() * 0.25 - 0.125); // Bias away from the middle
+      return Math.min(255, Math.max(0, Math.round(avg + drift + (rand() * mut - mut / 2))));
+    };
+
+    r = blendChannel(p1.r, p2.r, 6);
+    g = blendChannel(p1.g, p2.g, 6);
+    b = blendChannel(p1.b, p2.b, 6);
+    a = blendChannel(p1.a, p2.a, 4);
+
   } else if (options.color) {
     ({r, g, b, a} = options.color);
-  } else { r = Math.floor(rand()*255); g = Math.floor(rand()*255); b = Math.floor(rand()*255); a = 150 + Math.floor(rand()*105); }
-  const newCell: Cell = { id: nextCellId++, r, g, b, a, x, y, parents, charge: MAX_CHARGE, alive: true, birthTick: tickCount.value, age: 0, lastSpawnTick: tickCount.value };
-  livingCells.value.push(newCell); cellById[newCell.id] = newCell; spatialMap[I(x, y)] = newCell;
+  } else { 
+    r = Math.floor(rand()*255); g = Math.floor(rand()*255); b = Math.floor(rand()*255); a = 150 + Math.floor(rand()*105); 
+  }
+
+  const wx = (x % S() + S()) % S();
+  const wy = (y % S() + S()) % S();
+  const newCell: Cell = { id: nextCellId++, r, g, b, a, x: wx, y: wy, parents, charge: MAX_CHARGE * 0.8, alive: true, birthTick: tickCount.value, age: 0, lastSpawnTick: tickCount.value };
+  
+  livingCells.value.push(newCell); 
+  cellById[newCell.id] = newCell; 
+  spatialMap[I(wx, wy)] = newCell;
   familyTree[newCell.id] = { parents, children: [] };
-  if (options.parents) { const [p1, p2] = options.parents; familyTree[p1.id]?.children.push(newCell.id); familyTree[p2.id]?.children.push(newCell.id); }
+  if (options.parents) { 
+    const [p1, p2] = options.parents; 
+    familyTree[p1.id]?.children.push(newCell.id); 
+    familyTree[p2.id]?.children.push(newCell.id); 
+  }
   return newCell;
 }
+
 function recordDecay(c: Cell, reason: DeathReason) {
   if (!c.alive) return; c.alive = false;
   spatialMap[I(c.x, c.y)] = null;
@@ -534,7 +563,8 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
       frame[off + 2] = Math.min(255, 10 + fieldSig[ii] * 40 + rock);
       frame[off + 3] = 255;
   }}
-  for (const c of livingCells.value) { if (!c.alive) continue;
+  const aliveCells = livingCells.value.filter(c => c.alive);
+  for (const c of aliveCells) {
     const off = (I(c.x, c.y)) * 4;
     frame[off] = c.r; frame[off + 1] = c.g; frame[off + 2] = c.b; frame[off + 3] = c.a;
     if (highlightedGroup.value && groupKey(c) === highlightedGroup.value) { frame[off]=Math.min(255, c.r+80); frame[off+1]=Math.min(255, c.g+80); frame[off+2]=Math.min(255, c.b+80); }
@@ -544,6 +574,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
 }
 
 // --- Lifecycle, UI, Computed Properties ---
+let resizeObs: ResizeObserver | null = null;
 onMounted(async () => {
   try {
     const gallery = await fetchBbyBookGallery();
@@ -551,44 +582,41 @@ onMounted(async () => {
     if (cards.value.length > 0) selectCard(cards.value[0].label);
   } catch (error) { console.error("Failed to fetch gallery:", error); }
   applyBoardSize();
-  let resizeObs = new ResizeObserver(() => computeBaseScale());
-  if (stageEl.value) resizeObs.observe(stageEl.value);
+  if (stageEl.value) {
+    resizeObs = new ResizeObserver(() => computeBaseScale());
+    resizeObs.observe(stageEl.value);
+  }
   if (scopeCanvas.value) { scopeCanvas.value.width = 256; scopeCanvas.value.height = 256; }
   animationFrameId = requestAnimationFrame(mainLoop);
 });
-onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); });
-watch(boardSize, (newSize) => {
-  const pow2 = ensurePowerOfTwo(newSize);
-  if (pow2 !== newSize) {
-    boardSize.value = pow2;
-  } else {
-    applyBoardSize();
-  }
-});
+onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); if (resizeObs && stageEl.value) resizeObs.disconnect(); });
+watch(boardSize, () => applyBoardSize());
 watch(selectedCardLabel, () => loadSelectedImage());
 function selectCard(label: string) { selectedCardLabel.value = label; }
+
+// FIXED: This function now uses the stamp scaling logic from version 1.
 function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value); if (!selected) return;
   const img = new Image(); img.crossOrigin = "Anonymous";
   img.onload = () => {
-    const scale = Math.min(1, 48 / Math.max(img.width, img.height));
+    const MAX_STAMP_SIZE = 64;
+    const scale = Math.min(1, MAX_STAMP_SIZE / Math.max(img.width, img.height));
     const outW = Math.max(1, Math.floor(img.width * scale));
     const outH = Math.max(1, Math.floor(img.height * scale));
     const tempCanvas = document.createElement("canvas");
     const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = outW; tempCanvas.height = outH; (ctx as any).imageSmoothingEnabled = false;
+    tempCanvas.width = outW; tempCanvas.height = outH;
+    (ctx as any).imageSmoothingEnabled = false;
     ctx.drawImage(img, 0, 0, outW, outH);
     loadedImageData = ctx.getImageData(0, 0, outW, outH);
   };
   img.src = selected.stamp_url || selected.url;
 }
 
-// FIXED: This function now correctly calculates world coordinates from a mouse click.
 function screenToWorld(event: MouseEvent): {x: number, y: number} | null {
     const canvas = gameCanvas.value;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    // The ratio of the canvas's logical width to its on-screen width gives the correct scale factor.
     const scale = canvas.width / rect.width;
     const worldX = Math.floor((event.clientX - rect.left) * scale);
     const worldY = Math.floor((event.clientY - rect.top) * scale);
@@ -609,7 +637,6 @@ function placeImageAt(worldX: number, worldY: number) {
         const i = (y * loadedImageData.width + x) * 4; const a = loadedImageData.data[i + 3];
         if (a > 50) {
             const pX = startX + x, pY = startY + y;
-            // The new I(pX, pY) handles wrapping automatically
             if (!spatialMap[I(pX, pY)]) {
                 const r = loadedImageData.data[i], g = loadedImageData.data[i+1], b = loadedImageData.data[i+2];
                 spawn(pX, pY, { color: {r, g, b, a} });
@@ -679,10 +706,11 @@ const updateScope = throttle((event: MouseEvent) => {
 </script>
 
 <style scoped>
+/* THIS CSS IS NOW BASED ON THE FIRST (WORKING) VERSION FOR CORRECT LAYOUT */
 .page-container { display:flex; width:100%; height:var(--full-height); box-sizing:border-box; padding:var(--padding); }
 .world-layout{display:flex;flex-direction:row;width:100%;height:100%;gap:var(--spacing);overflow:hidden}
 .world-left{flex:1 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
-.world-right{flex:1 1 0;display:flex;align-items:center;justify-content:center;height:100%;min-width:0;position:relative}
+.world-right{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0;position:relative}
 .vertical-panel{position:relative;width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
@@ -693,7 +721,7 @@ const updateScope = throttle((event: MouseEvent) => {
 .group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
 .colour-cell{display:flex;align-items:center;gap:.25rem}
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px; flex-shrink: 0;}
-.world-stage{position:relative;width:100%;height:100%;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black); display: flex; align-items: center; justify-content: center;}
+.world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
 .stack > * { grid-area: 1 / 1; }
 canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
@@ -718,5 +746,5 @@ canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; 
 .family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
 .family-link:hover{text-decoration:underline}
-@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:1 1 auto}}
+@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

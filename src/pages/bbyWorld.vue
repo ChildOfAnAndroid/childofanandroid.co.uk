@@ -78,6 +78,7 @@
             <div class="legend">
               <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
               <p><strong>Colours = genes:</strong> the intensity of each channel is the strength of that trait—red for aggression & heat-seeking, blue raises fertility & moisture affinity, green fuels metabolism & nutrient hunger, while alpha sets overall toughness.</p>
+              <p><strong>Trade-offs:</strong> excess red burns energy, greens need elbow-room, blues pool but slip off heights, and high alpha is mighty yet sluggish.</p>
               <p><strong>Genetics:</strong> when two cells merge, each colour channel mixes according to parental strength so offspring wear a visible blend. New births flash briefly to mark their arrival.</p>
               <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
               <p><strong>Group stats:</strong> % shows each colour's share of living cells.</p>
@@ -487,7 +488,8 @@ function update() {
   // metabolism & micro-reactions
   for (let i = livingCells.value.length - 1; i >= 0; i--) {
     const c = livingCells.value[i];
-    c.energy -= c.metabolism;
+    // Red aggression burns extra energy while alpha heft slows overall output
+    c.energy -= c.metabolism + c.aggression*0.05;
     c.age += 1;
 
     const ii = I(c.x, c.y);
@@ -513,6 +515,36 @@ function update() {
       nutrientField[ii] += 0.004*Gf;
     }
     c.energy = Math.min(c.energy + gain, 260);
+
+    // Green cells crave space to grow – reward solitude but punish crowding
+    const neighbours = countOccupiedAdjacent(c.x, c.y);
+    if (Gf > 0) {
+      if (neighbours <= 1) {
+        c.energy = Math.min(c.energy + Gf*0.5, 260);
+      } else if (neighbours > 3) {
+        c.energy -= (neighbours-3) * Gf * 2;
+      }
+    }
+
+    // Blue cells slip toward lower ground and can't regain height easily
+    if (Bf > 0.4) {
+      let lowest = solidGrid[ii];
+      let bx = c.x, by = c.y;
+      const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (const [dx,dy] of dirs){
+        const nx = (c.x + dx + S()) % S();
+        const ny = (c.y + dy + S()) % S();
+        const ni = I(nx, ny);
+        if (!spatialMap[ni] && solidGrid[ni] + 0.1 < lowest){
+          lowest = solidGrid[ni];
+          bx = nx; by = ny;
+        }
+      }
+      if (bx !== c.x || by !== c.y){
+        performMove(c, bx, by);
+        deposit(c);
+      }
+    }
 
     // Only squash cells that fail to recover enough energy after drawing from
     // their local field this tick.
@@ -668,6 +700,9 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
     const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
     let want = heat*Rf + wet*Bf + nut*Gf + (heat+wet+nut)*0.05;
+    // Blue cells shy from climbing higher ground
+    const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
+    want -= Math.max(0, hDiff) * Bf * 0.5;
 
     // Stronger cells should be less deterred by solid tiles. Previously the
     // penalty increased with strength, causing fragile cells to push through
@@ -705,17 +740,33 @@ function findEmptyAdjacent(x:number,y:number): [number,number] | null {
   return null;
 }
 
+function countOccupiedAdjacent(x:number,y:number): number {
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let c=0;
+  for (const [dx,dy] of dirs){
+    const nx=(x+dx+S())%S();
+    const ny=(y+dy+S())%S();
+    if (spatialMap[I(nx,ny)]) c++;
+  }
+  return c;
+}
+
 function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
+  if (rand() < cell.strength*0.5) return false;
   const newX = (cell.x + dx + S()) % S();
   const newY = (cell.y + dy + S()) % S();
   const key = I(newX, newY);
   const target = spatialMap[key];
   const tIndex = key;
 
-  if (solidGrid[tIndex] > 0){
-    const Bf = cell.b/255;
+  const currentH = solidGrid[I(cell.x, cell.y)];
+  const targetH = solidGrid[tIndex];
+  const Bf = cell.b/255;
+  if (Bf > 0.3 && targetH > currentH + 0.1) return false;
+
+  if (targetH > 0){
     if (Bf > 0.2){
-      const erode = Math.min(solidGrid[tIndex], Bf*(0.05 + 0.1*(cell.energy/200)));
+      const erode = Math.min(targetH, Bf*(0.05 + 0.1*(cell.energy/200)));
       solidGrid[tIndex] -= erode;
       moistureField[tIndex] += erode*0.5;
 

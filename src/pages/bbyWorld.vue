@@ -274,7 +274,10 @@ onMounted(async () => {
 
   // scope canvas
   const scope = scopeCanvas.value;
-  if (scope) { scope.width = 128; scope.height = 128; }
+  if (scope) {
+    scope.width = 256;
+    scope.height = 256;
+  }
 
   animationFrameId = requestAnimationFrame(mainLoop);
 });
@@ -469,9 +472,28 @@ function placeImage(event: MouseEvent) {
 }
 
 /* ===================== Movement / Chains ===================== */
+// This helper function shuffles an array in place
+function shuffleArray(array: any[]) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
+
 function chooseChainDir(cell:GridCell): [number,number,Heading] {
   const prefs: {h:Heading, score:number}[] = [];
-  for (let h=0 as Heading; h<4; h=(h+1) as Heading){
+  
+  // --- START OF CHANGES ---
+  // Create an array of all possible directions
+  const headings: Heading[] = [0, 1, 2, 3];
+  
+  // Shuffle the array to randomize the order of evaluation
+  shuffleArray(headings);
+  
+  // Loop over the SHUFFLED directions instead of a fixed 0-3 loop
+  for (const h of headings) {
+  // --- END OF CHANGES ---
+
     const [dx,dy] = HEADING_VECS[h];
     const nx = (cell.x + dx + S()) % S();
     const ny = (cell.y + dy + S()) % S();
@@ -712,7 +734,7 @@ const updateScope = throttle((event: MouseEvent) => {
   const hy = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
   const ctx = scope.getContext('2d');
   if (!ctx) return;
-  const SCOPE_SIZE = 5;
+  const SCOPE_SIZE = 9;
   const half = Math.floor(SCOPE_SIZE / 2);
   const pixelSize = scope.width / SCOPE_SIZE;
   const s = S();
@@ -739,8 +761,11 @@ const updateScope = throttle((event: MouseEvent) => {
   ctx.strokeRect(0, 0, scope.width, scope.height);
   ctx.strokeStyle = 'rgba(0,0,0,0.7)';
   ctx.strokeRect(half * pixelSize, half * pixelSize, pixelSize, pixelSize);
-  scope.style.left = `${event.clientX + 20}px`;
-  scope.style.top = `${event.clientY + 20}px`;
+
+  const offsetX = (hx / s < 0.5) ? 20 : -scope.width - 20;
+  const offsetY = (hy / s < 0.5) ? 20 : -scope.height - 20;
+  scope.style.left = `${event.clientX + offsetX}px`;
+  scope.style.top = `${event.clientY + offsetY}px`;
 }, 16);
 
 /* ===================== Derived ===================== */
@@ -768,7 +793,7 @@ const avgLifespan = computed(() => {
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
 .world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
 .world-stage .stack canvas:not(.zoom-scope){grid-area:1/1;image-rendering:pixelated}
-.zoom-scope{position:fixed;width:128px;height:128px;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black);pointer-events:none;image-rendering:pixelated}
+.zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;image-rendering:pixelated;z-index:1000}
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
 .action{display:block;width:100%;padding:.4rem .5rem;transition:all .2s ease-out;text-align:center}

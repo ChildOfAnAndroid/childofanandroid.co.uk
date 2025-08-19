@@ -658,7 +658,7 @@ function compatibility(a:GridCell,b:GridCell){
   // cross-channel complement: blue↔red, red↔green, green↔blue
   const AR=a.r/255, AG=a.g/255, AB=a.b/255;
   const BR=b.r/255, BG=b.g/255, BB=b.b/255;
-  const comp = (AR*BB + AG*BR + AB*BG);
+  const comp = (AR*BB + AG*BR + AB*BG) / 3;
   // normalise distance into [0,1] so compatibility stays bounded
   const dist = Math.hypot(AR-BR, AG-BG, AB-BB) / Math.sqrt(3);
   return 0.6*comp + 0.4*(1 - dist);

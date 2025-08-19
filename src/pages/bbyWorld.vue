@@ -230,6 +230,7 @@ type GridCell = {
   strength:number;         // alpha→weight 0..1
   heading: Heading;        // chain direction
   turnBias:number;         // smoothness (smaller = straighter)
+  coop:number;             // cooperation affinity
 };
 
 /* ===================== World State ===================== */
@@ -509,6 +510,7 @@ function update() {
   // metabolism & micro-reactions
   for (let i = livingCells.value.length - 1; i >= 0; i--) {
     const c = livingCells.value[i];
+    c.coop *= 0.95; // cooperative affinity decays each tick
     // Red aggression burns extra energy while alpha heft slows overall output
     c.energy -= c.metabolism + c.aggression*0.05;
     c.age += 1;
@@ -673,6 +675,11 @@ function update() {
       const neighbour = spatialMap[I(nx, ny)];
       if (!neighbour || !neighbour.alive) continue;
       const comp = compatibility(c, neighbour);
+      if (comp > 0.6){
+        const boost = comp * 0.02;
+        c.coop = Math.min(1, c.coop + boost);
+        neighbour.coop = Math.min(1, neighbour.coop + boost);
+      }
       if (comp > 0.65 && c.energy > neighbour.energy + 20){
         const diff = c.energy - neighbour.energy;
         const transfer = Math.min(diff * 0.25 * comp, 30);
@@ -760,6 +767,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
     r, g, b, a, x: px, y: py, energy, alive: true, birthTick: tickCount, age: 0,
     aggression, fertility, metabolism,
     strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
+    coop: 0,
   };
 
   // Newborn cells previously spawned into completely empty tiles and
@@ -991,8 +999,10 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   }
 
   if (target.alive){
-    const pCompat = Math.min(1, compatibility(cell,target) * 0.8 + (cell.fertility+target.fertility)*0.1);
-    const pWar    = Math.min(1, (cell.aggression+target.aggression)*0.35 + (heatField[tIndex]*0.25));
+    const coopBoost = (cell.coop + target.coop) * 0.2;
+    const pCompat = Math.min(1, compatibility(cell,target) * 0.8 + (cell.fertility+target.fertility)*0.1 + coopBoost);
+    const baseWar = (cell.aggression+target.aggression)*0.35 + (heatField[tIndex]*0.25);
+    const pWar    = Math.min(1, Math.max(0, baseWar - coopBoost*0.5));
 
     if (pCompat >= pWar){
       const spawn = findEmptyAdjacent(newX, newY) || findEmptyAdjacent(cell.x, cell.y);

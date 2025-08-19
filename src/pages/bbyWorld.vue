@@ -59,6 +59,7 @@
                 v-for="g in sortedGroupStats"
                 :key="g.colour"
               >
+                <div class="group-bar" :style="{ background: g.colour, width: g.percentage + '%' }"></div>
                 <span class="colour-cell">
                   <span class="colour-swatch" :style="{ background: g.colour }"></span>
                   {{ g.colour }}
@@ -261,8 +262,10 @@ const groupStats = computed<ColourGroupStat[]>(() => {
     totalMetabolism: 0,
   };
   const groups: Record<string, typeof base> = {};
+  const STEP = 32; // bucket size for colour grouping
+  const quant = (v: number) => Math.min(255, Math.round(v / STEP) * STEP);
   for (const c of livingCells.value) {
-    const key = rgbToHex(c.r, c.g, c.b);
+    const key = rgbToHex(quant(c.r), quant(c.g), quant(c.b));
     const g = groups[key] || (groups[key] = { ...base });
     g.count++;
     g.totalStrength += c.strength;
@@ -1009,8 +1012,9 @@ const avgLifespan = computed(() => {
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-row{display:grid;grid-template-columns:repeat(8,auto);gap:.25rem}
+.group-row{display:grid;grid-template-columns:repeat(8,auto);gap:.25rem;position:relative}
 .group-row.header{font-weight:700}
+.group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
 .colour-cell{display:flex;align-items:center;gap:.25rem}
 .colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}

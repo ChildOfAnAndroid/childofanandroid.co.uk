@@ -46,7 +46,6 @@
             <div class="group-stats">
               <div class="group-row header">
                 <span>colour</span>
-                <span>species</span>
                 <span>count</span>
                 <span>%</span>
                 <span>strength</span>
@@ -64,7 +63,6 @@
                   <span class="colour-swatch" :style="{ background: g.colour }"></span>
                   {{ g.colour }}
                 </span>
-                <span>{{ g.species }}</span>
                 <span>{{ g.count }}</span>
                 <span>{{ g.percentage.toFixed(1) }}%</span>
                 <span>{{ g.avgStrength.toFixed(2) }}</span>
@@ -79,8 +77,8 @@
             <label class="section">legend</label>
             <div class="legend">
               <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
-              <p><strong>Species:</strong> red → plasma, blue → water, green → plant, mixes → blend.</p>
-              <p><strong>Attraction:</strong> plasma seeks heat and avoids wet; water loves moisture but shuns heat; plants crave nutrients; blends balance all.</p>
+              <p><strong>Colours:</strong> red boosts aggression & heat-seeking; blue raises fertility & moisture affinity; green fuels metabolism & nutrient hunger; alpha sets strength.</p>
+              <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
               <p><strong>Group stats:</strong> % shows each colour's share of living cells.</p>
             </div>
           </div>
@@ -200,7 +198,6 @@ const selectedCardLabel = ref<string | null>(null);
 let loadedImageData: ImageData | null = null;
 
 /* ===================== Cell / World Types ===================== */
-type Species = "plasma"|"water"|"plant"|"blend";
 type Heading = 0|1|2|3;
 const HEADING_VECS: [number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
 
@@ -208,7 +205,6 @@ type GridCell = {
   r:number; g:number; b:number; a:number;
   x:number; y:number;
   energy:number; alive:boolean; birthTick:number; age:number;
-  species: Species;
   aggression:number; fertility:number; metabolism:number;
   strength:number;         // alpha→weight 0..1
   heading: Heading;        // chain direction
@@ -233,7 +229,6 @@ const stats = ref({
 
 interface ColourGroupStat {
   colour: string;
-  species: Species;
   count: number;
   percentage: number;
   avgStrength: number;
@@ -244,13 +239,6 @@ interface ColourGroupStat {
 
 function rgbToHex(r: number, g: number, b: number) {
   return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function hexToRgb(hex: string) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return { r, g, b };
 }
 
 const groupStats = computed<ColourGroupStat[]>(() => {
@@ -274,19 +262,15 @@ const groupStats = computed<ColourGroupStat[]>(() => {
     g.totalMetabolism += c.metabolism;
   }
   const total = livingCells.value.length;
-  return Object.entries(groups).map(([colour, grp]) => {
-    const { r, g, b } = hexToRgb(colour);
-    return {
-      colour,
-      species: speciesFromRGB(r, g, b),
-      count: grp.count,
-      percentage: total ? (grp.count / total) * 100 : 0,
-      avgStrength: grp.count ? grp.totalStrength / grp.count : 0,
-      avgAggression: grp.count ? grp.totalAggression / grp.count : 0,
-      avgFertility: grp.count ? grp.totalFertility / grp.count : 0,
-      avgMetabolism: grp.count ? grp.totalMetabolism / grp.count : 0,
-    };
-  });
+  return Object.entries(groups).map(([colour, grp]) => ({
+    colour,
+    count: grp.count,
+    percentage: total ? (grp.count / total) * 100 : 0,
+    avgStrength: grp.count ? grp.totalStrength / grp.count : 0,
+    avgAggression: grp.count ? grp.totalAggression / grp.count : 0,
+    avgFertility: grp.count ? grp.totalFertility / grp.count : 0,
+    avgMetabolism: grp.count ? grp.totalMetabolism / grp.count : 0,
+  }));
 });
 
 const sortedGroupStats = computed(() =>
@@ -507,35 +491,27 @@ function update() {
 
     const ii = I(c.x, c.y);
     // Basic environmental energy intake allows cells to sustain themselves
-    // instead of rapidly starving. Each species draws from its preferred
-    // field, converting a small portion into energy.
-    if (c.species === "plasma") {
-      const take = Math.min(0.02, heatField[ii]);
+    // instead of rapidly starving. Each colour channel draws from its
+    // matching field, converting a small portion into energy.
+    const Rf = c.r/255, Bf = c.b/255, Gf = c.g/255;
+    let gain = 0;
+    if (Rf > 0) {
+      const take = Math.min(0.02*Rf, heatField[ii]);
       heatField[ii] -= take;
-      c.energy = Math.min(c.energy + take * 10, 260);
-      nutrientField[ii] = Math.max(0, nutrientField[ii] - 0.008);
+      gain += take*10;
     }
-    if (c.species === "water") {
-      const take = Math.min(0.02, moistureField[ii]);
+    if (Bf > 0) {
+      const take = Math.min(0.02*Bf, moistureField[ii]);
       moistureField[ii] -= take;
-      c.energy = Math.min(c.energy + take * 10, 260);
-      heatField[ii] *= 0.985;
+      gain += take*10;
     }
-    if (c.species === "plant") {
-      const take = Math.min(0.02, nutrientField[ii]);
+    if (Gf > 0) {
+      const take = Math.min(0.02*Gf, nutrientField[ii]);
       nutrientField[ii] = Math.max(0, nutrientField[ii] - take);
-      c.energy = Math.min(c.energy + take * 10, 260);
-      nutrientField[ii] += 0.004;
+      gain += take*10;
+      nutrientField[ii] += 0.004*Gf;
     }
-    if (c.species === "blend") {
-      const h = Math.min(0.01, heatField[ii]);
-      const m = Math.min(0.01, moistureField[ii]);
-      const n = Math.min(0.01, nutrientField[ii]);
-      heatField[ii] -= h;
-      moistureField[ii] -= m;
-      nutrientField[ii] = Math.max(0, nutrientField[ii] - n);
-      c.energy = Math.min(c.energy + (h + m + n) * 10, 260);
-    }
+    c.energy = Math.min(c.energy + gain, 260);
 
     // Only squash cells that fail to recover enough energy after drawing from
     // their local field this tick.
@@ -591,19 +567,9 @@ function loadSelectedImage() {
   img.src = tryUrls[idx];
 }
 
-function speciesFromRGB(r:number,g:number,b:number): Species {
-  const R = r/255, G = g/255, B = b/255;
-  const m = Math.max(R,G,B), sum = R+G+B;
-  if (sum === 0) return "blend";
-  const close = (a:number,b:number)=> Math.abs(a-b) < 0.12;
-  if ((close(R,G)&&R>0.3) || (close(R,B)&&R>0.3) || (close(G,B)&&G>0.3)) return "blend";
-  return (m===R?"plasma":m===B?"water":"plant");
-}
-
 const ALPHA_MIN = 0.01
 
 function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): GridCell {
-  const sp = speciesFromRGB(r,g,b);
   const A = Math.max(ALPHA_MIN, a);
   const strength = (A/255);              // weight 0..1
   let energy = 60 + strength*140;
@@ -611,14 +577,10 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
   let aggression  = (r/255)*0.9;         // red=fighty
   let fertility   = 0.25 + (b/255)*0.5;  // blue=bonding
 
-  if (sp === "plasma")   { energy += 20; metabolism += 0.05; fertility += 0.05; }
-  if (sp === "water")    { metabolism -= 0.05; aggression *= 0.5; fertility += 0.1; }
-  if (sp === "plant")    { metabolism += 0.08; aggression *= 0.6; }
-
   const heading = (Math.floor(rand()*4) as Heading);
   const cell: GridCell = {
     r, g, b, a, x: px, y: py, energy, alive: true, birthTick: tickCount, age: 0,
-    species: sp, aggression, fertility, metabolism,
+    aggression, fertility, metabolism,
     strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
   };
 
@@ -628,14 +590,10 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
   // initial resource to metabolise which prevents the whole population from
   // dying out in the opening moments of a game.
   const idx = I(px, py);
-  if (sp === "plasma")      heatField[idx]     += 0.3;
-  else if (sp === "water")  moistureField[idx] += 0.3;
-  else if (sp === "plant")  nutrientField[idx] += 0.3;
-  else {
-    heatField[idx] += 0.1;
-    moistureField[idx] += 0.1;
-    nutrientField[idx] += 0.1;
-  }
+  const Rf = r/255, Gf = g/255, Bf = b/255;
+  heatField[idx]     += 0.1 + 0.2*Rf;
+  moistureField[idx] += 0.1 + 0.2*Bf;
+  nutrientField[idx] += 0.1 + 0.2*Gf;
 
   return cell;
 }
@@ -706,11 +664,8 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     const i = I(nx,ny);
 
     const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
-    let want = 0;
-    if (cell.species === "plasma") want =  (+heat*1.2) + (-wet*0.8) + (+nut*0.2);
-    else if (cell.species === "water") want = (-heat*0.7) + (+wet*1.2) + (+nut*0.4);
-    else if (cell.species === "plant") want = (-heat*0.6) + (+wet*0.8) + (+nut*1.1);
-    else                               want = (+heat*0.4) + (+wet*0.6) + (+nut*0.6);
+    const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
+    let want = heat*Rf + wet*Bf + nut*Gf + (heat+wet+nut)*0.05;
 
     // Stronger cells should be less deterred by solid tiles. Previously the
     // penalty increased with strength, causing fragile cells to push through
@@ -742,8 +697,9 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const tIndex = key;
 
   if (solidGrid[tIndex] > 0){
-    if (cell.species === "water"){
-      const erode = Math.min(solidGrid[tIndex], 0.05 + 0.1*(cell.energy/200));
+    const Bf = cell.b/255;
+    if (Bf > 0.2){
+      const erode = Math.min(solidGrid[tIndex], Bf*(0.05 + 0.1*(cell.energy/200)));
       solidGrid[tIndex] -= erode;
       moistureField[tIndex] += erode*0.5;
 
@@ -864,9 +820,10 @@ function recordDeath(cell: GridCell, reason: "war" | "squish") {
   solidGrid[i] = Math.min(solidGrid[i] + solidAdd, 6);
 
   const energy = cell.energy;
-  moistureField[i] += (cell.species==="water") ? energy*0.02 : 0.01*energy;
-  heatField[i]     += (cell.species==="plasma")? energy*0.03 : 0.005*energy;
-  nutrientField[i] += (cell.species==="plant") ? energy*0.04 : 0.01*energy;
+  const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
+  moistureField[i] += energy*(0.01 + 0.02*Bf);
+  heatField[i]     += energy*(0.005 + 0.03*Rf);
+  nutrientField[i] += energy*(0.01 + 0.04*Gf);
 
   spatialMap[I(cell.x, cell.y)] = null;
   const index = livingCells.value.findIndex(c => c === cell);
@@ -875,10 +832,10 @@ function recordDeath(cell: GridCell, reason: "war" | "squish") {
 
 function deposit(cell:GridCell){
   const i = I(cell.x, cell.y);
-  if (cell.species === "plasma" ) heatField[i]     += 0.12 + 0.08*(cell.energy/200);
-  if (cell.species === "water"  ) moistureField[i] += 0.15 + 0.06*(cell.energy/200);
-  if (cell.species === "plant"  ) nutrientField[i] += 0.10 + 0.10*(cell.energy/200);
-  if (cell.species === "blend"  ) { heatField[i]+=0.05; moistureField[i]+=0.05; nutrientField[i]+=0.05; }
+  const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
+  heatField[i]     += (0.02 + 0.08*(cell.energy/200)) * Rf;
+  moistureField[i] += (0.02 + 0.06*(cell.energy/200)) * Bf;
+  nutrientField[i] += (0.02 + 0.10*(cell.energy/200)) * Gf;
 }
 
 /* ===================== Draw ===================== */
@@ -1012,7 +969,7 @@ const avgLifespan = computed(() => {
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-row{display:grid;grid-template-columns:repeat(8,auto);gap:.25rem;position:relative}
+.group-row{display:grid;grid-template-columns:repeat(7,auto);gap:.25rem;position:relative}
 .group-row.header{font-weight:700}
 .group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
 .colour-cell{display:flex;align-items:center;gap:.25rem}

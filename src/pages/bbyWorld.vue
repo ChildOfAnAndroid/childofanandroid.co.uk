@@ -711,6 +711,23 @@ function update() {
 
     // transparency fades over time based on each cell's inherent decay rate
     c.a = Math.max(0, c.a - c.decayRate);
+
+    // pixels that clump lose additional size so massive blobs
+    // cannot accumulate without a supporting mechanism.
+    let neighbourCount = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = (c.x + dx + S()) % S();
+        const ny = (c.y + dy + S()) % S();
+        const n = spatialMap[I(nx, ny)];
+        if (n && n.alive) neighbourCount++;
+      }
+    }
+    if (neighbourCount >= 4) {
+      c.a = Math.max(0, c.a - (neighbourCount - 3) * 0.5);
+    }
+
     c.strength = c.a / 255;
     if (c.a < VISIBLE_ALPHA) {
       recordDeath(c, "fade");

@@ -684,6 +684,15 @@ function update() {
     // Only squash cells that fail to recover enough energy after drawing from
     // their local field this tick.
     if (c.energy <= 0) {
+      if (isBlueDominant) {
+        const escape = findEmptyAdjacent(c.x, c.y);
+        if (escape) {
+          const [ex, ey] = escape;
+          performMove(c, ex, ey);
+          c.energy = 5;
+          continue;
+        }
+      }
       recordDeath(c, "squish");
       continue;
     }
@@ -834,10 +843,14 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
 
     const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
     const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
+    const isRedDominant = Rf > 0.5 && Rf > Bf && Rf > Gf;
+    const isBlueDominant = Bf > 0.5 && Bf > Rf && Bf > Gf;
+    const isGreenDominant = Gf > 0.5 && Gf > Rf && Gf > Bf;
     let want = heat*Rf + wet*Bf + nut*Gf + (heat+wet+nut)*0.05;
-    // Blue cells shy from climbing higher ground
+    // Blue cells shy from climbing higher ground while red cells seek it
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
-    want -= Math.max(0, hDiff) * Bf * 0.5;
+    if (isBlueDominant) want -= Math.max(0, hDiff) * Bf * 0.5;
+    if (isRedDominant)  want += hDiff * Rf * 0.5;
 
     // Stronger cells should be less deterred by solid tiles. Previously the
     // penalty increased with strength, causing fragile cells to push through
@@ -851,6 +864,14 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // Weak cells struggle in wet terrain, so make damp tiles less appealing
     // for them. Stronger cells are less affected by moisture.
     score -= (1 - cell.strength) * wet * 0.2;
+
+    if (isGreenDominant) {
+      if (wet > 0.1 && hasNearbyGreenBlue(nx, ny, 2)) {
+        score += wet * 0.3;
+      } else {
+        score -= 0.4;
+      }
+    }
 
     // --- Social bias ---
     // Peek at the neighbour in this direction. Compatible neighbours draw
@@ -900,6 +921,24 @@ function countOccupiedAdjacent(x:number,y:number): number {
     if (spatialMap[I(nx,ny)]) c++;
   }
   return c;
+}
+
+function hasNearbyGreenBlue(x:number,y:number,dist=2): boolean {
+  for (let dy=-dist; dy<=dist; dy++){
+    for (let dx=-dist; dx<=dist; dx++){
+      if (dx===0 && dy===0) continue;
+      const nx=(x+dx+S())%S();
+      const ny=(y+dy+S())%S();
+      const neighbour = spatialMap[I(nx,ny)];
+      if (neighbour && neighbour.alive){
+        const r = neighbour.r/255, g = neighbour.g/255, b = neighbour.b/255;
+        const gDom = g>0.5 && g>r && g>b;
+        const bDom = b>0.5 && b>r && b>g;
+        if (gDom || bDom) return true;
+      }
+    }
+  }
+  return false;
 }
 
 function attemptMove(cell:GridCell, dx:number, dy:number): boolean {

@@ -49,10 +49,9 @@
                 <span>colour</span>
                 <span>count</span>
                 <span>%</span>
+                <span>age</span>
+                <span>energy</span>
                 <span>strength</span>
-                <span>agg</span>
-                <span>fert</span>
-                <span>meta</span>
               </div>
               <div
                 class="group-row"
@@ -66,10 +65,9 @@
                 </span>
                 <span>{{ g.count }}</span>
                 <span>{{ g.percentage.toFixed(1) }}%</span>
+                <span>{{ g.avgAge.toFixed(1) }}</span>
+                <span>{{ g.avgEnergy.toFixed(1) }}</span>
                 <span>{{ g.avgStrength.toFixed(2) }}</span>
-                <span>{{ g.avgAggression.toFixed(2) }}</span>
-                <span>{{ g.avgFertility.toFixed(2) }}</span>
-                <span>{{ g.avgMetabolism.toFixed(2) }}</span>
               </div>
             </div>
           </div>
@@ -82,7 +80,7 @@
               <p><strong>Trade-offs:</strong> excess red burns energy, greens need elbow-room, blues pool but slip off heights, and high alpha is mighty yet sluggish.</p>
               <p><strong>Genetics:</strong> when two cells merge, each colour channel mixes according to parental strength so offspring wear a visible blend. New births flash briefly to mark their arrival.</p>
               <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
-              <p><strong>Group stats:</strong> % shows each colour's share of living cells.</p>
+              <p><strong>Group stats:</strong> % shows each colour's share of living cells; age and energy track group averages.</p>
             </div>
           </div>
 
@@ -234,10 +232,9 @@ interface ColourGroupStat {
   colour: string;
   count: number;
   percentage: number;
+  avgAge: number;
+  avgEnergy: number;
   avgStrength: number;
-  avgAggression: number;
-  avgFertility: number;
-  avgMetabolism: number;
 }
 
 function rgbToHex(r: number, g: number, b: number) {
@@ -248,9 +245,8 @@ const groupStats = computed<ColourGroupStat[]>(() => {
   const base = {
     count: 0,
     totalStrength: 0,
-    totalAggression: 0,
-    totalFertility: 0,
-    totalMetabolism: 0,
+    totalAge: 0,
+    totalEnergy: 0,
   };
   const groups: Record<string, typeof base> = {};
   const STEP = 32; // bucket size for colour grouping
@@ -260,19 +256,17 @@ const groupStats = computed<ColourGroupStat[]>(() => {
     const g = groups[key] || (groups[key] = { ...base });
     g.count++;
     g.totalStrength += c.strength;
-    g.totalAggression += c.aggression;
-    g.totalFertility += c.fertility;
-    g.totalMetabolism += c.metabolism;
+    g.totalAge += c.age;
+    g.totalEnergy += c.energy;
   }
   const total = livingCells.value.length;
   return Object.entries(groups).map(([colour, grp]) => ({
     colour,
     count: grp.count,
     percentage: total ? (grp.count / total) * 100 : 0,
+    avgAge: grp.count ? grp.totalAge / grp.count : 0,
+    avgEnergy: grp.count ? grp.totalEnergy / grp.count : 0,
     avgStrength: grp.count ? grp.totalStrength / grp.count : 0,
-    avgAggression: grp.count ? grp.totalAggression / grp.count : 0,
-    avgFertility: grp.count ? grp.totalFertility / grp.count : 0,
-    avgMetabolism: grp.count ? grp.totalMetabolism / grp.count : 0,
   }));
 });
 

@@ -8,11 +8,11 @@
 
           <div class="grp">
             <label class="section" for="board-size">board size</label>
-            <select id="board-size" v-model.number="boardSize">
-              <option :value="128">128 × 128</option>
-              <option :value="256">256 × 256</option>
-              <option :value="512">512 × 512</option>
-            </select>
+            <div class="row3">
+              <button class="action" @click="boardSize = Math.max(16, boardSize - 16)">-</button>
+              <input id="board-size" type="number" v-model.number="boardSize" min="16" step="16" />
+              <button class="action" @click="boardSize = Math.min(1024, boardSize + 16)">+</button>
+            </div>
             <small style="opacity:.7">changing size clears the world</small>
           </div>
 
@@ -22,12 +22,18 @@
           </div>
 
           <div class="grp">
-            <label class="section" for="card-select">select a bby to place:</label>
-            <select id="card-select" v-model="selectedCardLabel" @change="loadSelectedImage">
-              <option v-for="card in cards" :value="card.label" :key="card.label">
-                {{ card.label }}
-              </option>
-            </select>
+            <label class="section">select a bby to place:</label>
+            <div class="card-swatch-bar">
+              <button
+                v-for="card in cards"
+                :key="card.label"
+                class="card-swatch"
+                :class="{ selected: selectedCardLabel === card.label }"
+                @click="selectCard(card.label)"
+              >
+                <img :src="card.stamp_url || card.url" :alt="card.label" />
+              </button>
+            </div>
           </div>
 
           <div class="grp">
@@ -168,7 +174,7 @@ function formatTicks(ticks: number) {
 }
 
 /* ============== BOARD SIZE (dynamic) ============== */
-const boardSize = ref<number>(256);           // 128 / 256 / 512
+const boardSize = ref<number>(64);            // default 64×64
 function S(){ return boardSize.value; }       // size getter everywhere
 
 /* ===================== UI/Viewport ===================== */
@@ -229,6 +235,10 @@ function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 
 const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);
 const selectedCardLabel = ref<string | null>(null);
 let loadedImageData: ImageData | null = null;
+
+function selectCard(label: string) {
+  selectedCardLabel.value = label;
+}
 
 /* ===================== Cell / World Types ===================== */
 type Heading = 0|1|2|3;
@@ -448,6 +458,7 @@ onUnmounted(() => {
 });
 
 watch(boardSize, () => applyBoardSize());
+watch(selectedCardLabel, () => loadSelectedImage());
 
 /* ===================== Main Loop ===================== */
 const MAX_UPDATES_PER_FRAME = 5;
@@ -1569,5 +1580,10 @@ const avgLifespan = computed(() => {
 .row2{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem}
 .row3{display:grid;grid-template-columns:1fr auto 1fr;gap:.5rem;align-items:center}
 .zoom-display{text-align:center;font-size:var(--small-font-size)}
+#board-size{width:4rem;text-align:center}
+.card-swatch-bar{display:flex;flex-wrap:wrap;gap:.5rem}
+.card-swatch{border:var(--border);padding:2px;background:var(--panel-colour);cursor:pointer}
+.card-swatch img{width:32px;height:32px;image-rendering:pixelated;display:block}
+.card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
 @media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

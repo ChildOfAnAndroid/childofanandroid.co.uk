@@ -537,7 +537,7 @@ function update() {
     }
     c.energy = Math.min(c.energy + gain, 260);
 
-    // Blue cells slowly erode nearby solids, releasing resources
+    // Blue cells slowly erode nearby solids and push debris outward
     if (Bf > 0) {
       const erosion = 0.004 * Bf;
       for (let dy = -1; dy <= 1; dy++) {
@@ -548,10 +548,60 @@ function update() {
           const take = Math.min(erosion, solidGrid[ni]);
           if (take > 0) {
             solidGrid[ni] -= take;
-            moistureField[ni] += take * 0.6;
-            nutrientField[ni] += take * 0.3;
+
+            // determine where to push removed material
+            let px: number, py: number;
+            if (dx === 0 && dy === 0) {
+              const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+              const d = dirs[(rand() * dirs.length) | 0];
+              px = (c.x + d[0] + S()) % S();
+              py = (c.y + d[1] + S()) % S();
+            } else {
+              px = (c.x + dx * 2 + S()) % S();
+              py = (c.y + dy * 2 + S()) % S();
+            }
+            const pi = I(px, py);
+            const push = take * 0.5;
+            solidGrid[pi] = Math.min(6, solidGrid[pi] + push);
+
+            const resource = take - push;
+            moistureField[ni] += resource * 0.6;
+            nutrientField[ni] += resource * 0.3;
+            heatField[ni]     += resource * 0.1;
+          }
+        }
+      }
+    }
+
+    // Green cells chew through nearby ground, releasing nutrients
+    if (Gf > 0) {
+      const erosion = 0.002 * Gf;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = (c.x + dx + S()) % S();
+          const ny = (c.y + dy + S()) % S();
+          const ni = I(nx, ny);
+          const take = Math.min(erosion, solidGrid[ni]);
+          if (take > 0) {
+            solidGrid[ni] -= take;
+            nutrientField[ni] += take * 0.8;
+            moistureField[ni] += take * 0.1;
             heatField[ni]     += take * 0.1;
           }
+        }
+      }
+    }
+
+    // Red cells bake the earth, hardening ground and drying it out
+    if (Rf > 0) {
+      const harden = 0.0025 * Rf;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = (c.x + dx + S()) % S();
+          const ny = (c.y + dy + S()) % S();
+          const ni = I(nx, ny);
+          solidGrid[ni] = Math.min(6, solidGrid[ni] + harden);
+          moistureField[ni] = Math.max(0, moistureField[ni] - harden * 0.5);
         }
       }
     }

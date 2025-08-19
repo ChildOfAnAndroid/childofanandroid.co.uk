@@ -40,7 +40,7 @@
             <label class="section">stats</label>
             <div class="world-stats">
               <span>TIME: {{ elapsedTimeDisplay }}</span>
-              <span>CELLS: {{ livingCells.length }}</span>
+              <span>CELLS: {{ livingCells.filter(c => c.alive).length }}</span>
               <span>SPAWNS: {{ stats.spawns }}</span>
               <span>AVG LIFESPAN: {{ avgLifespan }}</span>
               <br>
@@ -379,28 +379,45 @@ function update() {
     if (normG > normR && normG > normB && solidGrid[idx] > 0) { const conversion = Math.min(solidGrid[idx], 0.01 * normG); solidGrid[idx] -= conversion; fieldLam[idx] += conversion * 5; }
   }
   diffuseAndTransform(fieldPsi, fieldSig, fieldLam); diffuseAndTransform(fieldLam, fieldPsi, fieldSig); diffuseAndTransform(fieldSig, fieldLam, fieldPsi);
-  for (let i = livingCells.value.length - 1; i >= 0; i--) {
-    const c = livingCells.value[i]; if (!c.alive) continue;
+  
+  // Create a new array for living cells for the next tick
+  const nextLivingCells = [];
+  for (const c of livingCells.value) {
+    if (!c.alive) continue;
     const idx = I(c.x, c.y); const resonance = (fieldPsi[idx]*(c.r/255))+(fieldLam[idx]*(c.g/255))+(fieldSig[idx]*(c.b/255));
     const dissonance = (fieldPsi[idx]*((255-c.r)/255))+(fieldLam[idx]*((255-c.g)/255))+(fieldSig[idx]*((255-c.b)/255));
     const chargeDelta = (resonance - dissonance) * 0.8; c.charge = Math.min(MAX_CHARGE, c.charge + chargeDelta - METABOLIC_COST);
     const neighborCount = countAdjacent(c.x, c.y);
     if (neighborCount > 4) {
       const crowdPenalty = (neighborCount - 4) * 0.5; c.charge -= crowdPenalty;
-      if (c.charge <= 0) { recordDecay(c, "overcrowd"); continue; }
+      if (c.charge <= 0) {
+        recordDecay(c, "overcrowd");
+        continue; // Skip pushing to nextLivingCells
+      }
     }
-    if (c.charge <= 0) { recordDecay(c, "charge"); }
+    if (c.charge <= 0) {
+      recordDecay(c, "charge");
+    } else {
+      nextLivingCells.push(c);
+    }
   }
+  livingCells.value = nextLivingCells;
+
   const updatesPerTick = Math.max(1, Math.floor(livingCells.value.length / UPDATES_PER_TICK_DIVISOR));
   for (let i = 0; i < updatesPerTick; i++) {
     if (livingCells.value.length === 0) break;
     const cellIndex = Math.floor(rand() * livingCells.value.length);
     const c = livingCells.value[cellIndex]; if (c && c.alive) attemptMove(c);
   }
-  if (tickCount.value % 60 === 0) { livingCells.value = livingCells.value.filter(c => c.alive); }
 }
 
-function I(x: number, y: number): number { const s = S(); return ( (x & (s - 1)) + (y & (s - 1)) * s ) >>> 0; }
+// FIXED: This function now correctly wraps coordinates around the grid.
+function I(x: number, y: number): number {
+  const s = S();
+  const wrappedX = (x % s + s) % s;
+  const wrappedY = (y % s + s) % s;
+  return wrappedY * s + wrappedX;
+}
 
 // --- Physics & Cell Subroutines ---
 function diffuseAndTransform(field: Float32Array, feedField: Float32Array, transformField: Float32Array) {
@@ -441,7 +458,7 @@ function attemptMove(c: Cell) {
     }
 }
 function handleInteraction(attacker: Cell, defender: Cell) {
-  stats.value.conflicts++; const resonance = 1 - (Math.abs(attacker.r - defender.r) + Math.abs(attacker.g - defender.g) + Math.abs(attacker.b - defender.b)) / (765);
+  const resonance = 1 - (Math.abs(attacker.r - defender.r) + Math.abs(attacker.g - defender.g) + Math.abs(attacker.b - defender.b)) / (765);
   if (resonance > 0.8 && (attacker.charge + defender.charge) > MAX_CHARGE * 1.5 && tickCount.value > attacker.lastSpawnTick + SPAWN_COOLDOWN && tickCount.value > defender.lastSpawnTick + SPAWN_COOLDOWN) {
     const spawnLoc = findEmptyAdjacent(attacker.x, attacker.y) || findEmptyAdjacent(defender.x, defender.y);
     if (spawnLoc) {
@@ -505,8 +522,10 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
   if (!frameImg) return; ctx.imageSmoothingEnabled = false; const s = S();
   for (let y = 0; y < s; y++) { for (let x = 0; x < s; x++) {
       const off = (x + y * s) * 4; const ii = I(x, y); const rock = solidGrid[ii] * 30;
-      frame[off] = Math.min(255, fieldPsi[ii] * 40 + rock); frame[off + 1] = Math.min(255, fieldLam[ii] * 40 + rock);
-      frame[off + 2] = Math.min(255, fieldSig[ii] * 40 + rock); frame[off + 3] = 255;
+      frame[off] = Math.min(255, 10 + fieldPsi[ii] * 40 + rock);
+      frame[off + 1] = Math.min(255, 10 + fieldLam[ii] * 40 + rock);
+      frame[off + 2] = Math.min(255, 10 + fieldSig[ii] * 40 + rock);
+      frame[off + 3] = 255;
   }}
   for (const c of livingCells.value) { if (!c.alive) continue;
     const off = (I(c.x, c.y)) * 4;
@@ -525,6 +544,8 @@ onMounted(async () => {
     if (cards.value.length > 0) selectCard(cards.value[0].label);
   } catch (error) { console.error("Failed to fetch gallery:", error); }
   applyBoardSize();
+  let resizeObs = new ResizeObserver(() => computeBaseScale());
+  if (stageEl.value) resizeObs.observe(stageEl.value);
   if (scopeCanvas.value) { scopeCanvas.value.width = 256; scopeCanvas.value.height = 256; }
   animationFrameId = requestAnimationFrame(mainLoop);
 });
@@ -536,20 +557,27 @@ function loadSelectedImage() {
   const selected = cards.value.find(c => c.label === selectedCardLabel.value); if (!selected) return;
   const img = new Image(); img.crossOrigin = "Anonymous";
   img.onload = () => {
+    const scale = Math.min(1, 48 / Math.max(img.width, img.height));
+    const outW = Math.max(1, Math.floor(img.width * scale));
+    const outH = Math.max(1, Math.floor(img.height * scale));
     const tempCanvas = document.createElement("canvas");
     const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = img.width; tempCanvas.height = img.height; ctx.drawImage(img, 0, 0);
-    loadedImageData = ctx.getImageData(0, 0, img.width, img.height);
+    tempCanvas.width = outW; tempCanvas.height = outH; (ctx as any).imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, outW, outH);
+    loadedImageData = ctx.getImageData(0, 0, outW, outH);
   };
   img.src = selected.stamp_url || selected.url;
 }
 
+// FIXED: This function now correctly calculates world coordinates from a mouse click.
 function screenToWorld(event: MouseEvent): {x: number, y: number} | null {
     const canvas = gameCanvas.value;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const worldX = Math.floor((event.clientX - rect.left - pan.value.x) / totalScale.value);
-    const worldY = Math.floor((event.clientY - rect.top - pan.value.y) / totalScale.value);
+    // The ratio of the canvas's logical width to its on-screen width gives the correct scale factor.
+    const scale = canvas.width / rect.width;
+    const worldX = Math.floor((event.clientX - rect.left) * scale);
+    const worldY = Math.floor((event.clientY - rect.top) * scale);
     return {x: worldX, y: worldY};
 }
 
@@ -567,6 +595,7 @@ function placeImageAt(worldX: number, worldY: number) {
         const i = (y * loadedImageData.width + x) * 4; const a = loadedImageData.data[i + 3];
         if (a > 50) {
             const pX = startX + x, pY = startY + y;
+            // The new I(pX, pY) handles wrapping automatically
             if (!spatialMap[I(pX, pY)]) {
                 const r = loadedImageData.data[i], g = loadedImageData.data[i+1], b = loadedImageData.data[i+2];
                 spawn(pX, pY, { color: {r, g, b, a} });
@@ -575,7 +604,7 @@ function placeImageAt(worldX: number, worldY: number) {
     }}
 }
 const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
-const avgLifespan = computed(() => stats.value.deadCount > 0 ? formatTicks(stats.value.totalLifespan / stats.value.deadCount) : "---");
+const avgLifespan = computed(() => stats.value.deadCount > 0 ? formatTicks(Math.floor(stats.value.totalLifespan / stats.value.deadCount)) : "---");
 const selectedCell = ref<Cell | null>(null);
 function selectCellById(id: number) { const cell = cellById[id]; if (cell && cell.alive) selectedCell.value = cell; }
 const selectedFamily = computed(() => {

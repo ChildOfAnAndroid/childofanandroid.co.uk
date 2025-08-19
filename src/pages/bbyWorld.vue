@@ -167,11 +167,13 @@ type GridCell = {
 
 /* ===================== World State ===================== */
 const livingCells = ref<GridCell[]>([]);
-// Use an array-based spatial index keyed by numeric cell indices
-// rather than a Map with "x,y" string keys. Numeric indices are
-// produced via the I(x,y) helper and dramatically reduce the
-// number of temporary allocations when many pixels are on the
-// board, preventing crashes from excessive memory churn.
+// A simple array-based spatial index is used instead of a Map with
+// string keys.  During large "light blooms" thousands of cells can be
+// spawned and moved every tick.  Previously this relied on Map lookups
+// which generated many temporary strings and objects, exhausting memory
+// and crashing the page.  By indexing directly into an array using the
+// numeric key produced by I(x,y), we eliminate those allocations and keep
+// lookups O(1) with minimal churn.
 let spatialMap: (GridCell | null)[] = [];
 
 const stats = ref({
@@ -220,7 +222,8 @@ function allocateWorldArrays(size:number){
 }
 
 function clearWorld(){
-  livingCells.value.splice(0, livingCells.value.length);
+  // Reset arrays without creating new ones to avoid extra allocations
+  livingCells.value.length = 0;
   spatialMap.fill(null);
   stats.value = { warDeaths:0, babyMerges:0, squishDeaths:0, totalLifespan:0, deadCount:0 };
   tickCount = 0;

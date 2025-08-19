@@ -1058,8 +1058,12 @@ const FERTILITY_ALPHA_MIN = 0.3
 const FERTILITY_ALPHA_MAX = 0.9
 const FERTILITY_ALPHA_PEAK = 0.7
 const BIRTH_FLASH_TICKS = 8
-const MIN_DECAY_RATE = 0.02
-const MAX_DECAY_RATE = 0.05
+// Cells previously faded extremely slowly which led to a world that would
+// quickly fill and then stagnate. Bumping the decay range up causes even
+// well-fed cells to lose opacity and expire at a reasonable pace so the
+// environment can continually recycle.
+const MIN_DECAY_RATE = 0.1
+const MAX_DECAY_RATE = 0.3
 
 function randomDecayRate(){
   return MIN_DECAY_RATE + rand() * (MAX_DECAY_RATE - MIN_DECAY_RATE);

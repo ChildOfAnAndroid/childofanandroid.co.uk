@@ -155,6 +155,10 @@ import { bbyUse } from '@/composables/bbyUse.ts';
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
 
+// world time constants
+const TICKS_PER_DAY = 69;
+const DAYS_PER_YEAR = 420;
+
 /* ============== BOARD SIZE (dynamic) ============== */
 const boardSize = ref<number>(256);           // 128 / 256 / 512
 function S(){ return boardSize.value; }       // size getter everywhere
@@ -299,9 +303,7 @@ const sortedGroupStats = computed(() =>
 let animationFrameId: number | null = null;
 let lastTime = 0;
 let timeSinceLastTick = 0;
-let tickCount = 0;
-const startTime = ref(performance.now());
-const elapsedMs = ref(0);
+const tickCount = ref(0);
 
 /* Fields + solids (allocated per size) */
 let heatField      = new Float32Array(S()*S());
@@ -347,9 +349,7 @@ function clearWorld(){
   livingCells.value.length = 0;
   spatialMap.fill(null);
   stats.value = { warDeaths:0, babyMerges:0, squishDeaths:0, totalLifespan:0, deadCount:0 };
-  tickCount = 0;
-  startTime.value = performance.now();
-  elapsedMs.value = 0;
+  tickCount.value = 0;
 }
 
 function applyBoardSize(){
@@ -440,7 +440,6 @@ function mainLoop(timestamp: number) {
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   timeSinceLastTick += deltaTime;
-  elapsedMs.value = timestamp - startTime.value;
 
   // Cap the number of simulation updates processed in a single frame. When
   // the tab is hidden or timers are throttled `deltaTime` can grow very
@@ -509,7 +508,7 @@ function worldTick(){
 }
 
 function update() {
-  tickCount++;
+  tickCount.value++;
   worldTick();
 
   // metabolism & micro-reactions
@@ -801,7 +800,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number): Grid
 
   const heading = (Math.floor(rand()*4) as Heading);
   const cell: GridCell = {
-    r, g, b, a, x: px, y: py, energy, alive: true, birthTick: tickCount, age: 0,
+    r, g, b, a, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
     aggression, fertility, metabolism,
     strength, heading, turnBias: 0.3 + (1 - strength) * 0.4,
     coop: 0,
@@ -1142,7 +1141,7 @@ function recordDeath(cell: GridCell, reason: "war" | "squish") {
   if (!cell.alive) return;
   cell.alive = false;
 
-  stats.value.totalLifespan += tickCount - cell.birthTick;
+  stats.value.totalLifespan += tickCount.value - cell.birthTick;
   stats.value.deadCount++;
   if (reason === "war") stats.value.warDeaths++;
   if (reason === "squish") stats.value.squishDeaths++;
@@ -1310,14 +1309,12 @@ const updateScope = throttle((event: MouseEvent) => {
 
 /* ===================== Derived ===================== */
 const elapsedTimeDisplay = computed(() => {
-  const totalSeconds = Math.floor(elapsedMs.value / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${hours.toString().padStart(2, '0')}:${minutes
-    .toString()
-    .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const totalDays = Math.floor(tickCount.value / TICKS_PER_DAY);
+  const year = Math.floor(totalDays / DAYS_PER_YEAR);
+  const day = totalDays % DAYS_PER_YEAR;
+  return `Year ${year} Day ${day}`;
 });
+
 const avgLifespan = computed(() => {
   return stats.value.deadCount > 0
     ? (stats.value.totalLifespan / stats.value.deadCount).toFixed(1)

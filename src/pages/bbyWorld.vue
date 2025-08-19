@@ -565,6 +565,22 @@ function update() {
       }
     }
 
+    // --- Cooperation: share energy with compatible neighbours ---
+    const shareDirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dx,dy] of shareDirs){
+      const nx = (c.x + dx + S()) % S();
+      const ny = (c.y + dy + S()) % S();
+      const neighbour = spatialMap[I(nx, ny)];
+      if (!neighbour || !neighbour.alive) continue;
+      const comp = compatibility(c, neighbour);
+      if (comp > 0.65 && c.energy > neighbour.energy + 20){
+        const diff = c.energy - neighbour.energy;
+        const transfer = Math.min(diff * 0.25 * comp, 30);
+        c.energy -= transfer;
+        neighbour.energy = Math.min(neighbour.energy + transfer, 260);
+      }
+    }
+
     // Only squash cells that fail to recover enough energy after drawing from
     // their local field this tick.
     if (c.energy <= 0) {
@@ -735,6 +751,21 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // Weak cells struggle in wet terrain, so make damp tiles less appealing
     // for them. Stronger cells are less affected by moisture.
     score -= (1 - cell.strength) * wet * 0.2;
+
+    // --- Social bias ---
+    // Peek at the neighbour in this direction. Compatible neighbours draw
+    // cells together while enemies repel, nudging movement toward emergent
+    // groups.
+    const neighbour = spatialMap[i];
+    if (neighbour && neighbour.alive) {
+      const comp = compatibility(cell, neighbour);
+      if (comp > 0.6) {
+        score += comp * 0.2;
+      } else {
+        score -= (1 - comp) * 0.2;
+      }
+    }
+
     score += (rand()-0.5)*0.05;
 
     prefs.push({h: h as Heading, score});

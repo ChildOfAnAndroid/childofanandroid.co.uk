@@ -516,6 +516,25 @@ function update() {
     }
     c.energy = Math.min(c.energy + gain, 260);
 
+    // Blue cells slowly erode nearby solids, releasing resources
+    if (Bf > 0) {
+      const erosion = 0.004 * Bf;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = (c.x + dx + S()) % S();
+          const ny = (c.y + dy + S()) % S();
+          const ni = I(nx, ny);
+          const take = Math.min(erosion, solidGrid[ni]);
+          if (take > 0) {
+            solidGrid[ni] -= take;
+            moistureField[ni] += take * 0.6;
+            nutrientField[ni] += take * 0.3;
+            heatField[ni]     += take * 0.1;
+          }
+        }
+      }
+    }
+
     // Green cells crave space to grow – reward solitude but punish crowding
     const neighbours = countOccupiedAdjacent(c.x, c.y);
     if (Gf > 0) {
@@ -907,9 +926,16 @@ function recordDeath(cell: GridCell, reason: "war" | "squish") {
 function deposit(cell:GridCell){
   const i = I(cell.x, cell.y);
   const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
-  heatField[i]     += (0.02 + 0.08*(cell.energy/200)) * Rf;
-  moistureField[i] += (0.02 + 0.06*(cell.energy/200)) * Bf;
-  nutrientField[i] += (0.02 + 0.10*(cell.energy/200)) * Gf;
+  const e = (cell.energy/200);
+  heatField[i]     += (0.02 + 0.08*e) * Rf;
+  moistureField[i] += (0.02 + 0.06*e) * Bf;
+  nutrientField[i] += (0.02 + 0.10*e) * Gf;
+
+  // cross-channel reactions to boost colour interplay
+  moistureField[i] = Math.max(0, moistureField[i] - (0.015*Rf)); // red dries
+  heatField[i]     = Math.max(0, heatField[i] - (0.012*Bf));     // blue cools
+  nutrientField[i] += 0.005*Bf;                                 // water dissolves
+  heatField[i]     += 0.003*Gf;                                 // growth warms
 }
 
 /* ===================== Draw ===================== */

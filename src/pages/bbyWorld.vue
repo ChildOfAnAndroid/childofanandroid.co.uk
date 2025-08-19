@@ -539,6 +539,31 @@ function update() {
       gain += take*10;
       nutrientField[ii] += 0.004*Gf;
     }
+    // Mixed colour synergies encourage varied emergent behaviours by letting
+    // cells with blended channels transmute nearby resources. These effects
+    // provide alternatives to chasing a perfectly neutral colour.
+    const mixRB = Math.min(Rf, Bf); // magenta: steam heats up
+    if (mixRB > 0.3) {
+      const take = Math.min(0.01*mixRB, moistureField[ii]);
+      moistureField[ii] -= take;
+      heatField[ii]     += take*1.5;
+      gain              += take*5;
+    }
+    const mixBG = Math.min(Bf, Gf); // cyan: water feeds growth
+    if (mixBG > 0.3) {
+      const take = Math.min(0.01*mixBG, nutrientField[ii]);
+      nutrientField[ii] -= take;
+      moistureField[ii] += take*1.5;
+      gain              += take*5;
+    }
+    const mixRG = Math.min(Rf, Gf); // yellow: warmth enriches soil
+    if (mixRG > 0.3) {
+      const take = Math.min(0.01*mixRG, heatField[ii]);
+      heatField[ii]     -= take;
+      nutrientField[ii] += take*1.5;
+      gain              += take*5;
+    }
+
     c.energy = Math.min(c.energy + gain, 260);
 
     // Blue cells slowly erode nearby solids and push debris outward
@@ -993,10 +1018,20 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   const wA = cell.strength / totalS;
   const wB = target.strength / totalS;
 
-  const babyR = Math.min(255, Math.round(cell.r*wA + target.r*wB + (rand()*6-3)));
-  const babyG = Math.min(255, Math.round(cell.g*wA + target.g*wB + (rand()*6-3)));
-  const babyB = Math.min(255, Math.round(cell.b*wA + target.b*wB + (rand()*6-3)));
-  const babyA = Math.min(255, Math.round(cell.a*wA + target.a*wB + (rand()*20-10)));
+  // Blend channels but push slightly away from the average so colours don't
+  // collapse toward a neutral grey. The drift is proportional to the parental
+  // difference which encourages stronger hues to persist and mutate.
+  function blendChannel(a:number, b:number, mut:number){
+    const avg = a*wA + b*wB;
+    const diff = a - b;
+    const drift = diff * (rand()*0.25 - 0.125); // bias away from middle
+    return Math.min(255, Math.max(0, Math.round(avg + drift + (rand()*mut - mut/2))));
+  }
+
+  const babyR = blendChannel(cell.r, target.r, 6);
+  const babyG = blendChannel(cell.g, target.g, 6);
+  const babyB = blendChannel(cell.b, target.b, 6);
+  const babyA = blendChannel(cell.a, target.a, 20);
 
   const totalE = Math.max(1, cell.energy + target.energy);
   const kid = makeCell(x,y,babyR,babyG,babyB,babyA);

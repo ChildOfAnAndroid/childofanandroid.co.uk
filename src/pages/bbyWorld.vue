@@ -660,8 +660,8 @@ function update() {
     }
   }
 
-  // move slice
-  const updatesPerTick = Math.ceil(livingCells.value.length / 100) || 1;
+  // move slice — handle a slightly larger portion each tick to keep things lively
+  const updatesPerTick = Math.ceil(livingCells.value.length / 80) || 1;
   for (let i = 0; i < updatesPerTick; i++) {
     const cell = pickRandomLivingCell();
     if (cell) {
@@ -837,7 +837,8 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
       }
     }
 
-    score += (rand()-0.5)*0.05;
+    // amplify a touch of randomness so groups don't lock into perfect stability
+    score += (rand()-0.5)*0.1;
 
     prefs.push({h: h as Heading, score});
   }
@@ -873,7 +874,10 @@ function countOccupiedAdjacent(x:number,y:number): number {
 }
 
 function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
-  if (rand() < cell.strength*0.5) return false;
+  // stronger cells used to sit still half the time which made the world feel static.
+  // reduce the rest chance so even tough pixels wander and bump into neighbours.
+  const restChance = cell.strength*0.2;
+  if (rand() < restChance) return false;
   const newX = (cell.x + dx + S()) % S();
   const newY = (cell.y + dy + S()) % S();
   const key = I(newX, newY);

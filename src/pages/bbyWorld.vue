@@ -67,14 +67,16 @@
           @wheel.prevent="onWheelZoom"
           @contextmenu.prevent
         >
-          <canvas
-            ref="gameCanvas"
-            :width="boardSize"
-            :height="boardSize"
-            @click="placeImage"
-            :style="canvasStyle"
-          />
-          <canvas v-show="scopeActive" ref="scopeCanvas" class="zoom-scope" />
+          <div class="stack">
+            <canvas
+              ref="gameCanvas"
+              :width="boardSize"
+              :height="boardSize"
+              @click="placeImage"
+              :style="canvasStyle"
+            />
+            <canvas v-show="scopeActive" ref="scopeCanvas" class="zoom-scope" />
+          </div>
         </div>
       </div>
     </div>
@@ -83,6 +85,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
+import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 
 // pull Baby’s currentColour + gallery
@@ -697,7 +700,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
 }
 
 /* ===================== Scope ===================== */
-function updateScope(event: MouseEvent) {
+const updateScope = throttle((event: MouseEvent) => {
   if (!scopeActive.value) return;
   const canvas = gameCanvas.value;
   const scope = scopeCanvas.value;
@@ -713,7 +716,7 @@ function updateScope(event: MouseEvent) {
   ctx.drawImage(canvas, x - half, y - half, 32, 32, 0, 0, scope.width, scope.height);
   scope.style.left = `${event.clientX + 20}px`;
   scope.style.top = `${event.clientY + 20}px`;
-}
+}, 16);
 
 /* ===================== Derived ===================== */
 const avgLifespan = computed(() => {
@@ -738,8 +741,9 @@ const avgLifespan = computed(() => {
 .vertical-panel h1{margin:0;text-align:center;line-height:1.05}
 .world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
-.world-stage canvas{position:absolute;top:0;left:0;image-rendering:pixelated}
-.zoom-scope{position:absolute;width:128px;height:128px;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black);pointer-events:none;image-rendering:pixelated}
+.world-stage .stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
+.world-stage .stack canvas:not(.zoom-scope){grid-area:1/1;image-rendering:pixelated}
+.zoom-scope{position:fixed;width:128px;height:128px;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black);pointer-events:none;image-rendering:pixelated}
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
 .action{display:block;width:100%;padding:.4rem .5rem;transition:all .2s ease-out;text-align:center}

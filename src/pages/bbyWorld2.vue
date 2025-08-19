@@ -142,19 +142,6 @@
           </div>
 
           <div class="grp">
-<<<<<<< ours
-            <details>
-              <summary class="section">legend</summary>
-              <div class="legend">
-                <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
-                <p><strong>Colours = genes:</strong> the intensity of each channel is the strength of that trait—red for aggression & heat-seeking, blue boosts moisture affinity, green fuels metabolism & nutrient hunger, while alpha sets overall toughness.</p>
-                <p><strong>Trade-offs:</strong> excess red burns energy, greens need elbow-room, blues pool but slip off heights, and high alpha is mighty yet sluggish.</p>
-                <p><strong>Genetics:</strong> when two cells merge, each colour channel mixes according to parental strength so offspring wear a visible blend. New births flash briefly to mark their arrival.</p>
-                <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
-                <p><strong>Group stats:</strong> % shows each colour's share of living cells; age and energy track group averages.</p>
-              </div>
-            </details>
-=======
             <label class="section" style="cursor:pointer" @click="showLegend = !showLegend">legend</label>
             <div class="legend" v-show="showLegend">
               <p><strong>Shade = strength:</strong> opaque pixels spawn tougher cells; transparent shades are frail but nimble.</p>
@@ -164,7 +151,6 @@
               <p><strong>Attraction:</strong> cells drift toward heat, moisture, or nutrients in proportion to their red, blue, and green channels.</p>
               <p><strong>Group stats:</strong> % shows each colour's share of living cells; age and energy track group averages.</p>
             </div>
->>>>>>> theirs
           </div>
 
           <div class="grp">

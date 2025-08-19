@@ -167,7 +167,14 @@ type GridCell = {
 
 /* ===================== World State ===================== */
 const livingCells = ref<GridCell[]>([]);
-const spatialMap = new Map<string, GridCell>();
+// Use numeric indices instead of "x,y" strings to cut down
+// on temporary allocations when the board holds many pixels.
+// Each cell position is mapped via the I(x,y) helper which
+// produces a unique integer index for the current board size.
+// This greatly reduces memory churn and prevents crashes on
+// large boards where millions of string keys could otherwise be
+// created and garbage collected every tick.
+const spatialMap = new Map<number, GridCell>();
 
 const stats = ref({
   warDeaths: 0, babyMerges: 0, squishDeaths: 0,
@@ -460,11 +467,13 @@ function placeImage(event: MouseEvent) {
       if (a > ALPHA_MIN) {
         const newX = startGridX + x;
         const newY = startGridY + y;
-        const key = `${newX},${newY}`;
-        if (newX>=0 && newX<S() && newY>=0 && newY<S() && !spatialMap.get(key)) {
-          const cell = makeCell(newX, newY, pixels[i], pixels[i+1], pixels[i+2], a);
-          livingCells.value.push(cell);
-          spatialMap.set(key, cell);
+        if (newX>=0 && newX<S() && newY>=0 && newY<S()) {
+          const key = I(newX, newY);
+          if (!spatialMap.get(key)) {
+            const cell = makeCell(newX, newY, pixels[i], pixels[i+1], pixels[i+2], a);
+            livingCells.value.push(cell);
+            spatialMap.set(key, cell);
+          }
         }
       }
     }
@@ -525,7 +534,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
 function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const newX = (cell.x + dx + S()) % S();
   const newY = (cell.y + dy + S()) % S();
-  const key = `${newX},${newY}`;
+  const key = I(newX, newY);
   const target = spatialMap.get(key);
   const tIndex = I(newX,newY);
 
@@ -537,7 +546,7 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
 
       const px = (newX + dx + S()) % S();
       const py = (newY + dy + S()) % S();
-      if (!spatialMap.get(`${px},${py}`)){
+      if (!spatialMap.get(I(px,py))){
         const moved = solidGrid[tIndex]*0.6;
         solidGrid[I(px,py)] += moved;
         solidGrid[tIndex]   -= moved;
@@ -595,9 +604,9 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
 }
 
 function performMove(moving:GridCell, toX:number, toY:number){
-  spatialMap.delete(`${moving.x},${moving.y}`);
+  spatialMap.delete(I(moving.x, moving.y));
   moving.x = toX; moving.y = toY;
-  spatialMap.set(`${toX},${toY}`, moving);
+  spatialMap.set(I(toX, toY), moving);
 }
 
 /* ===================== Interactions ===================== */
@@ -647,7 +656,7 @@ function recordDeath(cell: GridCell, reason: "war" | "squish") {
   heatField[i]     += (cell.species==="plasma")? energy*0.03 : 0.005*energy;
   nutrientField[i] += (cell.species==="plant") ? energy*0.04 : 0.01*energy;
 
-  spatialMap.delete(`${cell.x},${cell.y}`);
+  spatialMap.delete(I(cell.x, cell.y));
   const index = livingCells.value.findIndex(c => c === cell);
   if (index > -1) livingCells.value.splice(index, 1);
 }

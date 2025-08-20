@@ -2,25 +2,40 @@
 <template>
   <div class="page-container bbyworld-page">
     <div class="world-layout">
-      <world-left-panel
-        v-model:boardSize="boardSize"
-        :minBoardSize="32"
-        :cards="cards"
-        :selectedCardLabel="selectedCardLabel"
-        cardLabel="select a cell stamp:"
-        :ticksPerSecond="ticksPerSecond"
-        :zoomFactor="zoomFactor"
-        :scopeActive="scopeActive"
-        @clear-world="clearWorld"
-        @select-card="selectCard"
-        @slow-down="slowDown"
-        @speed-up="speedUp"
-        @zoom-in="zoomIn"
-        @zoom-out="zoomOut"
-        @reset-view="resetView"
-        @toggle-scope="scopeActive = !scopeActive"
-      >
-        <template #stats>
+      <div class="world-left">
+        <div class="vertical-panel">
+          <h1 class="page-title">bbyWorld</h1>
+
+          <div class="grp">
+            <label class="section" for="board-size">board size</label>
+            <div class="row3">
+              <button class="action" @click="boardSize = Math.max(32, boardSize - 16)">-</button>
+              <input id="board-size" type="number" v-model.number="boardSize" min="32" step="16" />
+              <button class="action" @click="boardSize = Math.min(1024, boardSize + 16)">+</button>
+            </div>
+            <small style="opacity:.7">changing size clears the world</small>
+          </div>
+
+          <div class="grp">
+            <label class="section">world</label>
+            <button class="action" @click="clearWorld">clear</button>
+          </div>
+
+          <div class="grp">
+            <label class="section">select a cell stamp:</label>
+            <div class="card-swatch-bar">
+              <button
+                v-for="card in cards"
+                :key="card.label"
+                class="card-swatch"
+                :class="{ selected: selectedCardLabel === card.label }"
+                @click="selectCard(card.label)"
+              >
+                <img :src="card.stamp_url || card.url" :alt="card.label" />
+              </button>
+            </div>
+          </div>
+
           <div class="grp">
             <label class="section">stats</label>
             <div class="world-stats">
@@ -35,9 +50,7 @@
               <span>OVERCROWD: {{ stats.overcrowdDecays }}</span>
             </div>
           </div>
-        </template>
-
-        <template #group-stats>
+          
           <div class="grp">
             <label class="section">colour groups</label>
             <div class="group-stats">
@@ -69,15 +82,13 @@
               </div>
             </div>
           </div>
-        </template>
 
-        <template #cell-info>
           <div class="grp" v-if="selectedCell">
             <label class="section">cell {{ selectedCell.id }} info</label>
             <div class="cell-stats">
               <div class="cell-colour">
                 <span class="colour-swatch" :style="{ background: `rgba(${selectedCell.r},${selectedCell.g},${selectedCell.b},${selectedCell.a/255})` }"></span>
-                <span>{{ selectedCell.r }},{{ selectedCell.g }},{{ selectedCell.b }},{{ selectedCell.a }}</span>
+                <span>{{ selectedCell.r }},{{ selectedCell.g }},${selectedCell.b},${selectedCell.a}</span>
               </div>
               <div>pos: {{ selectedCell.x }}, {{ selectedCell.y }}</div>
               <div>age: {{ formatTicks(selectedCell.age) }}</div>
@@ -85,9 +96,7 @@
               <div>mass: {{ (selectedCell.a / 255).toFixed(2) }}</div>
             </div>
           </div>
-        </template>
 
-        <template #cell-family>
           <div class="grp" v-if="selectedCell">
             <label class="section">cell {{ selectedCell.id }} family</label>
             <div class="family-tree">
@@ -107,9 +116,7 @@
               </div>
             </div>
           </div>
-        </template>
 
-        <template #legend>
           <div class="grp">
             <label class="section">laws of this universe</label>
             <div class="legend">
@@ -120,8 +127,27 @@
               <p><strong>Life & Creation:</strong> Cells live by maintaining Charge through resonance with local fields. New cells are created from the excess energy of resonant interactions, inheriting traits from their parents.</p>
             </div>
           </div>
-        </template>
-      </world-left-panel>
+
+          <div class="grp">
+            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
+            <div class="row2">
+              <button class="action" @click="slowDown">-</button>
+              <button class="action" @click="speedUp">+</button>
+            </div>
+          </div>
+
+          <div class="grp">
+            <label class="section">zoom</label>
+            <div class="row3">
+              <button class="action" @click="zoomOut">-</button>
+              <div class="zoom-display">{{ (zoomFactor*100).toFixed(0) }}%</div>
+              <button class="action" @click="zoomIn">+</button>
+            </div>
+            <button class="action" @click="scopeActive = !scopeActive" :class="{active: scopeActive}">scope</button>
+            <button class="action" @click="resetView">reset view</button>
+          </div>
+        </div>
+      </div>
 
       <div class="world-right">
         <div
@@ -156,7 +182,6 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { throttle } from 'lodash';
-import WorldLeftPanel from '@/components/worldLeftPanel.vue';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY = 100;

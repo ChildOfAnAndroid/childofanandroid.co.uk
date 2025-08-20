@@ -1,45 +1,84 @@
-<!-- CHARIS CAT // bbyWorld — THE DEFINITIVE COMBINED VERSION (2025-08-20)
-     Life-sim cellular automaton with RGBA field + agent layer + pixel-correct stamps.
-     • Menus left, square screen, no top bar. Grid sizes 4/8/16/32/64/128.
-     • Stamps: ANY pixel size (no forced 64), exact pixel→cell mapping, rotate/flip, blend modes, RGBA target, snap-to-grid or snap-to-stamp.
-     • Field engine: per-channel diffuse/decay/nonlin/threshold/noise, RGB cross-talk, EMA memory (4th dim), baby-weather input.
-     • Life layer: agents (spawn/move/hunt/deposit/erode/reproduce/die), spatial occupancy, group insight.
-     • Input toggles: wheel zoom, touch pan/zoom (off by default), ALT+drag scope-box, hover legend.
-     • Presets: save/load/export/import. Screenshot exporter.
+<!-- CHARIS CAT // bbyWorld — THE DEFINITIVE VERSION (2025-08-19)
+     Life-sim cellular automaton with RGBA channel coupling + stamp painter.
+     • EXACT stamp use: expects 64×64 *.stamp.png from /api/gallery and fetches via /api/gallery/file/<file>
+     • Emergent behaviour: per-channel diffusion/decay/nonlinearity, cross-talk, stochasticity, memory (4th dimension), baby-weather field
+     • User controls: board size, zoom/pan, tick rate, RGBA params, coupling, noise, memory, presets, export/import, screenshot
+     • Painter: choose stamp, rotate/flip, alpha, additive/overwrite, brush mode (single/drag), grid snapping
+     • Performance: double-buffered Float32 arrays; single canvas render; requestAnimationFrame drive
 -->
 
 <template>
-  <div class="page-container">
-    <bubbleGraveyard />
+  <div class="bbyworld-page">
+    <header class="toolbar">
+      <h1 class="title">bbyWorld</h1>
+
+      <div class="row">
+        <label>board</label>
+        <select v-model.number="boardSize" @change="rebuildWorld">
+          <option v-for="s in boardSizeOptions" :key="s" :value="s">{{ s }} × {{ s }}</option>
+        </select>
+
+        <label>zoom</label>
+        <input type="range" min="0.25" max="8" step="0.01" v-model.number="zoom" @input="requestRender"/>
+        <button @click="fitToScreen">fit</button>
+        <button @click="resetView">100%</button>
+
+        <label>tick</label>
+        <input type="range" min="1" max="240" step="1" v-model.number="ticksPerSecond"/><span class="mono">{{ ticksPerSecond }} Hz</span>
+
+        <button :class="{active: running}" @click="toggleRun">{{ running ? 'pause' : 'run' }}</button>
+        <button @click="stepOnce">step</button>
+        <button @click="clearWorld">clear</button>
+        <button @click="randomizeWorld">random</button>
+
+        <button @click="saveScreenshot">screenshot</button>
+      </div>
+    </header>
+
     <section class="main">
-      <!-- LEFT: panels -->
       <div class="left">
+        <div class="canvas-wrap"
+             @mousedown="onPointerDown"
+             @mousemove="onPointerMove"
+             @mouseup="onPointerUp"
+             @mouseleave="onPointerUp"
+             @wheel.prevent="onWheel"
+             ref="canvasWrap">
+          <canvas ref="canvas" />
+          <div class="hud">
+            <span>FPS {{ fps.toFixed(0) }}</span>
+            <span>⟂ {{ worldWidth }}×{{ worldHeight }}</span>
+            <span>zoom {{ zoom.toFixed(2) }}×</span>
+            <span v-if="selectedStamp">stamp {{ selectedStamp.label }} (64×64)</span>
+          </div>
+        </div>
 
-        <!-- STAMPS -->
+        <details class="presets">
+          <summary>presets</summary>
+          <div class="row">
+            <input v-model="presetName" placeholder="name your preset"/>
+            <button @click="savePreset">save</button>
+            <select v-model="selectedPreset">
+              <option disabled value="">load…</option>
+              <option v-for="p in presetKeys" :key="p" :value="p">{{ p }}</option>
+            </select>
+            <button :disabled="!selectedPreset" @click="loadPreset">load</button>
+            <button :disabled="!selectedPreset" @click="deletePreset">delete</button>
+            <button @click="exportPreset">export</button>
+            <label class="import">
+              import <input type="file" accept="application/json" @change="importPreset"/>
+            </label>
+          </div>
+        </details>
+      </div>
+
+      <div class="right">
         <div class="panel">
-          <h3>stamps (pixel-correct)</h3>
-
+          <h3>stamps (64×64)</h3>
           <div class="row">
             <button @click="refreshStamps">refresh</button>
-
             <label><input type="checkbox" v-model="showStampGrid"/> grid</label>
-
-            <label>grid
-              <select v-model.number="gridSize">
-                <option v-for="g in GRID_SIZES" :key="g" :value="g">{{ g }}</option>
-              </select>
-            </label>
-
-            <label>snap
-              <select v-model="snapMode">
-                <option value="grid">to {{ gridSize }}</option>
-                <option value="stamp">to stamp</option>
-              </select>
-            </label>
-
-            <label>alpha
-              <input type="range" min="0" max="1" step="0.01" v-model.number="paintAlpha"/>
-            </label>
+            <label>alpha <input type="range" min="0" max="1" step="0.01" v-model.number="paintAlpha"/></label>
           </div>
 
           <div class="row">
@@ -50,7 +89,6 @@
               <option value="subtract">subtract</option>
               <option value="multiply">multiply</option>
             </select>
-
             <label>channel</label>
             <select v-model="paintChannel">
               <option value="rgba">RGBA</option>
@@ -76,11 +114,10 @@
               :key="s.file"
               :class="['stamp', {sel: selectedStamp && selectedStamp.file === s.file}]"
               @click="selectStamp(s)"
-              title="click to select stamp"
             >
               <img :src="s.url" :alt="s.label" />
               <div class="meta">
-                <div class="lab">{{ s.label || s.file }}</div>
+                <div class="lab">{{ s.label || 'unnamed' }}</div>
                 <div class="sub">{{ s.author || 'unknown' }}</div>
               </div>
             </button>
@@ -88,44 +125,6 @@
           </div>
         </div>
 
-        <!-- WORLD / VIEW / TRANSPORT -->
-        <div class="panel">
-          <h3>board & transport</h3>
-          <div class="row">
-            <label>board</label>
-            <select v-model.number="boardSize" @change="rebuildWorld">
-              <option v-for="s in boardSizeOptions" :key="s" :value="s">{{ s }} × {{ s }}</option>
-            </select>
-
-            <label>zoom</label>
-            <input type="range" min="0.25" max="8" step="0.01" v-model.number="zoom" @input="requestRender"/>
-            <button @click="fitToScreen">fit</button>
-            <button @click="resetView">100%</button>
-
-            <label>tick</label>
-            <input type="range" min="1" max="240" step="1" v-model.number="ticksPerSecond"/>
-            <span class="mono">{{ ticksPerSecond }} Hz</span>
-
-            <button :class="{active: running}" @click="toggleRun">{{ running ? 'pause' : 'run' }}</button>
-            <button @click="stepOnce">step</button>
-            <button @click="clearWorld">clear</button>
-            <button @click="randomizeWorld">random</button>
-            <button @click="saveScreenshot">screenshot</button>
-          </div>
-        </div>
-
-        <!-- INPUT & DISPLAY (legacy behaviours as toggles) -->
-        <div class="panel">
-          <h3>ui & input</h3>
-          <div class="row">
-            <label><input type="checkbox" v-model="allowWheelZoom"> wheel zoom</label>
-            <label><input type="checkbox" v-model="allowTouchPanZoom"> touch pan/zoom</label>
-            <label><input type="checkbox" v-model="scopeEnabled"> scope (alt+drag)</label>
-            <label><input type="checkbox" v-model="showLegend"> hover legend</label>
-          </div>
-        </div>
-
-        <!-- FIELD ENGINE -->
         <div class="panel">
           <h3>emergence — RGBA engine</h3>
 
@@ -166,7 +165,7 @@
                        type="range" min="-2" max="2" step="0.01"
                        v-model.number="crosstalk[row][col]"/>
               </div>
-              <div class="hint">row receives from column (A gates update)</div>
+              <div class="hint">row receives from column (A modulates update rate)</div>
             </div>
           </fieldset>
 
@@ -184,142 +183,58 @@
             </div>
           </fieldset>
         </div>
-
-        <!-- LIFE LAYER -->
-        <div class="panel">
-          <h3>life-sim (agents)</h3>
-          <fieldset>
-            <legend>toggles</legend>
-            <div class="row">
-              <label><input type="checkbox" v-model="enableAgents"> enable life</label>
-              <label><input type="checkbox" v-model="agentsDeposit"> deposit colour</label>
-              <label><input type="checkbox" v-model="agentsErode"> erode A</label>
-              <label><input type="checkbox" v-model="agentsHunt"> hunt neighbours</label>
-            </div>
-          </fieldset>
-          <div class="row">
-            <button @click="spawnRandom(64)">spawn 64</button>
-            <button @click="killAll">kill all</button>
-          </div>
-
-          <details>
-            <summary>group insight</summary>
-            <div class="groups">
-              <div class="ghead"><span>colour</span><span>count</span><span>%</span><span>avg age</span><span>energy</span><span>strength</span></div>
-              <div class="grow" v-for="g in groups" :key="g.colour">
-                <span class="colour-cell"><span class="colour-swatch" :style="{background:g.colour}"></span>{{ g.colour }}</span>
-                <span>{{ g.count }}</span>
-                <span>{{ g.percentage.toFixed(1) }}</span>
-                <span>{{ formatTicks(g.avgAge) }}</span>
-                <span>{{ g.avgEnergy.toFixed(1) }}</span>
-                <span>{{ g.avgStrength.toFixed(2) }}</span>
-              </div>
-            </div>
-          </details>
-        </div>
-
-        <!-- PRESETS -->
-        <details class="presets">
-          <summary>presets</summary>
-          <div class="row">
-            <input v-model="presetName" placeholder="name your preset"/>
-            <button @click="savePreset">save</button>
-            <select v-model="selectedPreset">
-              <option disabled value="">load…</option>
-              <option v-for="p in presetKeys" :key="p" :value="p">{{ p }}</option>
-            </select>
-            <button :disabled="!selectedPreset" @click="loadPreset">load</button>
-            <button :disabled="!selectedPreset" @click="deletePreset">delete</button>
-            <button @click="exportPreset">export</button>
-            <label class="import">
-              import <input type="file" accept="application/json" @change="importPreset"/>
-            </label>
-          </div>
-        </details>
-      </div>
-
-      <!-- RIGHT: square screen -->
-      <div class="right">
-        <div class="canvas-wrap"
-             ref="canvasWrap"
-             @mousedown="onPointerDown"
-             @mousemove="onPointerMove"
-             @mouseup="onPointerUp"
-             @mouseleave="onPointerUp"
-             @wheel.prevent="onWheel">
-          <canvas ref="canvas" />
-          <div v-if="scopeEnabled && scopeBox.active" class="scope-rect" :style="scopeStyle"></div>
-          <div v-if="showLegend && hoverInfo" class="legend">
-            <div class="legend-row">
-              <span class="pill">x</span> {{ hoverInfo.x }} <span class="pill">y</span> {{ hoverInfo.y }}
-              <span class="pill">fps</span> {{ fps.toFixed(0) }}
-            </div>
-            <div class="legend-row">
-              <span class="pill">R</span> {{ hoverInfo.R }}
-              <span class="pill">G</span> {{ hoverInfo.G }}
-              <span class="pill">B</span> {{ hoverInfo.B }}
-              <span class="pill">A</span> {{ hoverInfo.A }}
-            </div>
-          </div>
-        </div>
       </div>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, reactive, ref, computed, nextTick } from 'vue';
-import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
-
-/* ——— util ——— */
+// ————— utilities
 const clamp01 = (x:number)=> x<0?0:(x>1?1:x);
 const lerp = (a:number,b:number,t:number)=> a+(b-a)*t;
-const makeOffscreen = (w:number, h:number): HTMLCanvasElement | OffscreenCanvas => {
-  try { if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h); } catch {}
-  const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
-};
 
-/* ——— channels & typed params to avoid TS7053 ——— */
+import { onMounted, onBeforeUnmount, reactive, ref, computed, nextTick } from 'vue';
+
+// Strongly-typed channel sets for templates
 const CHS = ['R','G','B','A'] as const;
 type Ch = typeof CHS[number];
 const RGB = ['R','G','B'] as const;
 type RGBCh = typeof RGB[number];
 
-type Params = { [k in Ch]: { diffuse:number, decay:number, nonlin:number, thresh:number, noise:number } };
-
-/* ——— grid / board ——— */
-const GRID_SIZES = [4,8,16,32,64,128] as const;
-const gridSize = ref<number>(32);
-type SnapMode = 'grid'|'stamp';
-const snapMode = ref<SnapMode>('grid');
-
-const boardSizeOptions = [256, 384, 512, 768];
+const boardSizeOptions = [256, 384, 512, 768]; // you wanted selectable board size
 const boardSize = ref<number>(512);
 
-/* ——— canvas / camera / sim cadence ——— */
 const canvas = ref<HTMLCanvasElement|null>(null);
 const canvasWrap = ref<HTMLDivElement|null>(null);
 const ctx = ref<CanvasRenderingContext2D|null>(null);
 
+// view / camera
 const zoom = ref<number>(1);
 const camX = ref<number>(0);
 const camY = ref<number>(0);
 
+// sim
 const ticksPerSecond = ref<number>(60);
 const running = ref<boolean>(true);
 const fps = ref<number>(0);
 
-let rafId = 0, lastTickMs = 0, frameCounter = 0, frameTimeAcc = 0;
+let rafId = 0;
+let lastTickMs = 0;
+let frameCounter = 0;
+let frameTimeAcc = 0;
 
-/* ——— world buffers (double) ——— */
+// world buffers (double)
 let worldW = 0, worldH = 0;
 let bufA: Float32Array; // current
 let bufB: Float32Array; // next
-let memBuf: Float32Array; // EMA memory
+let memBuf: Float32Array; // EMA memory (4D)
 const worldWRef = ref<number>(0);
 const worldHRef = ref<number>(0);
+Object.defineProperty(window, 'bbydbg', { value: { get buf(){return bufA}, get W(){return worldW}, get H(){return worldH} }, writable: false });
 
-/* ——— field params ——— */
+// per-channel params
+type Params = { [k in Ch]: { diffuse:number, decay:number, nonlin:number, thresh:number, noise:number } };
+
 const params = reactive<Params>({
   R: { diffuse: 0.18, decay: 0.012, nonlin: 6.0, thresh: 0.15, noise: 0.000 },
   G: { diffuse: 0.22, decay: 0.010, nonlin: 7.0, thresh: 0.20, noise: 0.000 },
@@ -327,13 +242,17 @@ const params = reactive<Params>({
   A: { diffuse: 0.08, decay: 0.004, nonlin: 4.0, thresh: 0.05, noise: 0.000 },
 });
 
-/* ——— RGB cross-talk (A gates activity) ——— */
+// 3×3 cross-talk for RGB (A acts as gate)
 const crosstalk = reactive<Record<RGBCh, Record<RGBCh, number>>>(
-  { R:{R:0.0,G:0.45,B:-0.15}, G:{R:-0.25,G:0.0,B:0.40}, B:{R:0.35,G:-0.20,B:0.0} }
+  {
+    R: { R:  0.0, G:  0.45, B: -0.15 },
+    G: { R: -0.25, G:  0.0,  B:  0.40 },
+    B: { R:  0.35, G: -0.20, B:  0.0  },
+  }
 );
 
-/* ——— memory & baby-weather ——— */
-const memoryMix = ref<number>(0.08);
+// memory + weather
+const memoryMix = ref<number>(0.08); // EMA factor
 const weatherStrength = ref<number>(0.20);
 const weatherEnabled = ref<boolean>(true);
 let weatherRGB: [number,number,number] = [0.2,0.2,0.25];
@@ -341,7 +260,7 @@ async function pollWeather(){
   if(!weatherEnabled.value) return;
   try{
     const r = await fetch('/api/state', { cache: 'no-store' });
-    if (r.ok){
+    if(r.ok){
       const j = await r.json();
       if (Array.isArray(j.babyColour) && j.babyColour.length>=3){
         const [r8,g8,b8] = j.babyColour;
@@ -353,9 +272,10 @@ async function pollWeather(){
         ];
       }
     }
-  }catch(_){}
+  }catch(_){} // silent if endpoint absent
 }
 function nudgeWeather(){
+  // small random push that blends with baby colour; feels alive even without endpoint
   const j = (Math.random()*2-1)*0.1;
   weatherRGB = [
     clamp01(weatherRGB[0] + j + (Math.random()-0.5)*0.05),
@@ -364,7 +284,7 @@ function nudgeWeather(){
   ];
 }
 
-/* ——— stamps (pixel-correct; ANY size) ——— */
+// painter
 type Stamp = { file:string, label:string, author?:string, url:string, bmp: ImageBitmap };
 const stamps = ref<Stamp[]>([]);
 const selectedStamp = ref<Stamp|null>(null);
@@ -377,168 +297,26 @@ const flipY = ref<boolean>(false);
 const snapToGrid = ref<boolean>(true);
 let rotQuarterTurns = 0;
 
-/* ——— input toggles (legacy parity) ——— */
-const allowWheelZoom = ref<boolean>(false);
-const allowTouchPanZoom = ref<boolean>(false); // (we don’t attach any unless true)
-const scopeEnabled = ref<boolean>(false);
-const showLegend = ref<boolean>(false);
+// pointer state
+let isPanning = false;
+let isPainting = false;
+let lastPaintX = -9999, lastPaintY = -9999;
 
-type HoverInfo = { x:number,y:number,R:number,G:number,B:number,A:number };
-const hoverInfo = ref<HoverInfo|null>(null);
-const scopeBox = reactive({ active:false, x0:0, y0:0, x1:0, y1:0 });
-const scopeStyle = computed(()=> {
-  if (!scopeBox.active || !canvas.value) return {};
-  const dpr = window.devicePixelRatio||1;
-  const cw = canvas.value.width, ch = canvas.value.height;
-  const x = Math.min(scopeBox.x0, scopeBox.x1);
-  const y = Math.min(scopeBox.y0, scopeBox.y1);
-  const w = Math.abs(scopeBox.x1 - scopeBox.x0)+1;
-  const h = Math.abs(scopeBox.y1 - scopeBox.y0)+1;
-  const sx = Math.round((x - camX.value) * zoom.value + cw/2);
-  const sy = Math.round((y - camY.value) * zoom.value + ch/2);
-  const sw = Math.round(w * zoom.value);
-  const sh = Math.round(h * zoom.value);
-  return { left: sx/dpr+'px', top: sy/dpr+'px', width: sw/dpr+'px', height: sh/dpr+'px' };
-});
+// presets
+const PRESET_KEY = 'bbyworld.presets.v1';
+const presetName = ref<string>('');
+const selectedPreset = ref<string>('');
+const presetMap = reactive<Record<string, any>>(JSON.parse(localStorage.getItem(PRESET_KEY)||'{}'));
+const presetKeys = computed(()=> Object.keys(presetMap).sort());
 
-/* ——— life layer (agents) ——— */
-const enableAgents = ref<boolean>(true);
-const agentsDeposit = ref<boolean>(true);
-const agentsErode = ref<boolean>(true);
-const agentsHunt = ref<boolean>(true);
+// computed refs for template (world size)
+const worldWComputed = computed(()=> worldWRef.value);
+const worldHComputed = computed(()=> worldHRef.value);
+Object.defineProperty(window, 'bbyW', { get(){return worldWComputed.value} });
+Object.defineProperty(window, 'bbyH', { get(){return worldHComputed.value} });
 
-type Agent = {
-  x:number, y:number, alive:boolean,
-  r:number, g:number, b:number, a:number,
-  energy:number, strength:number, mass:number, charge:number, age:number
-};
-const living = reactive<Agent[]>([]);
-const spatialMap: Record<number, Agent|undefined> = Object.create(null);
 
-const I = (x:number,y:number)=> {
-  const xx = ((x%worldW)+worldW)%worldW;
-  const yy = ((y%worldH)+worldH)%worldH;
-  return (yy*worldW + xx)|0;
-};
-
-function spawn(x:number,y:number, col?:{r:number,g:number,b:number,a?:number}) {
-  if (!worldW || !worldH) return;
-  const ii = I(x,y); if (spatialMap[ii]) return;
-  const a:Agent = {
-    x:(x|0), y:(y|0), alive:true,
-    r:(col?.r ?? (200+Math.random()*55))/255,
-    g:(col?.g ?? (180+Math.random()*55))/255,
-    b:(col?.b ?? (220+Math.random()*35))/255,
-    a:((col?.a ?? 255)/255),
-    energy: 10 + Math.random()*10,
-    strength: 0.5 + Math.random()*0.5,
-    mass: 1.0, charge: (Math.random()*2-1)*0.05,
-    age: 0
-  };
-  living.push(a); spatialMap[ii] = a;
-}
-function spawnRandom(n=32){
-  for(let k=0;k<n;k++){
-    spawn(Math.floor(Math.random()*worldW), Math.floor(Math.random()*worldH), {
-      r: (Math.random()*255)|0, g: (Math.random()*255)|0, b: (Math.random()*255)|0, a: 255
-    });
-  }
-}
-function killAll(){
-  living.splice(0,living.length);
-  for (const k in spatialMap) delete spatialMap[k as any];
-}
-
-function neighbourCount(x:number,y:number){
-  let c=0;
-  const xm=(x-1+worldW)%worldW, xp=(x+1)%worldW;
-  const ym=(y-1+worldH)%worldH, yp=(y+1)%worldH;
-  if (spatialMap[I(xm,ym)]) c++; if (spatialMap[I(x,ym)]) c++; if (spatialMap[I(xp,ym)]) c++;
-  if (spatialMap[I(xm,y )]) c++;                                   if (spatialMap[I(xp,y )]) c++;
-  if (spatialMap[I(xm,yp)]) c++; if (spatialMap[I(x,yp)]) c++; if (spatialMap[I(xp,yp)]) c++;
-  return c;
-}
-function getAffinity(x:number,y:number,a:Agent){
-  const i = (I(x,y)<<2);
-  const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
-  const colourLike = a.r*R + a.g*G + a.b*B;
-  const gate = 0.2 + 0.8*A;
-  return colourLike*gate - neighbourCount(x,y)*0.02;
-}
-function moveSolid(a:Agent, nx:number, ny:number){
-  const oldI = I(a.x,a.y), newI = I(nx,ny);
-  if (spatialMap[newI]) return false;
-  delete spatialMap[oldI];
-  a.x = ((nx%worldW)+worldW)%worldW;
-  a.y = ((ny%worldH)+worldH)%worldH;
-  spatialMap[I(a.x,a.y)] = a;
-  return true;
-}
-function deposit(a:Agent){
-  if (!agentsDeposit.value) return;
-  const i = (I(a.x,a.y)<<2);
-  bufA[i  ] = clamp01(bufA[i  ] + 0.02*a.r);
-  bufA[i+1] = clamp01(bufA[i+1] + 0.02*a.g);
-  bufA[i+2] = clamp01(bufA[i+2] + 0.02*a.b);
-  bufA[i+3] = clamp01(bufA[i+3] + 0.04*a.a);
-}
-function erodeSolid(a:Agent){
-  if (!agentsErode.value) return;
-  const i = (I(a.x,a.y)<<2);
-  bufA[i+3] = clamp01(bufA[i+3] - 0.03*a.strength);
-}
-function worldTickAgents(){
-  if (!enableAgents.value || living.length===0) return;
-  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-  for (let idx=0; idx<living.length; idx++){
-    const a = living[idx]; if (!a.alive) continue;
-    a.age += 1; a.energy -= 0.01;
-
-    if (agentsHunt.value){
-      for (const [dx,dy] of dirs){
-        const n = spatialMap[I(a.x+dx, a.y+dy)];
-        if (n && n!==a && (a.strength>n.strength) && Math.random()<0.02){
-          n.alive = false; delete spatialMap[I(n.x,n.y)];
-          a.energy += 5; a.strength += 0.02;
-        }
-      }
-    }
-
-    let best = {score:-1e9, dx:0, dy:0};
-    for (const [dx,dy] of dirs){
-      const s = getAffinity(a.x+dx, a.y+dy, a);
-      if (s>best.score) best = {score:s, dx, dy};
-    }
-    moveSolid(a, a.x+best.dx, a.y+best.dy);
-    deposit(a); erodeSolid(a);
-
-    if (a.energy>20 && Math.random()<0.005){
-      const d = dirs[(Math.random()*dirs.length)|0];
-      spawn(a.x+d[0], a.y+d[1], { r:Math.round(a.r*255), g:Math.round(a.g*255), b:Math.round(a.b*255), a:Math.round(a.a*255) });
-      a.energy *= 0.5;
-    }
-    if (a.energy<=0 && Math.random()<0.02){
-      a.alive=false; delete spatialMap[I(a.x,a.y)];
-    }
-  }
-  for (let i=living.length-1;i>=0;i--) if(!living[i].alive) living.splice(i,1);
-}
-const groups = computed(()=> {
-  const map = new Map<string,{count:number, age:number, energy:number, strength:number}>();
-  for (const a of living){
-    const colour = `rgb(${Math.round(a.r*255)},${Math.round(a.g*255)},${Math.round(a.b*255)})`;
-    const g = map.get(colour) || {count:0, age:0, energy:0, strength:0};
-    g.count++; g.age+=a.age; g.energy+=a.energy; g.strength+=a.strength; map.set(colour, g);
-  }
-  const total = living.length||1;
-  return [...map.entries()].map(([colour,g])=>({
-    colour, count:g.count, percentage:100*g.count/total,
-    avgAge:g.age/g.count, avgEnergy:g.energy/g.count, avgStrength:g.strength/g.count
-  }));
-});
-function formatTicks(t:number){ return `${Math.round(t)}t`; }
-
-/* ——— world setup ——— */
+// ————— world setup
 function rebuildWorld(){
   running.value = false;
   worldW = worldH = boardSize.value;
@@ -547,63 +325,80 @@ function rebuildWorld(){
   bufB = new Float32Array(worldW*worldH*4);
   memBuf = new Float32Array(worldW*worldH*4);
   bufA.fill(0); bufB.fill(0); memBuf.fill(0);
-  killAll();
   resizeCanvas();
   requestRender();
   nextTick(()=> running.value = true);
 }
-function clearWorld(){ bufA.fill(0); bufB.fill(0); memBuf.fill(0); killAll(); requestRender(); }
+
+function clearWorld(){
+  bufA.fill(0); bufB.fill(0); memBuf.fill(0);
+  requestRender();
+}
 function randomizeWorld(){
   for(let i=0;i<bufA.length;i++){
-    if ((i & 3)===3) bufA[i] = Math.random()*0.4; // A a little higher
+    // light random soup; alpha slightly higher to gate activity
+    if ((i & 3)===3) bufA[i] = Math.random()*0.4; // A
     else bufA[i] = Math.random()*0.2;
   }
   requestRender();
 }
 
-/* ——— stamps ——— */
+// ————— stamps
 async function refreshStamps(){
   try{
     const r = await fetch('/api/gallery', { cache: 'no-store' });
     const j = await r.json();
+    // accept either shape: {url,...} or {file,...}
     const raw = Array.isArray(j) ? j : (j.items || []);
     const onlyStamps = raw.filter((it:any)=> (it.file && typeof it.file==='string' && it.file.endsWith('.stamp.png')) || (it.url && (''+it.url).endsWith('.stamp.png')));
     const list:Stamp[] = [];
     for (const it of onlyStamps){
-      const file = it.file || (it.url.split('/').pop() ?? 'stamp.png');
+      const file = it.file || it.url.split('/').pop();
       const url = it.url || `/api/gallery/file/${file}`;
+      // fetch image as bitmap
       const imgRes = await fetch(url, { cache: 'force-cache' });
       const blob = await imgRes.blob();
       const bmp = await createImageBitmap(blob);
+      if (bmp.width!==64 || bmp.height!==64){
+        console.warn('Stamp not 64×64; using anyway but mapped as 64 cells:', file, bmp.width, bmp.height);
+      }
       list.push({ file, label: it.label || file, author: it.author, url, bmp });
     }
     stamps.value = list;
     if (!selectedStamp.value && list.length) selectedStamp.value = list[0];
-  }catch(err){ console.error('stamp refresh failed', err); }
+  }catch(err){
+    console.error('stamp refresh failed', err);
+  }
 }
 function selectStamp(s:Stamp){ selectedStamp.value = s; }
 function rotLeft(){ rotQuarterTurns = (rotQuarterTurns+3)%4; }
 function rotRight(){ rotQuarterTurns = (rotQuarterTurns+1)%4; }
 
-/* ——— canvas & view ——— */
+// ————— canvas & view
 function resizeCanvas(){
-  const c = canvas.value!, wrap = canvasWrap.value!;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
-  const side = Math.max(1, Math.floor(Math.min(w, h)));
-  const dpr = window.devicePixelRatio || 1;
-  c.width = side * dpr;
-  c.height = side * dpr;
-  c.style.width = side + 'px';
-  c.style.height = side + 'px';
+  const c = canvas.value!, w = canvasWrap.value!.clientWidth, h = canvasWrap.value!.clientHeight;
+  const dpr = window.devicePixelRatio||1;
+  c.width = Math.max(1, Math.floor(w*dpr));
+  c.height = Math.max(1, Math.floor(h*dpr));
+  c.style.width = `${w}px`;
+  c.style.height = `${h}px`;
   ctx.value = c.getContext('2d', { alpha: false })!;
   requestRender();
 }
-function resetView(){ zoom.value = 1; camX.value = (worldW/2)|0; camY.value = (worldH/2)|0; requestRender(); }
+function resetView(){
+  zoom.value = 1;
+  camX.value = (worldW/2)|0;
+  camY.value = (worldH/2)|0;
+  requestRender();
+}
 function fitToScreen(){
   if(!canvasWrap.value) return;
   const w = canvasWrap.value.clientWidth, h = canvasWrap.value.clientHeight;
   const z = Math.min(w/worldW, h/worldH);
-  zoom.value = z; camX.value = worldW/2; camY.value = worldH/2; requestRender();
+  zoom.value = z;
+  camX.value = worldW/2;
+  camY.value = worldH/2;
+  requestRender();
 }
 function screenToWorld(sx:number, sy:number){
   const cw = canvas.value!.width, ch = canvas.value!.height;
@@ -612,52 +407,50 @@ function screenToWorld(sx:number, sy:number){
   return { x: wx, y: wy };
 }
 
-/* ——— painting (pixel-correct) ——— */
+// ————— painting
 function applyStampAt(worldX:number, worldY:number){
   if(!selectedStamp.value) return;
-  const sw = selectedStamp.value.bmp.width|0;
-  const sh = selectedStamp.value.bmp.height|0;
-  const cx = (sw/2)|0, cy = (sh/2)|0;
-
-  let x0 = Math.round(worldX - cx);
-  let y0 = Math.round(worldY - cy);
-
+  // top-left so center by half stamp
+  let x0 = Math.round(worldX - 32);
+  let y0 = Math.round(worldY - 32);
   if (snapToGrid.value){
-    if (snapMode.value === 'grid'){
-      const g = gridSize.value | 0;
-      x0 = Math.round(Math.round(x0 / g) * g);
-      y0 = Math.round(Math.round(y0 / g) * g);
-    } else {
-      x0 = Math.round(Math.round(x0 / sw) * sw);
-      y0 = Math.round(Math.round(y0 / sh) * sh);
-    }
+    x0 = Math.round(x0);
+    y0 = Math.round(y0);
   }
-
-  const off = makeOffscreen(sw, sh) as any;
+  // draw bitmap into a temp canvas to read pixels (honours rotation/flip)
+  const off = new OffscreenCanvas(64,64);
   const octx = off.getContext('2d')!;
   octx.save();
-  octx.translate(sw/2, sh/2);
+  octx.translate(32,32);
   if (flipX.value) octx.scale(-1, 1);
   if (flipY.value) octx.scale( 1,-1);
   octx.rotate(rotQuarterTurns * Math.PI/2);
-  octx.drawImage(selectedStamp.value.bmp, -sw/2, -sh/2);
+  octx.drawImage(selectedStamp.value.bmp, -32, -32);
   octx.restore();
-  const img = octx.getImageData(0,0,sw,sh).data;
+  const img = octx.getImageData(0,0,64,64).data;
 
-  const mode = paintMode.value, alpha = paintAlpha.value, pick = paintChannel.value;
+  // blend into bufA
+  const mode = paintMode.value;
+  const alpha = paintAlpha.value;
+  const pick = paintChannel.value;
 
-  for (let sy=0; sy<sh; sy++){
+  for (let sy=0; sy<64; sy++){
     const wy = (y0 + sy + worldH) % worldH;
-    for (let sx=0; sx<sw; sx++){
+    for (let sx=0; sx<64; sx++){
       const wx = (x0 + sx + worldW) % worldW;
-      const si = (sy*sw + sx)*4;
-      const r = img[si  ]/255, g = img[si+1]/255, b = img[si+2]/255;
+      const si = (sy*64 + sx)*4;
+      const r = img[si  ]/255;
+      const g = img[si+1]/255;
+      const b = img[si+2]/255;
       const a = (img[si+3]/255) * alpha;
+
       if (a<=0) continue;
 
       const i = (wy*worldW + wx)*4;
+      // get current
       const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
 
+      // choose source by channel selection
       const srcR = (pick==='rgba'||pick==='r') ? r : 0;
       const srcG = (pick==='rgba'||pick==='g') ? g : 0;
       const srcB = (pick==='rgba'||pick==='b') ? b : 0;
@@ -677,90 +470,65 @@ function applyStampAt(worldX:number, worldY:number){
       bufA[i+3] = blend(A, srcA);
     }
   }
+
   requestRender();
 }
 
-/* ——— pointer handlers ——— */
-let isPanning = false;
-let isPainting = false;
-let lastPaintX = -9999, lastPaintY = -9999;
-
-function getWorldFromEvent(e:MouseEvent){
-  const rect = canvas.value!.getBoundingClientRect();
-  const sx = (e.clientX - rect.left) * (window.devicePixelRatio||1);
-  const sy = (e.clientY - rect.top) * (window.devicePixelRatio||1);
-  return screenToWorld(sx, sy);
-}
-
+// ————— pointer handlers
 function onPointerDown(e:MouseEvent){
-  // scope
-  if (scopeEnabled.value && e.altKey){
-    const p = getWorldFromEvent(e);
-    scopeBox.active = true; scopeBox.x0 = scopeBox.x1 = Math.round(p.x); scopeBox.y0 = scopeBox.y1 = Math.round(p.y);
+  if (e.button===1 || (e.button===0 && e.shiftKey)){ // middle mouse or shift-drag = pan
+    isPanning = true;
+    lastPaintX = e.clientX; lastPaintY = e.clientY;
     return;
   }
-  // pan (middle or shift+left)
-  if (e.button===1 || (e.button===0 && e.shiftKey)){
-    isPanning = true; lastPaintX = e.clientX; lastPaintY = e.clientY; return;
+  if (e.button===0){
+    isPainting = true;
+    paintAtEvent(e, true);
   }
-  // paint
-  if (e.button===0){ isPainting = true; paintAtEvent(e, true); }
 }
 function onPointerMove(e:MouseEvent){
-  if (showLegend.value){
-    const p = getWorldFromEvent(e);
-    const xi = Math.max(0, Math.min(worldW-1, Math.round(p.x)));
-    const yi = Math.max(0, Math.min(worldH-1, Math.round(p.y)));
-    const i = (yi*worldW + xi)*4;
-    hoverInfo.value = {
-      x: xi, y: yi,
-      R: Math.round(bufA[i  ]*255), G: Math.round(bufA[i+1]*255),
-      B: Math.round(bufA[i+2]*255), A: Math.round(bufA[i+3]*255),
-    };
-  }
-  if (scopeEnabled.value && scopeBox.active){
-    const p = getWorldFromEvent(e);
-    scopeBox.x1 = Math.round(p.x); scopeBox.y1 = Math.round(p.y);
-    return requestRender();
-  }
   if (isPanning){
     const dx = e.clientX - lastPaintX;
     const dy = e.clientY - lastPaintY;
     lastPaintX = e.clientX; lastPaintY = e.clientY;
     camX.value -= dx/zoom.value;
     camY.value -= dy/zoom.value;
-    return requestRender();
+    requestRender();
+    return;
   }
   if (isPainting) paintAtEvent(e, false);
 }
 function onPointerUp(_e:MouseEvent){
-  isPanning = false; isPainting = false;
-  if (scopeEnabled.value) scopeBox.active = false;
+  isPanning = false;
+  isPainting = false;
 }
 function onWheel(e:WheelEvent){
-  if (!allowWheelZoom.value) return; // strict
   const delta = Math.sign(e.deltaY) * 0.1;
   const pre = zoom.value;
   const worldBefore = screenToWorld(e.offsetX * (window.devicePixelRatio||1), e.offsetY * (window.devicePixelRatio||1));
   zoom.value = clamp01(pre * (1 - delta));
   if (zoom.value<0.25) zoom.value = 0.25;
-  if (zoom.value>8)    zoom.value = 8;
+  if (zoom.value>8) zoom.value = 8;
   const worldAfter = screenToWorld(e.offsetX * (window.devicePixelRatio||1), e.offsetY * (window.devicePixelRatio||1));
   camX.value += (worldBefore.x - worldAfter.x);
   camY.value += (worldBefore.y - worldAfter.y);
   requestRender();
 }
 function paintAtEvent(e:MouseEvent, force:boolean){
-  const p = getWorldFromEvent(e);
-  const wx = Math.round(p.x), wy = Math.round(p.y);
+  const rect = canvas.value!.getBoundingClientRect();
+  const sx = (e.clientX - rect.left) * (window.devicePixelRatio||1);
+  const sy = (e.clientY - rect.top) * (window.devicePixelRatio||1);
+  const w = screenToWorld(sx, sy);
+  const wx = Math.round(w.x);
+  const wy = Math.round(w.y);
   if (force || Math.hypot(wx-lastPaintX, wy-lastPaintY)>8){
     applyStampAt(wx, wy);
     lastPaintX = wx; lastPaintY = wy;
   }
 }
 
-/* ——— sim core (field) ——— */
-function idx(x:number,y:number){ return ((y*worldW + x)<<2); }
+// ————— sim core
+function idx(x:number,y:number){ return ((y*worldW + x)<<2); } // *4
 function lapSample(buf:Float32Array, x:number, y:number, chOfs:number){
   const xm = (x-1+worldW)%worldW, xp = (x+1)%worldW;
   const ym = (y-1+worldH)%worldH, yp = (y+1)%worldH;
@@ -773,14 +541,19 @@ function lapSample(buf:Float32Array, x:number, y:number, chOfs:number){
   const ne = buf[idx(xp,ym)+chOfs];
   const sw = buf[idx(xm,yp)+chOfs];
   const se = buf[idx(xp,yp)+chOfs];
+  // 3x3 laplacian-ish (normalized)
+  // weights: center -1, orth 0.2, diag 0.05 (sum ~0)
   return ( (n+s+w+e)*0.2 + (nw+ne+sw+se)*0.05 - c*1.0 );
 }
 function step(){
+  // one CA step over the whole grid
+  const p = params;
   for (let y=0; y<worldH; y++){
     for (let x=0; x<worldW; x++){
       const i = idx(x,y);
       const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
 
+      // laplacians
       const LR = lapSample(bufA, x,y,0);
       const LG = lapSample(bufA, x,y,1);
       const LB = lapSample(bufA, x,y,2);
@@ -791,37 +564,42 @@ function step(){
       const wG = weatherRGB[1]*weatherStrength.value*A;
       const wB = weatherRGB[2]*weatherStrength.value*A;
 
-      // RGB cross-talk: row receives from columns
+      // RGB cross-talk: row receives from column
       const xR = crosstalk.R.R*R + crosstalk.R.G*G + crosstalk.R.B*B;
       const xG = crosstalk.G.R*R + crosstalk.G.G*G + crosstalk.G.B*B;
       const xB = crosstalk.B.R*R + crosstalk.B.G*G + crosstalk.B.B*B;
 
-      const nR = (Math.random()*2-1) * params.R.noise;
-      const nG = (Math.random()*2-1) * params.G.noise;
-      const nB = (Math.random()*2-1) * params.B.noise;
-      const nA = (Math.random()*2-1) * params.A.noise;
+      // noisy inputs
+      const nR = (Math.random()*2-1) * p.R.noise;
+      const nG = (Math.random()*2-1) * p.G.noise;
+      const nB = (Math.random()*2-1) * p.B.noise;
+      const nA = (Math.random()*2-1) * p.A.noise;
 
-      let r = R + params.R.diffuse*LR - params.R.decay*R + xR*A + wR + nR;
-      let g = G + params.G.diffuse*LG - params.G.decay*G + xG*A + wG + nG;
-      let b = B + params.B.diffuse*LB - params.B.decay*B + xB*A + wB + nB;
-      let a = A + params.A.diffuse*LA - params.A.decay*A + nA;
+      // base updates
+      let r = R + p.R.diffuse*LR - p.R.decay*R + xR*A + wR + nR;
+      let g = G + p.G.diffuse*LG - p.G.decay*G + xG*A + wG + nG;
+      let b = B + p.B.diffuse*LB - p.B.decay*B + xB*A + wB + nB;
+      let a = A + p.A.diffuse*LA - p.A.decay*A + nA;
 
+      // simple parametric nonlinearity per channel (smooth step around thresh)
       const act = (v:number, k:number, t:number)=> 1/(1+Math.exp(-(v - t)*k));
-      r = lerp(r, act(r, params.R.nonlin, params.R.thresh), 0.5);
-      g = lerp(g, act(g, params.G.nonlin, params.G.thresh), 0.5);
-      b = lerp(b, act(b, params.B.nonlin, params.B.thresh), 0.5);
-      a = lerp(a, act(a, params.A.nonlin, params.A.thresh), 0.5);
+      r = lerp(r, act(r, p.R.nonlin, p.R.thresh), 0.5);
+      g = lerp(g, act(g, p.G.nonlin, p.G.thresh), 0.5);
+      b = lerp(b, act(b, p.B.nonlin, p.B.thresh), 0.5);
+      a = lerp(a, act(a, p.A.nonlin, p.A.thresh), 0.5);
 
-      // memory (EMA)
-      memBuf[i  ] = lerp(memBuf[i  ], r, memoryMix.value);
-      memBuf[i+1] = lerp(memBuf[i+1], g, memoryMix.value);
-      memBuf[i+2] = lerp(memBuf[i+2], b, memoryMix.value);
-      memBuf[i+3] = lerp(memBuf[i+3], a, memoryMix.value);
+      // memory (EMA 4D)
+      const mi = i;
+      memBuf[mi  ] = lerp(memBuf[mi  ], r, memoryMix.value);
+      memBuf[mi+1] = lerp(memBuf[mi+1], g, memoryMix.value);
+      memBuf[mi+2] = lerp(memBuf[mi+2], b, memoryMix.value);
+      memBuf[mi+3] = lerp(memBuf[mi+3], a, memoryMix.value);
 
-      r = lerp(r, memBuf[i  ], 0.25);
-      g = lerp(g, memBuf[i+1], 0.25);
-      b = lerp(b, memBuf[i+2], 0.25);
-      a = lerp(a, memBuf[i+3], 0.25);
+      // final blend: current pulled slightly toward memory to stabilise/bloom structures
+      r = lerp(r, memBuf[mi  ], 0.25);
+      g = lerp(g, memBuf[mi+1], 0.25);
+      b = lerp(b, memBuf[mi+2], 0.25);
+      a = lerp(a, memBuf[mi+3], 0.25);
 
       bufB[i  ] = clamp01(r);
       bufB[i+1] = clamp01(g);
@@ -833,7 +611,7 @@ function step(){
   const t = bufA; bufA = bufB; bufB = t;
 }
 
-/* ——— render ——— */
+// ————— render
 let needsRender = true;
 function requestRender(){ needsRender = true; }
 function render(){
@@ -843,22 +621,25 @@ function render(){
   context.fillStyle = '#0b0c0f';
   context.fillRect(0,0,c.width,c.height);
 
-  // world transform
+  // transform to world
   context.translate(c.width/2, c.height/2);
   context.scale(zoom.value, zoom.value);
   context.translate(-camX.value, -camY.value);
 
-  // write pixels
+  // draw world buffer -> imageData (chunked)
   const img = context.createImageData(worldW, worldH);
   const data = img.data;
 
+  // slight colour grading from memory to give vibe
   for (let i=0, j=0; i<bufA.length; i+=4, j+=4){
     const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
+    // mix current with soft memory glow
     const mR = memBuf[i  ], mG = memBuf[i+1], mB = memBuf[i+2];
     const glow = 0.20;
     const r = clamp01(lerp(R, mR, glow));
     const g = clamp01(lerp(G, mG, glow));
     const b = clamp01(lerp(B, mB, glow));
+    // A modulates brightness
     const br = 0.6 + 0.6*A;
     data[j  ] = Math.floor(255 * clamp01(r * br));
     data[j+1] = Math.floor(255 * clamp01(g * br));
@@ -866,42 +647,46 @@ function render(){
     data[j+3] = 255;
   }
 
-  // NN upscale
-  const off = makeOffscreen(worldW, worldH) as any;
+  // nearest-neighbour draw at world scale
+  const off = new OffscreenCanvas(worldW, worldH);
   const octx = off.getContext('2d')!;
   octx.putImageData(img, 0, 0);
   context.imageSmoothingEnabled = false;
   context.drawImage(off, 0,0, worldW, worldH);
 
-  // stamp/grid overlay
+  // stamp overlay grid + ghost (preview)
   if (showStampGrid.value){
-    context.strokeStyle = 'rgba(255,255,255,0.06)';
+    context.strokeStyle = 'rgba(255,255,255,0.05)';
     context.lineWidth = 1 / zoom.value;
-    const g = gridSize.value | 0;
-    for (let x=0; x<=worldW; x+=g){ context.beginPath(); context.moveTo(x,0); context.lineTo(x,worldH); context.stroke(); }
-    for (let y=0; y<=worldH; y+=g){ context.beginPath(); context.moveTo(0,y); context.lineTo(worldW,y); context.stroke(); }
+    for (let x=0; x<=worldW; x+=64){
+      context.beginPath(); context.moveTo(x,0); context.lineTo(x,worldH); context.stroke();
+    }
+    for (let y=0; y<=worldH; y+=64){
+      context.beginPath(); context.moveTo(0,y); context.lineTo(worldW,y); context.stroke();
+    }
   }
 
   context.restore();
+
   needsRender = false;
 }
 
-/* ——— main loop ——— */
+// ————— main loop
 function tick(ts:number){
   const dt = Math.max(0, ts - lastTickMs);
   lastTickMs = ts;
-  frameCounter++; frameTimeAcc += dt;
+  frameCounter++;
+  frameTimeAcc += dt;
   if (frameTimeAcc >= 500){
     fps.value = frameCounter * 1000 / frameTimeAcc;
-    frameCounter = 0; frameTimeAcc = 0;
+    frameCounter = 0;
+    frameTimeAcc = 0;
   }
 
-  const steps = Math.max(1, Math.round(ticksPerSecond.value/60));
+  // schedule sim steps to roughly match ticksPerSecond
+  const steps = Math.max(1, Math.round(ticksPerSecond.value/60)); // do multiple per frame if needed
   if (running.value){
-    for (let k=0;k<steps;k++){
-      step();             // field
-      worldTickAgents();  // life
-    }
+    for (let k=0;k<steps;k++) step();
     needsRender = true;
   }
 
@@ -909,20 +694,14 @@ function tick(ts:number){
   rafId = requestAnimationFrame(tick);
 }
 
-function toggleRun(){
-  running.value = !running.value;
-}
+// ————— controls
+function toggleRun(){ running.value = !running.value; }
+function stepOnce(){ if(!running.value){ step(); requestRender(); } }
 
-function stepOnce(){
-  // one manual step regardless of running state
-  step();             // field engine
-  worldTickAgents();  // life layer
-  requestRender();
-}
-
-/* ——— screenshots ——— */
+// ————— screenshots
 function saveScreenshot(){
   if(!canvas.value) return;
+  // render at 1:1 world scale into offscreen for crispness
   const off = document.createElement('canvas');
   off.width = worldW; off.height = worldH;
   const octx = off.getContext('2d')!;
@@ -943,13 +722,7 @@ function saveScreenshot(){
   a.click();
 }
 
-/* ——— presets IO ——— */
-const PRESET_KEY = 'bbyworld.presets.v1';
-const presetName = ref<string>('');
-const selectedPreset = ref<string>('');
-const presetMap = reactive<Record<string, any>>(JSON.parse(localStorage.getItem(PRESET_KEY)||'{}'));
-const presetKeys = computed(()=> Object.keys(presetMap).sort());
-
+// ————— presets IO
 function snapState(){
   return {
     boardSize: boardSize.value,
@@ -959,34 +732,27 @@ function snapState(){
     weatherStrength: weatherStrength.value,
     weatherEnabled: weatherEnabled.value,
     ticksPerSecond: ticksPerSecond.value,
-    life: {
-      enableAgents: enableAgents.value,
-      agentsDeposit: agentsDeposit.value,
-      agentsErode: agentsErode.value,
-      agentsHunt: agentsHunt.value
-    }
   };
 }
 function applyState(s:any){
   if (!s) return;
-  if (s.boardSize && s.boardSize!==boardSize.value){ boardSize.value = s.boardSize; rebuildWorld(); }
+  if (s.boardSize && s.boardSize!==boardSize.value){
+    boardSize.value = s.boardSize;
+    rebuildWorld();
+  }
   Object.assign(params.R, s.params?.R||{});
   Object.assign(params.G, s.params?.G||{});
   Object.assign(params.B, s.params?.B||{});
   Object.assign(params.A, s.params?.A||{});
-  (['R','G','B'] as RGBCh[]).forEach(row=>{
-    if (s.crosstalk && s.crosstalk[row]) Object.assign(crosstalk[row], s.crosstalk[row]);
+  ['R','G','B'].forEach((row:any)=>{
+    if (s.crosstalk && s.crosstalk[row]){
+      Object.assign((crosstalk as any)[row], s.crosstalk[row]);
+    }
   });
   if (typeof s.memoryMix==='number') memoryMix.value = s.memoryMix;
   if (typeof s.weatherStrength==='number') weatherStrength.value = s.weatherStrength;
   if (typeof s.weatherEnabled==='boolean') weatherEnabled.value = s.weatherEnabled;
   if (typeof s.ticksPerSecond==='number') ticksPerSecond.value = s.ticksPerSecond;
-  if (s.life){
-    if (typeof s.life.enableAgents==='boolean') enableAgents.value = s.life.enableAgents;
-    if (typeof s.life.agentsDeposit==='boolean') agentsDeposit.value = s.life.agentsDeposit;
-    if (typeof s.life.agentsErode==='boolean') agentsErode.value = s.life.agentsErode;
-    if (typeof s.life.agentsHunt==='boolean') agentsHunt.value = s.life.agentsHunt;
-  }
   requestRender();
 }
 function savePreset(){
@@ -996,8 +762,16 @@ function savePreset(){
   localStorage.setItem(PRESET_KEY, JSON.stringify(presetMap));
   presetName.value = '';
 }
-function loadPreset(){ if (!selectedPreset.value) return; applyState(presetMap[selectedPreset.value]); }
-function deletePreset(){ if (!selectedPreset.value) return; delete presetMap[selectedPreset.value]; localStorage.setItem(PRESET_KEY, JSON.stringify(presetMap)); selectedPreset.value = ''; }
+function loadPreset(){
+  if (!selectedPreset.value) return;
+  applyState(presetMap[selectedPreset.value]);
+}
+function deletePreset(){
+  if (!selectedPreset.value) return;
+  delete presetMap[selectedPreset.value];
+  localStorage.setItem(PRESET_KEY, JSON.stringify(presetMap));
+  selectedPreset.value = '';
+}
 function exportPreset(){
   const blob = new Blob([JSON.stringify(snapState(), null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -1007,13 +781,17 @@ function exportPreset(){
 }
 function importPreset(e:Event){
   const input = e.target as HTMLInputElement;
-  const file = input.files?.[0]; if (!file) return;
+  const file = input.files?.[0];
+  if (!file) return;
   const fr = new FileReader();
-  fr.onload = ()=> { try{ const s = JSON.parse(String(fr.result)); applyState(s); } catch(err){ console.error('bad preset json', err); } };
+  fr.onload = ()=> {
+    try{ const s = JSON.parse(String(fr.result)); applyState(s); }
+    catch(err){ console.error('bad preset json', err); }
+  };
   fr.readAsText(file);
 }
 
-/* ——— lifecycle ——— */
+// ————— lifecycle
 onMounted(async ()=>{
   window.addEventListener('resize', resizeCanvas);
   rebuildWorld();
@@ -1022,14 +800,9 @@ onMounted(async ()=>{
   await refreshStamps();
   rafId = requestAnimationFrame(tick);
 
-  // gentle baby weather
+  // gentle weather polling loop
   const wTimer = setInterval(pollWeather, 1200);
   (window as any).__bbyWeatherTimer = wTimer;
-
-  // touch handlers only if enabled (off by default)
-  if (allowTouchPanZoom.value){
-    // you can wire legacy gestures here if you want behind the toggle
-  }
 });
 onBeforeUnmount(()=>{
   cancelAnimationFrame(rafId);
@@ -1037,70 +810,62 @@ onBeforeUnmount(()=>{
   if ((window as any).__bbyWeatherTimer) clearInterval((window as any).__bbyWeatherTimer);
 });
 
+// expose to template with distinct names to avoid shadowing
+const worldWidth = worldWComputed;
+const worldHeight = worldHComputed;
 </script>
 
 <style scoped>
-.page-container { display:flex; flex-direction:column; width:100%; height:var(--full-height); padding:var(--padding); box-sizing:border-box; overflow:hidden; }
-.main { display:grid; grid-template-columns: 320px 1fr; gap: var(--spacing); width:100%; height:100%; }
-
-/* left column: panels */
-.left { display:flex; flex-direction:column; gap: var(--spacing); overflow:auto; padding-right:2px; }
-.panel, .presets { background: var(--panel-colour); border: var(--border); border-radius: var(--border-radius); padding: var(--padding); box-shadow: var(--box-shadow); }
-.panel h3 { margin:0 0 8px; font-size: var(--font-size); color: var(--font-colour); }
-.grid2 { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: var(--spacing); }
-.col { background: var(--bby-colour-dark); border: 1px solid var(--bby-colour-black); border-radius: 8px; padding: 8px; }
-.row { display:flex; gap: 8px; align-items:center; flex-wrap:wrap; }
-
-.stamp-list { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:8px; max-height: 40vh; overflow:auto; }
-.stamp { display:flex; flex-direction:column; gap:4px; background:var(--bby-colour-black); border:1px solid var(--bby-colour-dark); border-radius:8px; padding:6px; cursor:pointer; }
-.stamp.sel { outline:2px solid var(--bby-colour); }
-.stamp img { width:100%; image-rendering:pixelated; border-radius:4px; border:1px solid var(--bby-colour-dark); background:var(--bby-colour-black); }
-.stamp .lab { color: var(--font-colour); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.stamp .sub { color: #9db2d1; font-size:11px; opacity:0.9; }
-
-.right { display:flex; flex-direction:column; gap: var(--spacing); min-width: 0; align-items: start; }
-.canvas-wrap {
-  position:relative;
-  flex:1;
-  min-height: 320px;
-  background: var(--bby-colour-black);
-  border: var(--border);
-  border-radius: var(--border-radius);
-  overflow:hidden;
-  aspect-ratio: 1 / 1;  /* square screen */
-  align-self: start;
+:root { --bg:#0a0b0e; --ink:#e6e7ee; --mut:#9aa0aa; --acc:#47f; --a2:#7cf; --hi:#4f8; --warn:#f75; }
+* { box-sizing: border-box; }
+.bbyworld-page {
+  display:flex; flex-direction:column; gap:12px;
+  background:var(--bg); color:var(--ink); height:100%;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Inter, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; opacity:0.8; }
+.title { font-size:18px; margin:0 12px 0 0; }
+.toolbar { display:flex; align-items:center; gap:12px; padding:10px 12px; border-bottom:1px solid #151820; background:#0c0e13; position:sticky; top:0; z-index:2; }
+.toolbar .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.toolbar label { color:var(--mut); font-size:12px; }
+.toolbar button { background:#141824; color:#cfe3ff; border:1px solid #1d2333; padding:6px 10px; border-radius:6px; cursor:pointer; }
+.toolbar button.active { background:#1b2840; border-color:#2a3e67; color:#bfe2ff; }
+.toolbar select, .toolbar input[type="range"] { accent-color:#87b3ff; }
+
+.main { display:flex; gap:12px; padding:0 12px 12px; height:100%; }
+.left { flex:2; display:flex; flex-direction:column; gap:12px; min-width:300px; }
+.right { flex:1; display:flex; flex-direction:column; gap:12px; min-width:320px; }
+
+.canvas-wrap { position:relative; flex:1; background:#05060a; border:1px solid #151820; border-radius:8px; overflow:hidden; }
 .canvas-wrap canvas { display:block; width:100%; height:100%; image-rendering: pixelated; cursor: crosshair; }
+.hud { position:absolute; left:8px; bottom:8px; display:flex; gap:10px; background:rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.07); padding:4px 8px; border-radius:6px; font-size:12px; color:#c9d1e1; }
+.presets { background:#0c0e13; border:1px solid #151a22; border-radius:8px; padding:8px 12px; }
+.presets summary { cursor:pointer; user-select:none; color:#b7c7e8; margin-bottom:6px; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 
-.scope-rect {
-  position:absolute;
-  border:2px dashed rgba(255,255,255,0.6);
-  background: rgba(255,255,255,0.06);
-  pointer-events:none;
-}
-.legend {
-  position:absolute; left:6px; top:6px;
-  display:flex; flex-direction:column; gap:2px;
-  font-size: 11px; line-height: 1.15;
-  background: rgba(0,0,0,0.45);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius:6px; padding:4px 6px; pointer-events:none;
-}
-.legend-row { display:flex; gap:8px; align-items:center; color: #dbe7ff; }
-.pill {
-  background: var(--bby-colour-dark);
-  color: var(--font-colour);
-  padding: 0 4px;
-  border-radius: 4px;
-  font-weight: 800;
-  font-size: 0.70rem;
-}
-.groups { display:grid; gap:6px; }
-.ghead, .grow { display:grid; grid-template-columns: 1fr 60px 44px 80px 70px 80px; gap:8px; align-items:center; }
-.colour-cell { display:flex; align-items:center; gap:6px; }
-.colour-swatch { width:14px; height:14px; border-radius:3px; border:1px solid rgba(255,255,255,.2); }
+.panel { background:#0c0f15; border:1px solid #151a22; border-radius:10px; padding:10px 12px; }
+.panel h3 { margin:0 0 8px; font-size:14px; color:#bcd4ff; }
+.grid2 { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:8px; }
+.col { background:#0d1118; border:1px solid #151b24; border-radius:8px; padding:8px; }
+.col h4 { margin:0 0 6px; font-size:13px; color:#bfe2ff; }
 
-input[type="range"] { width:120px; accent-color: var(--bby-colour); }
-select, input[type="text"] { background: var(--bby-colour-black); border: 1px solid var(--bby-colour-dark); color: var(--font-colour); border-radius:6px; padding:6px 8px; }
+.matrix { display:flex; flex-direction:column; gap:6px; }
+.mrow { display:grid; grid-template-columns: 48px 1fr 1fr 1fr; gap:8px; align-items:center; }
+.mrow.header { color:#9fb2d8; opacity:0.9; }
+.rowlab { color:#9fb2d8; }
+.matrix input[type="range"] { width:100%; accent-color:#7db7ff; }
+.hint { font-size:12px; color:#8da2bb; opacity:0.8; }
+
+.stamp-list { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:8px; max-height:40vh; overflow:auto; padding:2px; }
+.stamp { display:flex; flex-direction:column; gap:4px; background:#0c1016; border:1px solid #151b24; border-radius:8px; padding:6px; cursor:pointer; }
+.stamp.sel { outline:2px solid #4aa8ff; }
+.stamp img { width:100%; image-rendering: pixelated; border-radius:4px; border:1px solid #141a22; background:#05070b; }
+.stamp .meta { display:flex; flex-direction:column; line-height:1.1; }
+.stamp .lab { color:#cbe0ff; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stamp .sub { color:#9db2d1; font-size:11px; opacity:0.9; }
+.empty { padding:8px; color:#8ca0b8; font-size:12px; }
+
+input[type="range"] { width:120px; }
+select, input[type="text"] { background:#0f1420; border:1px solid #1a2232; color:#dde6f7; border-radius:6px; padding:6px 8px; }
 label.import input { display:none; }
 </style>

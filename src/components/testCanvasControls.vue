@@ -58,7 +58,16 @@
       </details>
     </div>
 
-    <button class="action danger" @click="$emit('clear')">Clear</button>
+    <button
+      class="action"
+      title="Fill the canvas with the current colour"
+      @click="$emit('fill')"
+    >FILL</button>
+    <button
+      class="action danger"
+      title="Clear the canvas"
+      @click="$emit('clear')"
+    >CLEAR</button>
   </div>
 </template>
 
@@ -70,6 +79,7 @@ const emit = defineEmits<{
   (e: 'update:size', value: number): void;
   (e: 'update:resolution', value: number): void;
   (e: 'clear'): void;
+  (e: 'fill'): void;
 }>();
 
 // Bounds (tweak as you like)

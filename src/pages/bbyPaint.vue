@@ -308,8 +308,10 @@
               v-model:size="testCanvasSize"
               v-model:resolution="testCanvasResolution"
               @clear="handleClearTestSquareClick"
+              @fill="handleFillTestSquareClick"
             />
             <div class="save-group">
+              <label class="save-label">Save Look:</label>
               <input
                 v-if="saveConfirmClicks > 0"
                 v-model="saveLabel"
@@ -428,7 +430,7 @@ const toast = ref('');
 const saveLabel = ref('');
 const saveConfirmClicks = ref(0);
 const saveButtonText = computed(() =>
-  saveConfirmClicks.value === 0 ? 'Save to Gallery' : 'Click again to save'
+  saveConfirmClicks.value === 0 ? 'Save to Gallery' : 'Confirm Save'
 );
 
 const factPrompt = ref<{ name: string; value: string; author: string; prompt: string } | null>(null);
@@ -792,11 +794,15 @@ function handleClearTestSquareClick() {
   testSquareRef.value?.clearOverlay();
   showToast('cleared your painting', 1500);
 }
+function handleFillTestSquareClick() {
+  testSquareRef.value?.fillCanvas(hexColor.value);
+  showToast('filled your painting', 1500);
+}
 async function handleSaveTestSquareClick() {
   if (!testSquareRef.value) return;
   if (saveConfirmClicks.value === 0) {
     saveConfirmClicks.value = 1;
-    showToast('type a name for the bbybook, then hit save', 3000);
+    showToast('name your look then press confirm', 3000);
     return;
   }
   try {
@@ -844,6 +850,7 @@ function handleColorHovered(color: RgbaColor | null) { if (color && color.a > 0)
 .grp{display:flex;flex-direction:column;gap:.5rem}
 .save-group{display:flex;align-items:center;gap:.5rem}
 .save-group input{padding:.4rem;border:var(--border);border-radius:var(--border-radius);}
+.save-label{font-size:var(--small-font-size);opacity:.85;text-transform:uppercase;white-space:nowrap}
 .fact-prompt-box{display:flex;flex-direction:column;gap:.5rem}
 .fact-prompt{border:var(--border);border-radius:var(--border-radius);padding:.5rem;background:var(--bby-colour-black)}
 .section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform: uppercase;}

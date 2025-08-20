@@ -120,11 +120,11 @@
           <div class="grp">
             <label class="section">laws of this universe</label>
             <div class="legend">
-              <p><strong>The Grid & Terrain:</strong> The world is a grid of cells and solid terrain. Cells interact with the terrain based on their colour signature, baking, eroding, or converting it.</p>
-              <p><strong>Abstract Fields (Ψ, Λ, Σ):</strong> Invisible fields of influence permeate the grid, broadcast by cells. These fields guide all action, creating a proto-neural network.</p>
-              <p><strong>Orbital Movement:</strong> A cell chooses which adjacent square to move to based on the fields. Force is perpendicular to the gradient, causing swirling, orbital patterns, not direct attraction.</p>
-              <p><strong>Interaction as Consequence:</strong> When a cell attempts to enter an occupied square, an interaction occurs. The outcome—annihilation (decay) or resonance (spawning a new cell)—is determined by a battle of Charge and Colour Harmony.</p>
-              <p><strong>Life & Creation:</strong> Cells live by maintaining Charge through resonance with local fields. New cells are created from the excess energy of resonant interactions, inheriting traits from their parents.</p>
+              <p><strong>colour:</strong> red wants to be on fire, blue wants to be wet, green wants to grow. transparent things are less strong.</p>
+              <p><strong>but:</strong> red burns lots of energy, greens need lots of room, blues pool together but slip off heights.</p>
+              <p><strong>bbys:</strong> when two cells make un bby, they're a mixture of their parents. the little flashes on screen are them being born!</p>
+              <p><strong>jobs:</strong> cells move toward the resources they need on the board.</p>
+              <p><strong>stats:</strong> % shows each colour's share of living cells, age and energy track group averages.</p>
             </div>
           </div>
 

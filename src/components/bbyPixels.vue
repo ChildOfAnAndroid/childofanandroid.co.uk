@@ -27,7 +27,7 @@ const props = defineProps<{ hexColor: string; mode: Mode; isScopeCursorActive: b
 const emit = defineEmits(['color-picked', 'color-hovered']);
 
 let SPRITE_W = 64, SPRITE_H = 64;
-defineExpose({ clearOverlay, exportCanvas, exportCompositeCanvas, exportRawCanvas });
+defineExpose({ clearOverlay, exportCanvas, exportCompositeCanvas, exportRawCanvas, fillCanvas });
 
 const { bbyState, sendBbyPaintColour, paintOverlayData, sendPixelUpdate, tickPaint } = bbyUse();
 const throttledReactionUpdate = throttle((r:number,g:number,b:number)=>sendBbyPaintColour(r,g,b),300);
@@ -154,6 +154,22 @@ function clearOverlay(){
   data.data.fill(0);
   if (props.isTestCanvas) { redrawOverlay(); }
   else { tickPaint(); const out=[] as {x:number,y:number,r:number,g:number,b:number,a:number}[]; for(let y=0;y<SPRITE_H;y++) for(let x=0;x<SPRITE_W;x++) out.push({x,y,r:0,g:0,b:0,a:0}); sendPixelUpdate(out); }
+}
+
+function fillCanvas(hex:string){
+  const data = currentPaintData.value; if(!data) return;
+  const { r, g, b } = hexToRGB(hex);
+  for(let i=0;i<data.data.length;i+=4){
+    data.data[i]=r; data.data[i+1]=g; data.data[i+2]=b; data.data[i+3]=255;
+  }
+  if (props.isTestCanvas) {
+    redrawOverlay();
+  } else {
+    tickPaint();
+    const out=[] as {x:number,y:number,r:number,g:number,b:number,a:number}[];
+    for(let y=0;y<SPRITE_H;y++) for(let x=0;x<SPRITE_W;x++) out.push({x,y,r,g,b,a:255});
+    sendPixelUpdate(out);
+  }
 }
 
 // MODIFIED: This function now correctly uses the ImageData's own width property.

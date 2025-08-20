@@ -1,871 +1,780 @@
-<!-- CHARIS CAT // bbyWorld — THE DEFINITIVE VERSION (2025-08-19)
-     Life-sim cellular automaton with RGBA channel coupling + stamp painter.
-     • EXACT stamp use: expects 64×64 *.stamp.png from /api/gallery and fetches via /api/gallery/file/<file>
-     • Emergent behaviour: per-channel diffusion/decay/nonlinearity, cross-talk, stochasticity, memory (4th dimension), baby-weather field
-     • User controls: board size, zoom/pan, tick rate, RGBA params, coupling, noise, memory, presets, export/import, screenshot
-     • Painter: choose stamp, rotate/flip, alpha, additive/overwrite, brush mode (single/drag), grid snapping
-     • Performance: double-buffered Float32 arrays; single canvas render; requestAnimationFrame drive
--->
-
+<!-- CHARIS CAT // bbyWorld — 2025 (The Definitive Hybrid Engine) -->
 <template>
-  <div class="bbyworld-page">
-    <header class="toolbar">
-      <h1 class="title">bbyWorld</h1>
+  <div class="page-container bbyworld-page">
+    <div class="world-layout">
+      <div class="world-left">
+        <div class="vertical-panel">
+          <h1 class="page-title">bbyWorld</h1>
 
-      <div class="row">
-        <label>board</label>
-        <select v-model.number="boardSize" @change="rebuildWorld">
-          <option v-for="s in boardSizeOptions" :key="s" :value="s">{{ s }} × {{ s }}</option>
-        </select>
-
-        <label>zoom</label>
-        <input type="range" min="0.25" max="8" step="0.01" v-model.number="zoom" @input="requestRender"/>
-        <button @click="fitToScreen">fit</button>
-        <button @click="resetView">100%</button>
-
-        <label>tick</label>
-        <input type="range" min="1" max="240" step="1" v-model.number="ticksPerSecond"/><span class="mono">{{ ticksPerSecond }} Hz</span>
-
-        <button :class="{active: running}" @click="toggleRun">{{ running ? 'pause' : 'run' }}</button>
-        <button @click="stepOnce">step</button>
-        <button @click="clearWorld">clear</button>
-        <button @click="randomizeWorld">random</button>
-
-        <button @click="saveScreenshot">screenshot</button>
-      </div>
-    </header>
-
-    <section class="main">
-      <div class="left">
-        <div class="canvas-wrap"
-             @mousedown="onPointerDown"
-             @mousemove="onPointerMove"
-             @mouseup="onPointerUp"
-             @mouseleave="onPointerUp"
-             @wheel.prevent="onWheel"
-             ref="canvasWrap">
-          <canvas ref="canvas" />
-          <div class="hud">
-            <span>FPS {{ fps.toFixed(0) }}</span>
-            <span>⟂ {{ worldWidth }}×{{ worldHeight }}</span>
-            <span>zoom {{ zoom.toFixed(2) }}×</span>
-            <span v-if="selectedStamp">stamp {{ selectedStamp.label }} (64×64)</span>
-          </div>
-        </div>
-
-        <details class="presets">
-          <summary>presets</summary>
-          <div class="row">
-            <input v-model="presetName" placeholder="name your preset"/>
-            <button @click="savePreset">save</button>
-            <select v-model="selectedPreset">
-              <option disabled value="">load…</option>
-              <option v-for="p in presetKeys" :key="p" :value="p">{{ p }}</option>
-            </select>
-            <button :disabled="!selectedPreset" @click="loadPreset">load</button>
-            <button :disabled="!selectedPreset" @click="deletePreset">delete</button>
-            <button @click="exportPreset">export</button>
-            <label class="import">
-              import <input type="file" accept="application/json" @change="importPreset"/>
-            </label>
-          </div>
-        </details>
-      </div>
-
-      <div class="right">
-        <div class="panel">
-          <h3>stamps (64×64)</h3>
-          <div class="row">
-            <button @click="refreshStamps">refresh</button>
-            <label><input type="checkbox" v-model="showStampGrid"/> grid</label>
-            <label>alpha <input type="range" min="0" max="1" step="0.01" v-model.number="paintAlpha"/></label>
+          <div class="grp">
+            <label class="section" for="board-size">board size</label>
+            <div class="row3">
+              <button class="action" @click="boardSize = Math.max(32, boardSize - 16)">-</button>
+              <input id="board-size" type="number" v-model.number="boardSize" min="32" step="16" />
+              <button class="action" @click="boardSize = Math.min(1024, boardSize + 16)">+</button>
+            </div>
+            <small style="opacity:.7">changing size clears the world</small>
           </div>
 
-          <div class="row">
-            <label>mode</label>
-            <select v-model="paintMode">
-              <option value="add">add</option>
-              <option value="overwrite">overwrite</option>
-              <option value="subtract">subtract</option>
-              <option value="multiply">multiply</option>
-            </select>
-            <label>channel</label>
-            <select v-model="paintChannel">
-              <option value="rgba">RGBA</option>
-              <option value="r">R</option>
-              <option value="g">G</option>
-              <option value="b">B</option>
-              <option value="a">A</option>
-            </select>
+          <div class="grp">
+            <label class="section">world</label>
+            <button class="action" @click="clearWorld">clear</button>
           </div>
 
-          <div class="row">
-            <label>rotate</label>
-            <button @click="rotLeft">⟲</button>
-            <button @click="rotRight">⟳</button>
-            <label><input type="checkbox" v-model="flipX"/> flipX</label>
-            <label><input type="checkbox" v-model="flipY"/> flipY</label>
-            <label><input type="checkbox" v-model="snapToGrid"/> snap</label>
+          <div class="grp">
+            <label class="section">select a cell stamp:</label>
+            <div class="card-swatch-bar">
+              <button
+                v-for="card in cards"
+                :key="card.label"
+                class="card-swatch"
+                :class="{ selected: selectedCardLabel === card.label }"
+                @click="selectCard(card.label)"
+              >
+                <img :src="card.stamp_url || card.url" :alt="card.label" />
+              </button>
+            </div>
           </div>
 
-          <div class="stamp-list">
-            <button
-              v-for="s in stamps"
-              :key="s.file"
-              :class="['stamp', {sel: selectedStamp && selectedStamp.file === s.file}]"
-              @click="selectStamp(s)"
-            >
-              <img :src="s.url" :alt="s.label" />
-              <div class="meta">
-                <div class="lab">{{ s.label || 'unnamed' }}</div>
-                <div class="sub">{{ s.author || 'unknown' }}</div>
+          <div class="grp">
+            <label class="section">stats</label>
+            <div class="world-stats">
+              <span>TIME: {{ elapsedTimeDisplay }}</span>
+              <span>CELLS: {{ livingCells.filter(c => c.alive).length }}</span>
+              <span>SPAWNS: {{ stats.spawns }}</span>
+              <span>AVG LIFESPAN: {{ avgLifespan }}</span>
+              <br>
+              <span>--DECAY REASONS--</span>
+              <span>CONFLICT: {{ stats.conflicts }}</span>
+              <span>CHARGE DRAIN: {{ stats.chargeDecays }}</span>
+              <span>OVERCROWD: {{ stats.overcrowdDecays }}</span>
+            </div>
+          </div>
+          
+          <div class="grp">
+            <label class="section">colour groups</label>
+            <div class="group-stats">
+              <div class="group-row header">
+                <span>colour</span>
+                <span>count</span>
+                <span>%</span>
+                <span>age</span>
+                <span>charge</span>
+                <span>mass</span>
               </div>
-            </button>
-            <div v-if="!stamps.length" class="empty">no *.stamp.png found</div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>emergence — RGBA engine</h3>
-
-          <fieldset>
-            <legend>per-channel dynamics</legend>
-            <div class="grid2">
-              <div v-for="ch in CHS" :key="ch" class="col">
-                <h4>{{ ch }}</h4>
-                <label>diffuse
-                  <input type="range" min="0" max="1" step="0.001" v-model.number="params[ch].diffuse"/>
-                </label>
-                <label>decay
-                  <input type="range" min="0" max="1" step="0.001" v-model.number="params[ch].decay"/>
-                </label>
-                <label>nonlinearity
-                  <input type="range" min="0" max="20" step="0.1" v-model.number="params[ch].nonlin"/>
-                </label>
-                <label>threshold
-                  <input type="range" min="-1" max="2" step="0.001" v-model.number="params[ch].thresh"/>
-                </label>
-                <label>noise
-                  <input type="range" min="0" max="0.5" step="0.001" v-model.number="params[ch].noise"/>
-                </label>
+              <div
+                class="group-row"
+                v-for="g in sortedGroupStats"
+                :key="g.colour"
+                :class="{selected: highlightedGroup === g.colour}"
+                @click="selectGroup(g.colour)"
+              >
+                <div class="group-bar" :style="{ background: g.colour, width: g.percentage + '%' }"></div>
+                <span class="colour-cell">
+                  <span class="colour-swatch" :style="{ background: g.colour }"></span>
+                  {{ g.colour }}
+                </span>
+                <span>{{ g.count }}</span>
+                <span>{{ g.percentage.toFixed(1) }}%</span>
+                <span>{{ formatTicks(g.avgAge) }}</span>
+                <span>{{ g.avgCharge.toFixed(1) }}</span>
+                <span>{{ g.avgMass.toFixed(2) }}</span>
               </div>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset>
-            <legend>cross-talk (R,G,B only)</legend>
-            <div class="matrix">
-              <div class="mrow header">
-                <span></span><span>←R</span><span>←G</span><span>←B</span>
+          <div class="grp" v-if="selectedCell">
+            <label class="section">cell {{ selectedCell.id }} info</label>
+            <div class="cell-stats">
+              <div class="cell-colour">
+                <span class="colour-swatch" :style="{ background: `rgba(${selectedCell.r},${selectedCell.g},${selectedCell.b},${selectedCell.a/255})` }"></span>
+                <span>{{ selectedCell.r }},{{ selectedCell.g }},${selectedCell.b},${selectedCell.a}</span>
               </div>
-              <div v-for="row in RGB" :key="row" class="mrow">
-                <span class="rowlab">{{ row }}</span>
-                <input v-for="col in RGB"
-                       :key="row+col"
-                       type="range" min="-2" max="2" step="0.01"
-                       v-model.number="crosstalk[row][col]"/>
-              </div>
-              <div class="hint">row receives from column (A modulates update rate)</div>
+              <div>pos: {{ selectedCell.x }}, {{ selectedCell.y }}</div>
+              <div>age: {{ formatTicks(selectedCell.age) }}</div>
+              <div>charge: {{ selectedCell.charge.toFixed(1) }}</div>
+              <div>mass: {{ (selectedCell.a / 255).toFixed(2) }}</div>
             </div>
-          </fieldset>
+          </div>
 
-          <fieldset>
-            <legend>memory & weather (4th dimension)</legend>
-            <label>memory mix
-              <input type="range" min="0" max="1" step="0.001" v-model.number="memoryMix"/>
-            </label>
-            <label>weather strength
-              <input type="range" min="0" max="1" step="0.001" v-model.number="weatherStrength"/>
-            </label>
-            <div class="row">
-              <label><input type="checkbox" v-model="weatherEnabled"/> baby weather</label>
-              <button @click="nudgeWeather">nudge</button>
+          <div class="grp" v-if="selectedCell">
+            <label class="section">cell {{ selectedCell.id }} family</label>
+            <div class="family-tree">
+              <div>
+                parents:
+                <template v-if="selectedFamily.parents.length">
+                  <span v-for="p in selectedFamily.parents" :key="p.id" class="family-link" @click="selectCellById(p.id)">#{{ p.id }}</span>
+                </template>
+                <span v-else>none (primordial)</span>
+              </div>
+              <div>
+                children:
+                <template v-if="selectedFamily.children.length">
+                  <span v-for="c in selectedFamily.children" :key="c.id" class="family-link" @click="selectCellById(c.id)">#{{ c.id }}</span>
+                </template>
+                <span v-else>none</span>
+              </div>
             </div>
-          </fieldset>
+          </div>
+
+          <div class="grp">
+            <label class="section">laws of this universe</label>
+            <div class="legend">
+              <p><strong>The Grid & Terrain:</strong> The world is a grid of cells and solid terrain. Cells interact with the terrain based on their colour signature, baking, eroding, or converting it.</p>
+              <p><strong>Abstract Fields (Ψ, Λ, Σ):</strong> Invisible fields of influence permeate the grid, broadcast by cells. These fields guide all action, creating a proto-neural network.</p>
+              <p><strong>Orbital Movement:</strong> A cell chooses which adjacent square to move to based on the fields. Force is perpendicular to the gradient, causing swirling, orbital patterns, not direct attraction.</p>
+              <p><strong>Interaction as Consequence:</strong> When a cell attempts to enter an occupied square, an interaction occurs. The outcome—annihilation (decay) or resonance (spawning a new cell)—is determined by a battle of Charge and Colour Harmony.</p>
+              <p><strong>Life & Creation:</strong> Cells live by maintaining Charge through resonance with local fields. New cells are created from the excess energy of resonant interactions, inheriting traits from their parents.</p>
+            </div>
+          </div>
+
+          <div class="grp">
+            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
+            <div class="row2">
+              <button class="action" @click="slowDown">-</button>
+              <button class="action" @click="speedUp">+</button>
+            </div>
+          </div>
+
+          <div class="grp">
+            <label class="section">zoom</label>
+            <div class="row3">
+              <button class="action" @click="zoomOut">-</button>
+              <div class="zoom-display">{{ (zoomFactor*100).toFixed(0) }}%</div>
+              <button class="action" @click="zoomIn">+</button>
+            </div>
+            <button class="action" @click="scopeActive = !scopeActive" :class="{active: scopeActive}">scope</button>
+            <button class="action" @click="resetView">reset view</button>
+          </div>
         </div>
       </div>
-    </section>
+
+      <div class="world-right">
+        <div
+          class="world-stage"
+          ref="stageEl"
+          @mousedown="startPan"
+          @mousemove="onMouseMove"
+          @mouseup="endPan"
+          @mouseleave="endPan"
+          @wheel.prevent="onWheelZoom"
+          @contextmenu.prevent
+        >
+          <div class="stack">
+            <canvas ref="gameCanvas" :width="boardSize" :height="boardSize" @click="handleCanvasClick" :style="canvasStyle" />
+            <div v-show="scopeActive" ref="scopeBox" class="zoom-scope">
+              <canvas ref="scopeCanvas"></canvas>
+              <div class="scope-info">
+                <div>{{ hoverInfo.x }},{{ hoverInfo.y }}</div>
+                <div>Ψ {{ hoverInfo.psi.toFixed(2) }} Λ {{ hoverInfo.lam.toFixed(2) }} Σ {{ hoverInfo.sig.toFixed(2) }}</div>
+                <div>Solid {{ hoverInfo.solid.toFixed(2) }}</div>
+                <div v-if="hoverInfo.cell">Cell {{ hoverInfo.cell.id }} | Charge {{ hoverInfo.cell.charge.toFixed(1) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-// ————— utilities
-const clamp01 = (x:number)=> x<0?0:(x>1?1:x);
-const lerp = (a:number,b:number,t:number)=> a+(b-a)*t;
+import { onMounted, ref, computed, onUnmounted, watch } from "vue";
+import { bbyUse } from '@/composables/bbyUse.ts';
+import { throttle } from 'lodash';
 
-import { onMounted, onBeforeUnmount, reactive, ref, computed, nextTick } from 'vue';
-
-// Strongly-typed channel sets for templates
-const CHS = ['R','G','B','A'] as const;
-type Ch = typeof CHS[number];
-const RGB = ['R','G','B'] as const;
-type RGBCh = typeof RGB[number];
-
-const boardSizeOptions = [256, 384, 512, 768]; // you wanted selectable board size
-const boardSize = ref<number>(512);
-
-const canvas = ref<HTMLCanvasElement|null>(null);
-const canvasWrap = ref<HTMLDivElement|null>(null);
-const ctx = ref<CanvasRenderingContext2D|null>(null);
-
-// view / camera
-const zoom = ref<number>(1);
-const camX = ref<number>(0);
-const camY = ref<number>(0);
-
-// sim
-const ticksPerSecond = ref<number>(60);
-const running = ref<boolean>(true);
-const fps = ref<number>(0);
-
-let rafId = 0;
-let lastTickMs = 0;
-let frameCounter = 0;
-let frameTimeAcc = 0;
-
-// world buffers (double)
-let worldW = 0, worldH = 0;
-let bufA: Float32Array; // current
-let bufB: Float32Array; // next
-let memBuf: Float32Array; // EMA memory (4D)
-const worldWRef = ref<number>(0);
-const worldHRef = ref<number>(0);
-Object.defineProperty(window, 'bbydbg', { value: { get buf(){return bufA}, get W(){return worldW}, get H(){return worldH} }, writable: false });
-
-// per-channel params
-type Params = { [k in Ch]: { diffuse:number, decay:number, nonlin:number, thresh:number, noise:number } };
-
-const params = reactive<Params>({
-  R: { diffuse: 0.18, decay: 0.012, nonlin: 6.0, thresh: 0.15, noise: 0.000 },
-  G: { diffuse: 0.22, decay: 0.010, nonlin: 7.0, thresh: 0.20, noise: 0.000 },
-  B: { diffuse: 0.16, decay: 0.014, nonlin: 6.5, thresh: 0.18, noise: 0.000 },
-  A: { diffuse: 0.08, decay: 0.004, nonlin: 4.0, thresh: 0.05, noise: 0.000 },
-});
-
-// 3×3 cross-talk for RGB (A acts as gate)
-const crosstalk = reactive<Record<RGBCh, Record<RGBCh, number>>>(
-  {
-    R: { R:  0.0, G:  0.45, B: -0.15 },
-    G: { R: -0.25, G:  0.0,  B:  0.40 },
-    B: { R:  0.35, G: -0.20, B:  0.0  },
-  }
-);
-
-// memory + weather
-const memoryMix = ref<number>(0.08); // EMA factor
-const weatherStrength = ref<number>(0.20);
-const weatherEnabled = ref<boolean>(true);
-let weatherRGB: [number,number,number] = [0.2,0.2,0.25];
-async function pollWeather(){
-  if(!weatherEnabled.value) return;
-  try{
-    const r = await fetch('/api/state', { cache: 'no-store' });
-    if(r.ok){
-      const j = await r.json();
-      if (Array.isArray(j.babyColour) && j.babyColour.length>=3){
-        const [r8,g8,b8] = j.babyColour;
-        const tRGB:[number,number,number]=[r8/255,g8/255,b8/255];
-        weatherRGB = [
-          lerp(weatherRGB[0], tRGB[0], 0.35),
-          lerp(weatherRGB[1], tRGB[1], 0.35),
-          lerp(weatherRGB[2], tRGB[2], 0.35),
-        ];
-      }
-    }
-  }catch(_){} // silent if endpoint absent
-}
-function nudgeWeather(){
-  // small random push that blends with baby colour; feels alive even without endpoint
-  const j = (Math.random()*2-1)*0.1;
-  weatherRGB = [
-    clamp01(weatherRGB[0] + j + (Math.random()-0.5)*0.05),
-    clamp01(weatherRGB[1] + j + (Math.random()-0.5)*0.05),
-    clamp01(weatherRGB[2] + j + (Math.random()-0.5)*0.05),
-  ];
+// --- TIME & FORMATTING ---
+const TICKS_PER_DAY = 100;
+const DAYS_PER_YEAR = 365;
+function formatTicks(ticks: number) {
+  if (ticks < 0) return "---";
+  const totalDays = Math.floor(ticks / TICKS_PER_DAY);
+  const year = Math.floor(totalDays / DAYS_PER_YEAR);
+  const day = totalDays % DAYS_PER_YEAR;
+  return `Y${year} D${day}`;
 }
 
-// painter
-type Stamp = { file:string, label:string, author?:string, url:string, bmp: ImageBitmap };
-const stamps = ref<Stamp[]>([]);
-const selectedStamp = ref<Stamp|null>(null);
-const showStampGrid = ref<boolean>(true);
-const paintAlpha = ref<number>(0.85);
-const paintMode = ref<'add'|'overwrite'|'subtract'|'multiply'>('add');
-const paintChannel = ref<'rgba'|'r'|'g'|'b'|'a'>('rgba');
-const flipX = ref<boolean>(false);
-const flipY = ref<boolean>(false);
-const snapToGrid = ref<boolean>(true);
-let rotQuarterTurns = 0;
+// --- WORLD & UI STATE ---
+const boardSize = ref<number>(128);
+function S(){ return boardSize.value; }
+const gameCanvas = ref<HTMLCanvasElement | null>(null);
+const stageEl = ref<HTMLDivElement | null>(null);
+const scopeCanvas = ref<HTMLCanvasElement | null>(null);
+const scopeBox = ref<HTMLDivElement | null>(null);
+const scopeActive = ref(false);
+let lastMouseEvent: MouseEvent | null = null;
+const { fetchBbyBookGallery } = bbyUse();
+const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);
+const selectedCardLabel = ref<string | null>(null);
+let loadedImageData: ImageData | null = null;
 
-// pointer state
-let isPanning = false;
-let isPainting = false;
-let lastPaintX = -9999, lastPaintY = -9999;
+// =======================================================================
+// ==================== HYBRID PHYSICS & SIMULATION CORE =================
+// =======================================================================
 
-// presets
-const PRESET_KEY = 'bbyworld.presets.v1';
-const presetName = ref<string>('');
-const selectedPreset = ref<string>('');
-const presetMap = reactive<Record<string, any>>(JSON.parse(localStorage.getItem(PRESET_KEY)||'{}'));
-const presetKeys = computed(()=> Object.keys(presetMap).sort());
+type Cell = {
+  id: number;
+  r: number; g: number; b: number; a: number;
+  x: number; y: number;
+  charge: number;
+  alive: boolean;
+  birthTick: number;
+  age: number;
+  parents: [number, number] | [];
+  lastSpawnTick: number;
+};
+type DeathReason = "conflict" | "charge" | "overcrowd";
 
-// computed refs for template (world size)
-const worldWComputed = computed(()=> worldWRef.value);
-const worldHComputed = computed(()=> worldHRef.value);
-Object.defineProperty(window, 'bbyW', { get(){return worldWComputed.value} });
-Object.defineProperty(window, 'bbyH', { get(){return worldHComputed.value} });
+const livingCells = ref<Cell[]>([]);
+let nextCellId = 1;
+const cellById: Record<number, Cell> = {};
+const familyTree: Record<number, { parents: number[], children: number[] }> = {};
+const stats = ref({ spawns: 0, conflicts: 0, chargeDecays: 0, overcrowdDecays: 0, totalLifespan: 0, deadCount: 0 });
+let tickCount = ref(0);
+let spatialMap: (Cell | null)[] = [];
 
+// --- The Fabric of the Universe ---
+let fieldPsi = new Float32Array(0);
+let fieldLam = new Float32Array(0);
+let fieldSig = new Float32Array(0);
+let tempField = new Float32Array(0);
+let solidGrid = new Float32Array(0);
 
-// ————— world setup
-function rebuildWorld(){
-  running.value = false;
-  worldW = worldH = boardSize.value;
-  worldWRef.value = worldW; worldHRef.value = worldH;
-  bufA = new Float32Array(worldW*worldH*4);
-  bufB = new Float32Array(worldW*worldH*4);
-  memBuf = new Float32Array(worldW*worldH*4);
-  bufA.fill(0); bufB.fill(0); memBuf.fill(0);
-  resizeCanvas();
-  requestRender();
-  nextTick(()=> running.value = true);
+// --- Renderer buffer ---
+let frame = new Uint8ClampedArray(0);
+let frameImg: ImageData | null = null;
+
+// --- Physics Constants ---
+const MAX_CHARGE = 255;
+const METABOLIC_COST = 0.2;
+const FIELD_DIFFUSION = 0.2;
+const FIELD_DECAY = 0.99;
+const FIELD_TRANSFORM_RATE = 0.01;
+const UPDATES_PER_TICK_DIVISOR = 50;
+const SPAWN_COOLDOWN = 50;
+
+// --- RNG & Noise ---
+let rng_seed = Date.now();
+function rand() { rng_seed = (rng_seed * 16807 + 1) % 2147483647; return (rng_seed - 1) / 2147483646; }
+const p: number[] = []; for(let i=0; i<512; i++) p[i] = Math.floor(rand()*256);
+const perm = [...p, ...p];
+const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+const lerp = (t: number, a: number, b: number) => a + t * (b - a);
+const grad = (hash: number, x: number, y: number) => {
+    const h = hash & 15;
+    const u = h < 8 ? x : y, v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+};
+function perlinNoise(x: number, y: number) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    x -= Math.floor(x); y -= Math.floor(y);
+    const u = fade(x), v = fade(y);
+    const A = perm[X] + Y, B = perm[X + 1] + Y;
+    return lerp(v, lerp(u, grad(perm[A], x, y), grad(perm[B], x - 1, y)),
+                   lerp(u, grad(perm[A + 1], x, y - 1), grad(perm[B + 1], x - 1, y - 1)));
+}
+
+/* ===================== Init / Resize / UI Functions (Defined Before Use) ===================== */
+function allocateWorldArrays(size:number){
+  const len = size * size;
+  fieldPsi = new Float32Array(len); fieldLam = new Float32Array(len); fieldSig = new Float32Array(len);
+  solidGrid = new Float32Array(len); tempField = new Float32Array(len);
+  spatialMap = new Array(len).fill(null);
+  const ctx = gameCanvas.value?.getContext("2d", { willReadFrequently: true });
+  if (ctx) { frameImg = ctx.createImageData(size, size); frame = frameImg.data; }
+}
+
+function computeBaseScale(){
+  const stage = stageEl.value;
+  if (!stage) return;
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  const s = S();
+  if (w <= 0 || h <= 0 || s <= 0) return;
+  baseScale.value = Math.max(1, Math.floor(Math.min(w / s, h / s)));
 }
 
 function clearWorld(){
-  bufA.fill(0); bufB.fill(0); memBuf.fill(0);
-  requestRender();
-}
-function randomizeWorld(){
-  for(let i=0;i<bufA.length;i++){
-    // light random soup; alpha slightly higher to gate activity
-    if ((i & 3)===3) bufA[i] = Math.random()*0.4; // A
-    else bufA[i] = Math.random()*0.2;
+  livingCells.value.length = 0;
+  spatialMap.fill(null);
+  Object.keys(cellById).forEach(key => delete cellById[Number(key)]);
+  Object.keys(familyTree).forEach(key => delete familyTree[Number(key)]);
+  const s = S();
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const i = x + y * s;
+      fieldPsi[i] = rand() * 0.1; fieldLam[i] = rand() * 0.1; fieldSig[i] = rand() * 0.1;
+      const n = (perlinNoise(x / (s/4), y / (s/4)) + 1) / 2;
+      solidGrid[i] = n > 0.6 ? (n - 0.6) * 10 : 0;
+    }
   }
-  requestRender();
+  stats.value = { spawns: 0, conflicts: 0, chargeDecays: 0, overcrowdDecays: 0, totalLifespan: 0, deadCount: 0 };
+  tickCount.value = 0;
+  nextCellId = 1;
 }
 
-// ————— stamps
-async function refreshStamps(){
-  try{
-    const r = await fetch('/api/gallery', { cache: 'no-store' });
-    const j = await r.json();
-    // accept either shape: {url,...} or {file,...}
-    const raw = Array.isArray(j) ? j : (j.items || []);
-    const onlyStamps = raw.filter((it:any)=> (it.file && typeof it.file==='string' && it.file.endsWith('.stamp.png')) || (it.url && (''+it.url).endsWith('.stamp.png')));
-    const list:Stamp[] = [];
-    for (const it of onlyStamps){
-      const file = it.file || it.url.split('/').pop();
-      const url = it.url || `/api/gallery/file/${file}`;
-      // fetch image as bitmap
-      const imgRes = await fetch(url, { cache: 'force-cache' });
-      const blob = await imgRes.blob();
-      const bmp = await createImageBitmap(blob);
-      if (bmp.width!==64 || bmp.height!==64){
-        console.warn('Stamp not 64×64; using anyway but mapped as 64 cells:', file, bmp.width, bmp.height);
+function applyBoardSize(){
+  pan.value = {x:0, y:0};
+  zoomFactor.value = 1;
+  const canvas = gameCanvas.value;
+  if (canvas){ canvas.width = S(); canvas.height = S(); }
+  allocateWorldArrays(S());
+  clearWorld();
+  computeBaseScale();
+}
+
+const pan = ref({ x: 0, y: 0 }); const baseScale = ref(1); const zoomFactor = ref(1);
+const ticksPerSecond = ref(30);
+const totalScale = computed(() => Math.max(1, Math.floor(baseScale.value * zoomFactor.value)));
+const canvasStyle = computed(() => ({ 
+  transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, 
+  transformOrigin: "top left",
+  willChange: 'transform'
+}));
+function zoomIn() { zoomFactor.value = Math.min(16, zoomFactor.value * 1.25); }
+function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
+function resetView(){ pan.value = { x: 0, y: 0 }; zoomFactor.value = 1; computeBaseScale(); }
+let isPanning = false; let lastPan = { x: 0, y: 0 };
+function startPan(e: MouseEvent) { if (e.button !== 1 && e.button !== 2) return; isPanning = true; lastPan = { x: e.clientX, y: e.clientY }; }
+function onMouseMove(e: MouseEvent) { lastMouseEvent = e; if (isPanning) { pan.value.x += e.clientX - lastPan.x; pan.value.y += e.clientY - lastPan.y; lastPan = { x: e.clientX, y: e.clientY }; } }
+function endPan() { isPanning = false; }
+function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
+function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
+function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
+
+/* ===================== Main Loop ===================== */
+let animationFrameId: number | null = null;
+let lastTime = 0;
+let timeSinceLastTick = 0;
+const MAX_UPDATES_PER_FRAME = 5;
+
+function mainLoop(timestamp: number) {
+  const ctx = gameCanvas.value?.getContext("2d", { willReadFrequently: true });
+  if (!ctx) { animationFrameId = requestAnimationFrame(mainLoop); return; }
+  const tickInterval = 1000 / ticksPerSecond.value;
+  if(lastTime === 0) lastTime = timestamp;
+  const deltaTime = timestamp - lastTime;
+  lastTime = timestamp;
+  timeSinceLastTick += deltaTime;
+  let performed = 0;
+  while (timeSinceLastTick >= tickInterval && performed < MAX_UPDATES_PER_FRAME) {
+    update();
+    timeSinceLastTick -= tickInterval;
+    performed++;
+  }
+  if (performed === MAX_UPDATES_PER_FRAME) timeSinceLastTick = 0;
+  drawGrid(ctx);
+  if (lastMouseEvent) updateScope(lastMouseEvent);
+  animationFrameId = requestAnimationFrame(mainLoop);
+}
+
+/* ===================== Simulation Update ===================== */
+function update() {
+  tickCount.value++;
+  const aliveCellsThisTick = livingCells.value.filter(c => c.alive);
+
+  for (const c of aliveCellsThisTick) {
+    c.age++;
+    const idx = I(c.x, c.y); const influence = (c.a / 255) * 0.2;
+    fieldPsi[idx] += (c.r / 255) * influence; fieldLam[idx] += (c.g / 255) * influence; fieldSig[idx] += (c.b / 255) * influence;
+    const normR = c.r/255, normG = c.g/255, normB = c.b/255;
+    if (normR > normG && normR > normB) solidGrid[idx] = Math.min(6, solidGrid[idx] + 0.01 * normR);
+    if (normB > normR && normB > normG) solidGrid[idx] = Math.max(0, solidGrid[idx] - 0.01 * normB);
+    if (normG > normR && normG > normB && solidGrid[idx] > 0) { const conversion = Math.min(solidGrid[idx], 0.01 * normG); solidGrid[idx] -= conversion; fieldLam[idx] += conversion * 5; }
+  }
+
+  diffuseAndTransform(fieldPsi, fieldSig, fieldLam); diffuseAndTransform(fieldLam, fieldPsi, fieldSig); diffuseAndTransform(fieldSig, fieldLam, fieldPsi);
+  
+  const nextLivingCells = [];
+  for (const c of aliveCellsThisTick) {
+    const idx = I(c.x, c.y); const resonance = (fieldPsi[idx]*(c.r/255))+(fieldLam[idx]*(c.g/255))+(fieldSig[idx]*(c.b/255));
+    const dissonance = (fieldPsi[idx]*((255-c.r)/255))+(fieldLam[idx]*((255-c.g)/255))+(fieldSig[idx]*((255-c.b)/255));
+    const chargeDelta = (resonance - dissonance) * 0.8; c.charge = Math.min(MAX_CHARGE, c.charge + chargeDelta - METABOLIC_COST);
+    const neighborCount = countAdjacent(c.x, c.y);
+
+    let stillAlive = true;
+    if (neighborCount > 4) {
+      const crowdPenalty = (neighborCount - 4) * 0.5; c.charge -= crowdPenalty;
+      if (c.charge <= 0) {
+        recordDecay(c, "overcrowd");
+        stillAlive = false;
       }
-      list.push({ file, label: it.label || file, author: it.author, url, bmp });
     }
-    stamps.value = list;
-    if (!selectedStamp.value && list.length) selectedStamp.value = list[0];
-  }catch(err){
-    console.error('stamp refresh failed', err);
-  }
-}
-function selectStamp(s:Stamp){ selectedStamp.value = s; }
-function rotLeft(){ rotQuarterTurns = (rotQuarterTurns+3)%4; }
-function rotRight(){ rotQuarterTurns = (rotQuarterTurns+1)%4; }
+    if (stillAlive && c.charge <= 0) {
+      recordDecay(c, "charge");
+      stillAlive = false;
+    }
 
-// ————— canvas & view
-function resizeCanvas(){
-  const c = canvas.value!, w = canvasWrap.value!.clientWidth, h = canvasWrap.value!.clientHeight;
-  const dpr = window.devicePixelRatio||1;
-  c.width = Math.max(1, Math.floor(w*dpr));
-  c.height = Math.max(1, Math.floor(h*dpr));
-  c.style.width = `${w}px`;
-  c.style.height = `${h}px`;
-  ctx.value = c.getContext('2d', { alpha: false })!;
-  requestRender();
-}
-function resetView(){
-  zoom.value = 1;
-  camX.value = (worldW/2)|0;
-  camY.value = (worldH/2)|0;
-  requestRender();
-}
-function fitToScreen(){
-  if(!canvasWrap.value) return;
-  const w = canvasWrap.value.clientWidth, h = canvasWrap.value.clientHeight;
-  const z = Math.min(w/worldW, h/worldH);
-  zoom.value = z;
-  camX.value = worldW/2;
-  camY.value = worldH/2;
-  requestRender();
-}
-function screenToWorld(sx:number, sy:number){
-  const cw = canvas.value!.width, ch = canvas.value!.height;
-  const wx = (sx - cw/2)/zoom.value + camX.value;
-  const wy = (sy - ch/2)/zoom.value + camY.value;
-  return { x: wx, y: wy };
-}
-
-// ————— painting
-function applyStampAt(worldX:number, worldY:number){
-  if(!selectedStamp.value) return;
-  // top-left so center by half stamp
-  let x0 = Math.round(worldX - 32);
-  let y0 = Math.round(worldY - 32);
-  if (snapToGrid.value){
-    x0 = Math.round(x0);
-    y0 = Math.round(y0);
-  }
-  // draw bitmap into a temp canvas to read pixels (honours rotation/flip)
-  const off = new OffscreenCanvas(64,64);
-  const octx = off.getContext('2d')!;
-  octx.save();
-  octx.translate(32,32);
-  if (flipX.value) octx.scale(-1, 1);
-  if (flipY.value) octx.scale( 1,-1);
-  octx.rotate(rotQuarterTurns * Math.PI/2);
-  octx.drawImage(selectedStamp.value.bmp, -32, -32);
-  octx.restore();
-  const img = octx.getImageData(0,0,64,64).data;
-
-  // blend into bufA
-  const mode = paintMode.value;
-  const alpha = paintAlpha.value;
-  const pick = paintChannel.value;
-
-  for (let sy=0; sy<64; sy++){
-    const wy = (y0 + sy + worldH) % worldH;
-    for (let sx=0; sx<64; sx++){
-      const wx = (x0 + sx + worldW) % worldW;
-      const si = (sy*64 + sx)*4;
-      const r = img[si  ]/255;
-      const g = img[si+1]/255;
-      const b = img[si+2]/255;
-      const a = (img[si+3]/255) * alpha;
-
-      if (a<=0) continue;
-
-      const i = (wy*worldW + wx)*4;
-      // get current
-      const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
-
-      // choose source by channel selection
-      const srcR = (pick==='rgba'||pick==='r') ? r : 0;
-      const srcG = (pick==='rgba'||pick==='g') ? g : 0;
-      const srcB = (pick==='rgba'||pick==='b') ? b : 0;
-      const srcA = (pick==='rgba'||pick==='a') ? a : 0;
-
-      const blend = (dst:number, src:number)=>{
-        if (mode==='overwrite') return lerp(dst, src, a);
-        if (mode==='add')       return clamp01(dst + src*a);
-        if (mode==='subtract')  return clamp01(dst - src*a);
-        if (mode==='multiply')  return clamp01(dst * (1 - a + src*a));
-        return dst;
-      };
-
-      bufA[i  ] = blend(R, srcR);
-      bufA[i+1] = blend(G, srcG);
-      bufA[i+2] = blend(B, srcB);
-      bufA[i+3] = blend(A, srcA);
+    if(stillAlive) {
+      nextLivingCells.push(c);
     }
   }
+  livingCells.value = nextLivingCells;
 
-  requestRender();
-}
-
-// ————— pointer handlers
-function onPointerDown(e:MouseEvent){
-  if (e.button===1 || (e.button===0 && e.shiftKey)){ // middle mouse or shift-drag = pan
-    isPanning = true;
-    lastPaintX = e.clientX; lastPaintY = e.clientY;
-    return;
-  }
-  if (e.button===0){
-    isPainting = true;
-    paintAtEvent(e, true);
-  }
-}
-function onPointerMove(e:MouseEvent){
-  if (isPanning){
-    const dx = e.clientX - lastPaintX;
-    const dy = e.clientY - lastPaintY;
-    lastPaintX = e.clientX; lastPaintY = e.clientY;
-    camX.value -= dx/zoom.value;
-    camY.value -= dy/zoom.value;
-    requestRender();
-    return;
-  }
-  if (isPainting) paintAtEvent(e, false);
-}
-function onPointerUp(_e:MouseEvent){
-  isPanning = false;
-  isPainting = false;
-}
-function onWheel(e:WheelEvent){
-  const delta = Math.sign(e.deltaY) * 0.1;
-  const pre = zoom.value;
-  const worldBefore = screenToWorld(e.offsetX * (window.devicePixelRatio||1), e.offsetY * (window.devicePixelRatio||1));
-  zoom.value = clamp01(pre * (1 - delta));
-  if (zoom.value<0.25) zoom.value = 0.25;
-  if (zoom.value>8) zoom.value = 8;
-  const worldAfter = screenToWorld(e.offsetX * (window.devicePixelRatio||1), e.offsetY * (window.devicePixelRatio||1));
-  camX.value += (worldBefore.x - worldAfter.x);
-  camY.value += (worldBefore.y - worldAfter.y);
-  requestRender();
-}
-function paintAtEvent(e:MouseEvent, force:boolean){
-  const rect = canvas.value!.getBoundingClientRect();
-  const sx = (e.clientX - rect.left) * (window.devicePixelRatio||1);
-  const sy = (e.clientY - rect.top) * (window.devicePixelRatio||1);
-  const w = screenToWorld(sx, sy);
-  const wx = Math.round(w.x);
-  const wy = Math.round(w.y);
-  if (force || Math.hypot(wx-lastPaintX, wy-lastPaintY)>8){
-    applyStampAt(wx, wy);
-    lastPaintX = wx; lastPaintY = wy;
+  const updatesPerTick = Math.max(1, Math.floor(livingCells.value.length / UPDATES_PER_TICK_DIVISOR));
+  for (let i = 0; i < updatesPerTick; i++) {
+    if (livingCells.value.length === 0) break;
+    const cellIndex = Math.floor(rand() * livingCells.value.length);
+    const c = livingCells.value[cellIndex]; if (c && c.alive) attemptMove(c);
   }
 }
 
-// ————— sim core
-function idx(x:number,y:number){ return ((y*worldW + x)<<2); } // *4
-function lapSample(buf:Float32Array, x:number, y:number, chOfs:number){
-  const xm = (x-1+worldW)%worldW, xp = (x+1)%worldW;
-  const ym = (y-1+worldH)%worldH, yp = (y+1)%worldH;
-  const c  = buf[idx(x ,y )+chOfs];
-  const n  = buf[idx(x ,ym)+chOfs];
-  const s  = buf[idx(x ,yp)+chOfs];
-  const w  = buf[idx(xm,y )+chOfs];
-  const e  = buf[idx(xp,y )+chOfs];
-  const nw = buf[idx(xm,ym)+chOfs];
-  const ne = buf[idx(xp,ym)+chOfs];
-  const sw = buf[idx(xm,yp)+chOfs];
-  const se = buf[idx(xp,yp)+chOfs];
-  // 3x3 laplacian-ish (normalized)
-  // weights: center -1, orth 0.2, diag 0.05 (sum ~0)
-  return ( (n+s+w+e)*0.2 + (nw+ne+sw+se)*0.05 - c*1.0 );
+function I(x: number, y: number): number {
+  const s = S();
+  return ((x & (s - 1)) + (y & (s - 1)) * s) >>> 0;
 }
-function step(){
-  // one CA step over the whole grid
-  const p = params;
-  for (let y=0; y<worldH; y++){
-    for (let x=0; x<worldW; x++){
-      const i = idx(x,y);
-      const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
 
-      // laplacians
-      const LR = lapSample(bufA, x,y,0);
-      const LG = lapSample(bufA, x,y,1);
-      const LB = lapSample(bufA, x,y,2);
-      const LA = lapSample(bufA, x,y,3);
+// --- Physics & Cell Subroutines ---
+function diffuseAndTransform(field: Float32Array, feedField: Float32Array, transformField: Float32Array) {
+    const s = S(); tempField.set(field);
+    for (let y = 0; y < s; y++) { for (let x = 0; x < s; x++) {
+        const i = I(x, y); const neighbors = (tempField[I(x + 1, y)] + tempField[I(x - 1, y)] + tempField[I(x, y + 1)] + tempField[I(x, y - 1)]) * 0.25;
+        field[i] = (1 - FIELD_DIFFUSION) * tempField[i] + FIELD_DIFFUSION * neighbors; field[i] *= FIELD_DECAY;
+        const transform = Math.sin(feedField[i]) * Math.tanh(transformField[i]) * FIELD_TRANSFORM_RATE;
+        if (!isNaN(transform)) field[i] += transform; field[i] = isNaN(field[i]) ? 0 : Math.max(0, field[i]);
+    }}
+}
 
-      // weather input (RGB), gated by A
-      const wR = weatherRGB[0]*weatherStrength.value*A;
-      const wG = weatherRGB[1]*weatherStrength.value*A;
-      const wB = weatherRGB[2]*weatherStrength.value*A;
+// NEW PHYSICS: Replaced orbital motion with direct attraction/repulsion via field resonance.
+function attemptMove(c: Cell) {
+    let bestScore = -Infinity; 
+    let bestDx = 0, bestDy = 0;
+    const dirs = [[0,1], [0,-1], [1,0], [-1,0]].sort(() => rand() - 0.5);
 
-      // RGB cross-talk: row receives from column
-      const xR = crosstalk.R.R*R + crosstalk.R.G*G + crosstalk.R.B*B;
-      const xG = crosstalk.G.R*R + crosstalk.G.G*G + crosstalk.G.B*B;
-      const xB = crosstalk.B.R*R + crosstalk.B.G*G + crosstalk.B.B*B;
+    for (const [dx, dy] of dirs) {
+      const nx = c.x + dx, ny = c.y + dy;
+      const nIdx = I(nx, ny);
 
-      // noisy inputs
-      const nR = (Math.random()*2-1) * p.R.noise;
-      const nG = (Math.random()*2-1) * p.G.noise;
-      const nB = (Math.random()*2-1) * p.B.noise;
-      const nA = (Math.random()*2-1) * p.A.noise;
+      // The "Attraction Score": How much does this cell's color match the field's color at the target?
+      const attractionScore = 
+          (c.r / 255 * fieldPsi[nIdx]) + 
+          (c.g / 255 * fieldLam[nIdx]) + 
+          (c.b / 255 * fieldSig[nIdx]);
 
-      // base updates
-      let r = R + p.R.diffuse*LR - p.R.decay*R + xR*A + wR + nR;
-      let g = G + p.G.diffuse*LG - p.G.decay*G + xG*A + wG + nG;
-      let b = B + p.B.diffuse*LB - p.B.decay*B + xB*A + wB + nB;
-      let a = A + p.A.diffuse*LA - p.A.decay*A + nA;
+      const terrainPenalty = solidGrid[nIdx] * 2;
+      const score = attractionScore - terrainPenalty;
 
-      // simple parametric nonlinearity per channel (smooth step around thresh)
-      const act = (v:number, k:number, t:number)=> 1/(1+Math.exp(-(v - t)*k));
-      r = lerp(r, act(r, p.R.nonlin, p.R.thresh), 0.5);
-      g = lerp(g, act(g, p.G.nonlin, p.G.thresh), 0.5);
-      b = lerp(b, act(b, p.B.nonlin, p.B.thresh), 0.5);
-      a = lerp(a, act(a, p.A.nonlin, p.A.thresh), 0.5);
+      if (score > bestScore) {
+        bestScore = score;
+        bestDx = dx;
+        bestDy = dy;
+      }
+    }
 
-      // memory (EMA 4D)
-      const mi = i;
-      memBuf[mi  ] = lerp(memBuf[mi  ], r, memoryMix.value);
-      memBuf[mi+1] = lerp(memBuf[mi+1], g, memoryMix.value);
-      memBuf[mi+2] = lerp(memBuf[mi+2], b, memoryMix.value);
-      memBuf[mi+3] = lerp(memBuf[mi+3], a, memoryMix.value);
+    if (bestDx !== 0 || bestDy !== 0) {
+      const targetX = c.x + bestDx, targetY = c.y + bestDy;
+      const targetCell = spatialMap[I(targetX, targetY)];
 
-      // final blend: current pulled slightly toward memory to stabilise/bloom structures
-      r = lerp(r, memBuf[mi  ], 0.25);
-      g = lerp(g, memBuf[mi+1], 0.25);
-      b = lerp(b, memBuf[mi+2], 0.25);
-      a = lerp(a, memBuf[mi+3], 0.25);
+      if (targetCell === null) {
+        spatialMap[I(c.x, c.y)] = null;
+        c.x = targetX;
+        c.y = targetY;
+        spatialMap[I(targetX, targetY)] = c;
+      } else if (targetCell.alive) {
+        handleInteraction(c, targetCell);
+      }
+    }
+}
 
-      bufB[i  ] = clamp01(r);
-      bufB[i+1] = clamp01(g);
-      bufB[i+2] = clamp01(b);
-      bufB[i+3] = clamp01(a);
+function handleInteraction(attacker: Cell, defender: Cell) {
+  const resonance = 1 - (Math.abs(attacker.r - defender.r) + Math.abs(attacker.g - defender.g) + Math.abs(attacker.b - defender.b)) / (765);
+  if (resonance > 0.8 && (attacker.charge + defender.charge) > MAX_CHARGE * 1.5 && tickCount.value > attacker.lastSpawnTick + SPAWN_COOLDOWN && tickCount.value > defender.lastSpawnTick + SPAWN_COOLDOWN) {
+    const spawnLoc = findEmptyAdjacent(attacker.x, attacker.y) || findEmptyAdjacent(defender.x, defender.y);
+    if (spawnLoc) {
+      spawn(spawnLoc.x, spawnLoc.y, { parents: [attacker, defender] });
+      attacker.charge *= 0.6; defender.charge *= 0.6;
+      attacker.lastSpawnTick = tickCount.value; defender.lastSpawnTick = tickCount.value;
+      stats.value.spawns++;
+    }
+  } else {
+    stats.value.conflicts++;
+    const attIdx = I(attacker.x, attacker.y), defIdx = I(defender.x, defender.y);
+    const attFieldAdv = (fieldPsi[attIdx]*(attacker.r/255))+(fieldLam[attIdx]*(attacker.g/255))+(fieldSig[attIdx]*(attacker.b/255));
+    const defFieldAdv = (fieldPsi[defIdx]*(defender.r/255))+(fieldLam[defIdx]*(defender.g/255))+(fieldSig[defIdx]*(defender.b/255));
+    const attScore = attacker.charge * (attacker.a / 255) + attFieldAdv; const defScore = defender.charge * (defender.a / 255) + defFieldAdv;
+    if (attScore > defScore) {
+      attacker.charge = Math.min(MAX_CHARGE, attacker.charge + defender.charge * 0.5); recordDecay(defender, "conflict");
+    } else {
+      defender.charge = Math.min(MAX_CHARGE, defender.charge + attacker.charge * 0.5); recordDecay(attacker, "conflict");
     }
   }
-  // swap
-  const t = bufA; bufA = bufB; bufB = t;
 }
 
-// ————— render
-let needsRender = true;
-function requestRender(){ needsRender = true; }
-function render(){
-  const c = canvas.value!, context = ctx.value!;
-  context.save();
-  // clear
-  context.fillStyle = '#0b0c0f';
-  context.fillRect(0,0,c.width,c.height);
+function spawn(x: number, y: number, options: { parents?: [Cell, Cell], color?: {r:number, g:number, b:number, a:number} } = {}): Cell {
+  let r, g, b, a; let parents: [number, number] | [] = [];
 
-  // transform to world
-  context.translate(c.width/2, c.height/2);
-  context.scale(zoom.value, zoom.value);
-  context.translate(-camX.value, -camY.value);
+  if (options.parents) {
+    const [p1, p2] = options.parents;
+    parents = [p1.id, p2.id];
+    const totalCharge = p1.charge + p2.charge || 1;
+    const w1 = p1.charge / totalCharge, w2 = p2.charge / totalCharge;
 
-  // draw world buffer -> imageData (chunked)
-  const img = context.createImageData(worldW, worldH);
-  const data = img.data;
+    const blendChannel = (c1: number, c2: number, mut: number) => {
+      const avg = c1 * w1 + c2 * w2;
+      const diff = c1 - c2;
+      const drift = diff * (rand() * 0.25 - 0.125); // Bias away from the middle
+      return Math.min(255, Math.max(0, Math.round(avg + drift + (rand() * mut - mut / 2))));
+    };
 
-  // slight colour grading from memory to give vibe
-  for (let i=0, j=0; i<bufA.length; i+=4, j+=4){
-    const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
-    // mix current with soft memory glow
-    const mR = memBuf[i  ], mG = memBuf[i+1], mB = memBuf[i+2];
-    const glow = 0.20;
-    const r = clamp01(lerp(R, mR, glow));
-    const g = clamp01(lerp(G, mG, glow));
-    const b = clamp01(lerp(B, mB, glow));
-    // A modulates brightness
-    const br = 0.6 + 0.6*A;
-    data[j  ] = Math.floor(255 * clamp01(r * br));
-    data[j+1] = Math.floor(255 * clamp01(g * br));
-    data[j+2] = Math.floor(255 * clamp01(b * br));
-    data[j+3] = 255;
+    r = blendChannel(p1.r, p2.r, 6);
+    g = blendChannel(p1.g, p2.g, 6);
+    b = blendChannel(p1.b, p2.b, 6);
+    a = blendChannel(p1.a, p2.a, 4);
+
+  } else if (options.color) {
+    ({r, g, b, a} = options.color);
+  } else { 
+    r = Math.floor(rand()*255); g = Math.floor(rand()*255); b = Math.floor(rand()*255); a = 150 + Math.floor(rand()*105); 
   }
 
-  // nearest-neighbour draw at world scale
-  const off = new OffscreenCanvas(worldW, worldH);
-  const octx = off.getContext('2d')!;
-  octx.putImageData(img, 0, 0);
-  context.imageSmoothingEnabled = false;
-  context.drawImage(off, 0,0, worldW, worldH);
+  const wx = (x % S() + S()) % S();
+  const wy = (y % S() + S()) % S();
+  const newCell: Cell = { id: nextCellId++, r, g, b, a, x: wx, y: wy, parents, charge: MAX_CHARGE * 0.8, alive: true, birthTick: tickCount.value, age: 0, lastSpawnTick: tickCount.value };
+  
+  livingCells.value.push(newCell); 
+  cellById[newCell.id] = newCell; 
+  spatialMap[I(wx, wy)] = newCell;
+  familyTree[newCell.id] = { parents, children: [] };
+  if (options.parents) { 
+    const [p1, p2] = options.parents; 
+    familyTree[p1.id]?.children.push(newCell.id); 
+    familyTree[p2.id]?.children.push(newCell.id); 
+  }
+  return newCell;
+}
 
-  // stamp overlay grid + ghost (preview)
-  if (showStampGrid.value){
-    context.strokeStyle = 'rgba(255,255,255,0.05)';
-    context.lineWidth = 1 / zoom.value;
-    for (let x=0; x<=worldW; x+=64){
-      context.beginPath(); context.moveTo(x,0); context.lineTo(x,worldH); context.stroke();
+function recordDecay(c: Cell, reason: DeathReason) {
+  if (!c.alive) return; c.alive = false;
+  spatialMap[I(c.x, c.y)] = null;
+  const idx = I(c.x, c.y); const energy = (c.charge + c.a) / 255;
+  fieldPsi[idx] += (c.r/255)*energy; fieldLam[idx] += (c.g/255)*energy; fieldSig[idx] += (c.b/255)*energy;
+  solidGrid[idx] = Math.min(6, solidGrid[idx] + (c.a / 255) * 0.2);
+  if(reason === 'conflict') stats.value.conflicts++; if(reason === 'charge') stats.value.chargeDecays++; if(reason === 'overcrowd') stats.value.overcrowdDecays++;
+  stats.value.deadCount++; stats.value.totalLifespan += c.age;
+}
+function findEmptyAdjacent(x:number, y:number): {x:number, y:number} | null {
+    const dirs = [[0,1], [0,-1], [1,0], [-1,0]].sort(() => rand() - 0.5);
+    for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy; if (spatialMap[I(nx, ny)] === null) return {x: nx, y: ny};
+    } return null;
+}
+function countAdjacent(x:number, y:number): number {
+    let count = 0;
+    for (let dy = -1; dy <= 1; dy++) { for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue; if (spatialMap[I(x + dx, y + dy)]) count++;
+    }} return count;
+}
+
+/* ===================== Drawing ===================== */
+function drawGrid(ctx: CanvasRenderingContext2D) {
+  if (!frameImg) return; ctx.imageSmoothingEnabled = false; const s = S();
+  for (let y = 0; y < s; y++) { for (let x = 0; x < s; x++) {
+      const off = (x + y * s) * 4; const ii = I(x, y); const rock = solidGrid[ii] * 30;
+      frame[off] = Math.min(255, 10 + fieldPsi[ii] * 40 + rock);
+      frame[off + 1] = Math.min(255, 10 + fieldLam[ii] * 40 + rock);
+      frame[off + 2] = Math.min(255, 10 + fieldSig[ii] * 40 + rock);
+      frame[off + 3] = 255;
+  }}
+  const aliveCells = livingCells.value.filter(c => c.alive);
+  for (const c of aliveCells) {
+    const off = (I(c.x, c.y)) * 4;
+    frame[off] = c.r; frame[off + 1] = c.g; frame[off + 2] = c.b; frame[off + 3] = c.a;
+    if (highlightedGroup.value && groupKey(c) === highlightedGroup.value) { frame[off]=Math.min(255, c.r+80); frame[off+1]=Math.min(255, c.g+80); frame[off+2]=Math.min(255, c.b+80); }
+    if (selectedCell.value && c.id === selectedCell.value.id) { frame[off]=255; frame[off+1]=255; frame[off+2]=0; }
+  }
+  ctx.putImageData(frameImg, 0, 0);
+}
+
+// --- Lifecycle, UI, Computed Properties ---
+let resizeObs: ResizeObserver | null = null;
+onMounted(async () => {
+  try {
+    const gallery = await fetchBbyBookGallery();
+    cards.value = gallery.map(card => ({ label: card.factName, url: card.url, stamp_url: card.stamp_url }));
+    if (cards.value.length > 0) selectCard(cards.value[0].label);
+  } catch (error) { console.error("Failed to fetch gallery:", error); }
+  applyBoardSize();
+  if (stageEl.value) {
+    resizeObs = new ResizeObserver(() => computeBaseScale());
+    resizeObs.observe(stageEl.value);
+  }
+  if (scopeCanvas.value) { scopeCanvas.value.width = 256; scopeCanvas.value.height = 256; }
+  animationFrameId = requestAnimationFrame(mainLoop);
+});
+onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); if (resizeObs && stageEl.value) resizeObs.disconnect(); });
+watch(boardSize, () => applyBoardSize());
+watch(selectedCardLabel, () => loadSelectedImage());
+function selectCard(label: string) { selectedCardLabel.value = label; }
+
+// FULLY FIXED: This function now uses the robust, multi-URL-attempt logic from version 1.
+function loadSelectedImage() {
+  const selected = cards.value.find(c => c.label === selectedCardLabel.value);
+  if (!selected) return;
+
+  const tryUrls: string[] = [];
+  if (selected.stamp_url) tryUrls.push(selected.stamp_url);
+  tryUrls.push(selected.url.replace(/\.png$/i, '.stamp.png'));
+  tryUrls.push(selected.url);
+
+  const img = new Image();
+  img.crossOrigin = "Anonymous";
+  let idx = 0;
+
+  img.onload = () => {
+    const scale = Math.min(1, 64 / Math.max(img.width, img.height)); // MAX_STAMP=64
+    const outW = Math.max(1, Math.floor(img.width * scale));
+    const outH = Math.max(1, Math.floor(img.height * scale));
+
+    const tempCanvas = document.createElement("canvas");
+    const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
+    tempCanvas.width = outW; tempCanvas.height = outH;
+    (ctx as any).imageSmoothingEnabled = false;
+
+    ctx.drawImage(img, 0, 0, outW, outH);
+    loadedImageData = ctx.getImageData(0, 0, outW, outH);
+  };
+
+  img.onerror = () => {
+    idx++;
+    if (idx < tryUrls.length) {
+      img.src = tryUrls[idx];
     }
-    for (let y=0; y<=worldH; y+=64){
-      context.beginPath(); context.moveTo(0,y); context.lineTo(worldW,y); context.stroke();
-    }
-  }
-
-  context.restore();
-
-  needsRender = false;
+  };
+  img.src = tryUrls[idx];
 }
 
-// ————— main loop
-function tick(ts:number){
-  const dt = Math.max(0, ts - lastTickMs);
-  lastTickMs = ts;
-  frameCounter++;
-  frameTimeAcc += dt;
-  if (frameTimeAcc >= 500){
-    fps.value = frameCounter * 1000 / frameTimeAcc;
-    frameCounter = 0;
-    frameTimeAcc = 0;
-  }
-
-  // schedule sim steps to roughly match ticksPerSecond
-  const steps = Math.max(1, Math.round(ticksPerSecond.value/60)); // do multiple per frame if needed
-  if (running.value){
-    for (let k=0;k<steps;k++) step();
-    needsRender = true;
-  }
-
-  if (needsRender) render();
-  rafId = requestAnimationFrame(tick);
+function screenToWorld(event: MouseEvent): {x: number, y: number} | null {
+    const canvas = gameCanvas.value;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const worldX = Math.floor((event.clientX - rect.left) * scale);
+    const worldY = Math.floor((event.clientY - rect.top) * scale);
+    return {x: worldX, y: worldY};
 }
 
-// ————— controls
-function toggleRun(){ running.value = !running.value; }
-function stepOnce(){ if(!running.value){ step(); requestRender(); } }
-
-// ————— screenshots
-function saveScreenshot(){
-  if(!canvas.value) return;
-  // render at 1:1 world scale into offscreen for crispness
-  const off = document.createElement('canvas');
-  off.width = worldW; off.height = worldH;
-  const octx = off.getContext('2d')!;
-  const img = octx.createImageData(worldW, worldH);
-  const data = img.data;
-  for (let i=0, j=0; i<bufA.length; i+=4, j+=4){
-    const R = bufA[i  ], G = bufA[i+1], B = bufA[i+2], A = bufA[i+3];
-    const br = 0.6 + 0.6*A;
-    data[j  ] = Math.floor(255*clamp01(lerp(R, memBuf[i  ], 0.2)*br));
-    data[j+1] = Math.floor(255*clamp01(lerp(G, memBuf[i+1], 0.2)*br));
-    data[j+2] = Math.floor(255*clamp01(lerp(B, memBuf[i+2], 0.2)*br));
-    data[j+3] = 255;
-  }
-  octx.putImageData(img,0,0);
-  const a = document.createElement('a');
-  a.download = `bbyWorld_${worldW}x${worldH}_${Date.now()}.png`;
-  a.href = off.toDataURL('image/png');
-  a.click();
+function handleCanvasClick(event: MouseEvent) {
+    const coords = screenToWorld(event);
+    if (!coords) return;
+    const clickedCell = spatialMap[I(coords.x, coords.y)];
+    if (clickedCell && clickedCell.alive) { selectedCell.value = clickedCell; } else { placeImageAt(coords.x, coords.y); }
 }
 
-// ————— presets IO
-function snapState(){
+function placeImageAt(worldX: number, worldY: number) {
+    if (!loadedImageData) return;
+    const startX = worldX - Math.floor(loadedImageData.width / 2); const startY = worldY - Math.floor(loadedImageData.height / 2);
+    for (let y = 0; y < loadedImageData.height; y++) { for (let x = 0; x < loadedImageData.width; x++) {
+        const i = (y * loadedImageData.width + x) * 4; const a = loadedImageData.data[i + 3];
+        if (a > 50) {
+            const pX = startX + x, pY = startY + y;
+            if (!spatialMap[I(pX, pY)]) {
+                const r = loadedImageData.data[i], g = loadedImageData.data[i+1], b = loadedImageData.data[i+2];
+                spawn(pX, pY, { color: {r, g, b, a} });
+            }
+        }
+    }}
+}
+const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
+const avgLifespan = computed(() => stats.value.deadCount > 0 ? formatTicks(Math.floor(stats.value.totalLifespan / stats.value.deadCount)) : "---");
+const selectedCell = ref<Cell | null>(null);
+function selectCellById(id: number) { const cell = cellById[id]; if (cell && cell.alive) selectedCell.value = cell; }
+const selectedFamily = computed(() => {
+  if (!selectedCell.value) return { parents: [], children: [] };
+  const entry = familyTree[selectedCell.value.id] || { parents: [], children: [] };
   return {
-    boardSize: boardSize.value,
-    params: JSON.parse(JSON.stringify(params)),
-    crosstalk: JSON.parse(JSON.stringify(crosstalk)),
-    memoryMix: memoryMix.value,
-    weatherStrength: weatherStrength.value,
-    weatherEnabled: weatherEnabled.value,
-    ticksPerSecond: ticksPerSecond.value,
+    parents: entry.parents.map(id => cellById[id]).filter(c => c && c.alive),
+    children: entry.children.map(id => cellById[id]).filter(c => c && c.alive),
   };
-}
-function applyState(s:any){
-  if (!s) return;
-  if (s.boardSize && s.boardSize!==boardSize.value){
-    boardSize.value = s.boardSize;
-    rebuildWorld();
+});
+interface ColourGroupStat { colour: string; count: number; percentage: number; avgAge: number; avgCharge: number; avgMass: number; }
+const GROUP_STEP = 48; const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
+function rgbToHex(r: number, g: number, b: number) { return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`; }
+function groupKey(c: Cell) { return rgbToHex(quant(c.r), quant(c.g), quant(c.b)); }
+const groupStats = computed<ColourGroupStat[]>(() => {
+  const base = { count: 0, totalAge: 0, totalCharge: 0, totalMass: 0 };
+  const groups: Record<string, typeof base> = {}; const living = livingCells.value.filter(c => c.alive);
+  for (const c of living) {
+    const key = groupKey(c); const g = groups[key] || (groups[key] = { ...base });
+    g.count++; g.totalAge += c.age; g.totalCharge += c.charge; g.totalMass += c.a / 255;
   }
-  Object.assign(params.R, s.params?.R||{});
-  Object.assign(params.G, s.params?.G||{});
-  Object.assign(params.B, s.params?.B||{});
-  Object.assign(params.A, s.params?.A||{});
-  ['R','G','B'].forEach((row:any)=>{
-    if (s.crosstalk && s.crosstalk[row]){
-      Object.assign((crosstalk as any)[row], s.crosstalk[row]);
-    }
-  });
-  if (typeof s.memoryMix==='number') memoryMix.value = s.memoryMix;
-  if (typeof s.weatherStrength==='number') weatherStrength.value = s.weatherStrength;
-  if (typeof s.weatherEnabled==='boolean') weatherEnabled.value = s.weatherEnabled;
-  if (typeof s.ticksPerSecond==='number') ticksPerSecond.value = s.ticksPerSecond;
-  requestRender();
-}
-function savePreset(){
-  const name = (presetName.value||'preset').trim();
-  if (!name) return;
-  presetMap[name] = snapState();
-  localStorage.setItem(PRESET_KEY, JSON.stringify(presetMap));
-  presetName.value = '';
-}
-function loadPreset(){
-  if (!selectedPreset.value) return;
-  applyState(presetMap[selectedPreset.value]);
-}
-function deletePreset(){
-  if (!selectedPreset.value) return;
-  delete presetMap[selectedPreset.value];
-  localStorage.setItem(PRESET_KEY, JSON.stringify(presetMap));
-  selectedPreset.value = '';
-}
-function exportPreset(){
-  const blob = new Blob([JSON.stringify(snapState(), null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.download = `bbyWorld_preset_${Date.now()}.json`;
-  a.href = URL.createObjectURL(blob);
-  a.click();
-}
-function importPreset(e:Event){
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  const fr = new FileReader();
-  fr.onload = ()=> {
-    try{ const s = JSON.parse(String(fr.result)); applyState(s); }
-    catch(err){ console.error('bad preset json', err); }
-  };
-  fr.readAsText(file);
-}
-
-// ————— lifecycle
-onMounted(async ()=>{
-  window.addEventListener('resize', resizeCanvas);
-  rebuildWorld();
-  resizeCanvas();
-  resetView();
-  await refreshStamps();
-  rafId = requestAnimationFrame(tick);
-
-  // gentle weather polling loop
-  const wTimer = setInterval(pollWeather, 1200);
-  (window as any).__bbyWeatherTimer = wTimer;
+  const total = living.length;
+  return Object.entries(groups).map(([colour, grp]) => ({ colour, count: grp.count,
+    percentage: total ? (grp.count / total) * 100 : 0, avgAge: grp.count ? grp.totalAge / grp.count : 0,
+    avgCharge: grp.count ? grp.totalCharge / grp.count : 0, avgMass: grp.count ? grp.totalMass / grp.count : 0,
+  }));
 });
-onBeforeUnmount(()=>{
-  cancelAnimationFrame(rafId);
-  window.removeEventListener('resize', resizeCanvas);
-  if ((window as any).__bbyWeatherTimer) clearInterval((window as any).__bbyWeatherTimer);
-});
-
-// expose to template with distinct names to avoid shadowing
-const worldWidth = worldWComputed;
-const worldHeight = worldHComputed;
+const sortedGroupStats = computed(() => [...groupStats.value].sort((a, b) => b.count - a.count));
+const highlightedGroup = ref<string | null>(null);
+function selectGroup(colour: string) { highlightedGroup.value = highlightedGroup.value === colour ? null : colour; }
+const hoverInfo = ref({ x: 0, y: 0, psi: 0, lam: 0, sig: 0, solid: 0, cell: null as Cell | null });
+const updateScope = throttle((event: MouseEvent) => {
+  if (!scopeActive.value) return;
+  const scope = scopeCanvas.value, box = scopeBox.value; if (!scope || !box || !frameImg) return;
+  const coords = screenToWorld(event); if (!coords) return;
+  const hx = coords.x, hy = coords.y;
+  const ctx = scope.getContext('2d'); if (!ctx) return;
+  const SCOPE_SIZE = 9; const half = Math.floor(SCOPE_SIZE / 2); const pixelSize = scope.width / SCOPE_SIZE; const s = S();
+  ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, scope.width, scope.height);
+  for (let dy = 0; dy < SCOPE_SIZE; dy++) { for (let dx = 0; dx < SCOPE_SIZE; dx++) {
+      const sx = hx - half + dx, sy = hy - half + dy; let r = 0, g = 0, b = 0, a = 255;
+      if (sx >= 0 && sy >= 0 && sx < s && sy < s) {
+        const off = I(sx, sy) * 4; r = frame[off]; g = frame[off + 1]; b = frame[off + 2]; a = frame[off + 3];
+      }
+      ctx.fillStyle = `rgba(${r},${g},${b},${a/255})`; ctx.fillRect(dx * pixelSize, dy * pixelSize, pixelSize, pixelSize);
+  }}
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(half * pixelSize, half * pixelSize, pixelSize, pixelSize);
+  if (hx >= 0 && hy >= 0 && hx < s && hy < s) {
+    const ii = I(hx, hy);
+    hoverInfo.value = { x: hx, y: hy, psi: fieldPsi[ii], lam: fieldLam[ii], sig: fieldSig[ii], solid: solidGrid[ii], cell: spatialMap[ii] || null };
+  }
+  const stageRect = stageEl.value?.getBoundingClientRect(); if (!stageRect) return;
+  const boxX = event.clientX - stageRect.left, boxY = event.clientY - stageRect.top;
+  const offsetX = (boxX / stageRect.width < 0.5) ? 20 : -box.offsetWidth - 20;
+  const offsetY = (boxY / stageRect.height < 0.5) ? 20 : -box.offsetHeight - 20;
+  box.style.left = `${event.clientX + offsetX}px`; box.style.top = `${event.clientY + offsetY}px`;
+}, 16);
 </script>
 
 <style scoped>
-:root { --bg:#0a0b0e; --ink:#e6e7ee; --mut:#9aa0aa; --acc:#47f; --a2:#7cf; --hi:#4f8; --warn:#f75; }
-* { box-sizing: border-box; }
-.bbyworld-page {
-  display:flex; flex-direction:column; gap:12px;
-  background:var(--bg); color:var(--ink); height:100%;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Inter, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-}
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; opacity:0.8; }
-.title { font-size:18px; margin:0 12px 0 0; }
-.toolbar { display:flex; align-items:center; gap:12px; padding:10px 12px; border-bottom:1px solid #151820; background:#0c0e13; position:sticky; top:0; z-index:2; }
-.toolbar .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.toolbar label { color:var(--mut); font-size:12px; }
-.toolbar button { background:#141824; color:#cfe3ff; border:1px solid #1d2333; padding:6px 10px; border-radius:6px; cursor:pointer; }
-.toolbar button.active { background:#1b2840; border-color:#2a3e67; color:#bfe2ff; }
-.toolbar select, .toolbar input[type="range"] { accent-color:#87b3ff; }
-
-.main { display:flex; gap:12px; padding:0 12px 12px; height:100%; }
-.left { flex:2; display:flex; flex-direction:column; gap:12px; min-width:300px; }
-.right { flex:1; display:flex; flex-direction:column; gap:12px; min-width:320px; }
-
-.canvas-wrap { position:relative; flex:1; background:#05060a; border:1px solid #151820; border-radius:8px; overflow:hidden; }
-.canvas-wrap canvas { display:block; width:100%; height:100%; image-rendering: pixelated; cursor: crosshair; }
-.hud { position:absolute; left:8px; bottom:8px; display:flex; gap:10px; background:rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.07); padding:4px 8px; border-radius:6px; font-size:12px; color:#c9d1e1; }
-.presets { background:#0c0e13; border:1px solid #151a22; border-radius:8px; padding:8px 12px; }
-.presets summary { cursor:pointer; user-select:none; color:#b7c7e8; margin-bottom:6px; }
-.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-
-.panel { background:#0c0f15; border:1px solid #151a22; border-radius:10px; padding:10px 12px; }
-.panel h3 { margin:0 0 8px; font-size:14px; color:#bcd4ff; }
-.grid2 { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:8px; }
-.col { background:#0d1118; border:1px solid #151b24; border-radius:8px; padding:8px; }
-.col h4 { margin:0 0 6px; font-size:13px; color:#bfe2ff; }
-
-.matrix { display:flex; flex-direction:column; gap:6px; }
-.mrow { display:grid; grid-template-columns: 48px 1fr 1fr 1fr; gap:8px; align-items:center; }
-.mrow.header { color:#9fb2d8; opacity:0.9; }
-.rowlab { color:#9fb2d8; }
-.matrix input[type="range"] { width:100%; accent-color:#7db7ff; }
-.hint { font-size:12px; color:#8da2bb; opacity:0.8; }
-
-.stamp-list { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:8px; max-height:40vh; overflow:auto; padding:2px; }
-.stamp { display:flex; flex-direction:column; gap:4px; background:#0c1016; border:1px solid #151b24; border-radius:8px; padding:6px; cursor:pointer; }
-.stamp.sel { outline:2px solid #4aa8ff; }
-.stamp img { width:100%; image-rendering: pixelated; border-radius:4px; border:1px solid #141a22; background:#05070b; }
-.stamp .meta { display:flex; flex-direction:column; line-height:1.1; }
-.stamp .lab { color:#cbe0ff; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.stamp .sub { color:#9db2d1; font-size:11px; opacity:0.9; }
-.empty { padding:8px; color:#8ca0b8; font-size:12px; }
-
-input[type="range"] { width:120px; }
-select, input[type="text"] { background:#0f1420; border:1px solid #1a2232; color:#dde6f7; border-radius:6px; padding:6px 8px; }
-label.import input { display:none; }
+/* THIS CSS IS NOW BASED ON THE FIRST (WORKING) VERSION FOR CORRECT LAYOUT */
+.page-container { display:flex; width:100%; height:var(--full-height); box-sizing:border-box; padding:var(--padding); }
+.world-layout{display:flex;flex-direction:row;width:100%;height:100%;gap:var(--spacing);overflow:hidden}
+.world-left{flex:1 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
+.world-right{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0;position:relative}
+.vertical-panel{position:relative;width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
+.vertical-panel h1{margin:0;text-align:center;line-height:1.05}
+.world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.group-row{display:grid;grid-template-columns: 2fr 1fr 1fr 1.5fr 1fr 1fr; gap:.25rem;position:relative;cursor:pointer; align-items: center;}
+.group-row.header{font-weight:700;cursor:default}
+.group-row.selected{outline:1px solid var(--accent-colour);}
+.group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
+.colour-cell{display:flex;align-items:center;gap:.25rem}
+.colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px; flex-shrink: 0;}
+.world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
+.stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
+.stack > * { grid-area: 1 / 1; }
+canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
+.zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;z-index:1000}
+.zoom-scope canvas{width:100%;height:100%;image-rendering:pixelated;display:block}
+.zoom-scope .scope-info{position:absolute;bottom:0;left:0;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px;font-family:monospace;line-height:1.2;white-space:nowrap}
+.grp{display:flex;flex-direction:column;gap:.5rem}
+.legend{font-size:var(--small-font-size);display:flex;flex-direction:column;gap:.25rem;line-height:1.2}
+.section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
+.action{display:block;width:100%;padding:.4rem .5rem;transition:all .2s ease-out;text-align:center}
+.action.active,.action:active{background:var(--accent-hover);border-color:var(--accent-colour)!important}
+.row2{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem}
+.row3{display:grid;grid-template-columns:1fr auto 1fr;gap:.5rem;align-items:center}
+.zoom-display{text-align:center;font-size:var(--small-font-size)}
+#board-size{width:4rem;text-align:center}
+.card-swatch-bar{display:flex;flex-wrap:wrap;gap:.5rem}
+.card-swatch{border:var(--border);padding:2px;background:var(--panel-colour);cursor:pointer}
+.card-swatch img{width:32px;height:32px;image-rendering:pixelated;display:block}
+.card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
+.cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.cell-colour{display:flex;align-items:center;gap:.25rem}
+.family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+.family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
+.family-link:hover{text-decoration:underline}
+@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

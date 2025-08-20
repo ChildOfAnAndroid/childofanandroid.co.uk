@@ -38,7 +38,7 @@
             </div>
           </div>
           
-          <!-- GROUP STATS (RESTORED) -->
+          <!-- GROUP STATS -->
            <div class="grp">
             <label class="section">colour groups</label>
             <div class="group-stats">
@@ -60,7 +60,7 @@
 
            <!-- ADJUSTABLE LAWS -->
           <div class="grp params-container">
-            <details :open="showColorPhysics" @toggle="showColorPhysics = !showColorPhysics">
+            <details open>
               <summary class="section">Color Physics & Synergies</summary>
               <div class="params-grid">
                 <label><span class="p-swatch" style="background:red;"></span>Red Fuel Conversion</label>
@@ -84,7 +84,7 @@
               </div>
             </details>
 
-            <details :open="showLifeStages" @toggle="showLifeStages = !showLifeStages">
+            <details>
               <summary class="section">Life Stages & Behavior</summary>
               <div class="params-grid">
                 <label>Adolescent Age</label>
@@ -100,7 +100,7 @@
               </div>
             </details>
 
-            <details :open="showMetaphysics" @toggle="showMetaphysics = !showMetaphysics">
+            <details>
               <summary class="section">Metaphysics & Physics</summary>
               <div class="params-grid">
                  <label><span class="p-swatch" style="background:red;"></span>Aether Charge Rate</label>
@@ -113,6 +113,8 @@
                 <input type="range" v-model.number="params.aetherInsanityChance" min="0" max="0.001" step="0.00005" /><span>{{ (params.aetherInsanityChance*100).toFixed(3) }}%</span>
                 <label>Reputation Decay</label>
                 <input type="range" v-model.number="params.reputationDecay" min="0.9" max="0.999" step="0.001" /><span>x{{ params.reputationDecay.toFixed(3) }}</span>
+                <label>Reputation Pacify</label>
+                <input title="How much high reputation reduces the chance of being attacked." type="range" v-model.number="params.reputationPacify" min="0" max="1" step="0.05" /><span>-{{ (params.reputationPacify*100).toFixed(0) }}%</span>
                 <label>Terrain Dye Rate</label>
                 <input type="range" v-model.number="params.dyeDepositRate" min="0" max="5" step="0.1" /><span>x{{ params.dyeDepositRate.toFixed(1) }}</span>
                 <label>Heavy Roll Chance</label>
@@ -122,7 +124,7 @@
               </div>
             </details>
             
-            <details :open="showGenetics" @toggle="showGenetics = !showGenetics">
+            <details>
               <summary class="section">Genetics & Evolution</summary>
               <div class="params-grid">
                 <label>Dominance Penalty</label>
@@ -133,7 +135,7 @@
             </details>
           </div>
 
-          <!-- SELECTED CELL INFO (RESTORED) -->
+          <!-- SELECTED CELL INFO -->
           <div class="grp" v-if="selectedCell">
             <label class="section">cell {{ selectedCell.id }} info</label>
             <div class="cell-stats">
@@ -155,7 +157,7 @@
             </div>
           </div>
           
-          <!-- VIEW CONTROLS (RESTORED) -->
+          <!-- VIEW CONTROLS -->
           <div class="grp">
             <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
             <div class="row2"><button class="action" @click="slowDown">-</button><button class="action" @click="speedUp">+</button></div>
@@ -204,7 +206,6 @@ const boardSize=ref<number>(128); function S(){return boardSize.value;}
 const gameCanvas=ref<HTMLCanvasElement|null>(null), stageEl=ref<HTMLDivElement|null>(null);
 const scopeCanvas=ref<HTMLCanvasElement|null>(null), scopeBox=ref<HTMLDivElement|null>(null);
 const scopeActive=ref(false);
-const showColorPhysics=ref(true), showLifeStages=ref(true), showMetaphysics=ref(true), showGenetics=ref(true);
 let lastMouseEvent:MouseEvent|null=null;
 const { fetchBbyBookGallery }=bbyUse();
 const cards=ref<{label:string; url:string; stamp_url?:string}[]>([]);
@@ -218,7 +219,7 @@ const params = reactive({
     blueErosionRate: 0.01, blueHydrodynamics: 2.0,
     animalGiftAmount: 10, yellowLightBoost: 0.1,
     magentaSteamPower: 1.5, cyanGrowthPower: 1.5,
-    heavyRollChance: 0.1, energyShareThreshold: 50, reputationDecay: 0.995,
+    heavyRollChance: 0.1, energyShareThreshold: 50, reputationDecay: 0.995, reputationPacify: 0.5,
     dominancePenalty: 0.1, geneticDrift: 12,
     adolescentAge: 200, adultAge: 1000, elderAge: 3000,
     teenSpeedBonus: 1.5, teenAggroBonus: 1.5,
@@ -372,7 +373,7 @@ function adjustAffinity(a:Cell,b:Cell,d:number){const c=(v:number)=>Math.min(10,
 function handleInteraction(attacker:Cell,defender:Cell){
   const aff=(attacker.friends[defender.id]||0)+(defender.friends[attacker.id]||0); const pR=attacker.fertility*defender.fertility*(1-compatibility(attacker,defender));
   if(pR>0.1&&aff>-2&&attacker.energy>80&&defender.energy>80){const s=findEmptyAdjacent(attacker.x,attacker.y); if(s){const b=mergeBaby(attacker,defender,s.x,s.y); livingCells.value.push(b); spatialMap[I(b.x,b.y)]=b;}}
-  else{const aS=(attacker.energy+attacker.charge)*attacker.aggression,dS=(defender.energy+defender.charge)*(1+defender.strength-attacker.strength); if(aS>dS){attacker.energy=Math.min(255,attacker.energy+defender.energy*0.5); recordDeath(defender,"war"); attacker.reputation-=.5;} else {defender.energy=Math.min(255,defender.energy+attacker.energy*0.5); recordDeath(attacker,"war"); defender.reputation-=.5;} adjustAffinity(attacker,defender,-1.5);}
+  else{const pacifism = Math.max(0, defender.reputation * params.reputationPacify); const aS=(attacker.energy+attacker.charge)*attacker.aggression * (1-pacifism),dS=(defender.energy+defender.charge)*(1+defender.strength-attacker.strength); if(aS>dS){attacker.energy=Math.min(255,attacker.energy+defender.energy*0.5); recordDeath(defender,"war"); attacker.reputation-=.5;} else {defender.energy=Math.min(255,defender.energy+attacker.energy*0.5); recordDeath(attacker,"war"); defender.reputation-=.5;} adjustAffinity(attacker,defender,-1.5);}
 }
 function recordDeath(c:Cell,reason:DeathReason){
   if(!c.alive)return; c.alive=false; const idx=I(c.x,c.y);
@@ -388,11 +389,11 @@ function attemptMove(c:Cell){
     let score=(heatField[ni]*(c.r/255)+nutrientField[ni]*(c.g/255)+moistureField[ni]*(c.b/255))*10;
     score+=(dyeRField[ni]*(c.r/255)+dyeGField[ni]*(c.g/255)+dyeBField[ni]*(c.b/255))*0.1;
     score-=solidGrid[ni]*(isGas?0.2:1.0); if(isWater)score-=solidGrid[ni]*params.blueHydrodynamics;
-    const n=spatialMap[ni]; if(n){score-=(1-(n.friends[c.id]||0)/10); if(isGas)score+=2;}
+    const n=spatialMap[ni]; if(n){score-=(1-((n.friends[c.id]||0)+(n.reputation/10))/20); if(isGas)score+=2;}
     if(c.isInsane) score += rand()*5;
     if(score>bestScore){bestScore=score; bestDir=[dx,dy];}
   }
-  if(bestDir){const[dx,dy]=bestDir,tX=(c.x+dx+S())%S(),tY=(c.y+dy+S())%S(),tC=spatialMap[I(tX,tY)]; if(!tC)performMove(c,tX,tY); else if(tC.alive){if(!c.isInsane&&(compatibility(c,tC)>0.7||(c.friends[tC.id]||0)>1))congaMove(c,dx,dy); else handleInteraction(c,tC);}}
+  if(bestDir){const[dx,dy]=bestDir,tX=(c.x+dx+S())%S(),tY=(c.y+dy+S())%S(),tC=spatialMap[I(tX,tY)]; if(!tC)performMove(c,tX,tY); else if(tC.alive){if(!c.isInsane&&!tC.isInsane&&(compatibility(c,tC)>0.7||(c.friends[tC.id]||0)>1))congaMove(c,dx,dy); else handleInteraction(c,tC);}}
 }
 function performMove(m:Cell,x:number,y:number){spatialMap[I(m.x,m.y)]=null; m.x=x; m.y=y; spatialMap[I(x,y)]=m;}
 function congaMove(start:Cell,dx:number,dy:number):boolean{
@@ -400,7 +401,7 @@ function congaMove(start:Cell,dx:number,dy:number):boolean{
   for(let i=0;i<livingCells.value.length;i++){
     const nX=(current.x+dx+S())%S(), nY=(current.y+dy+S())%S(), nC=spatialMap[I(nX,nY)];
     if(!nC){for(let j=chain.length-1;j>=0;j--){const c=chain[j]; performMove(c,(c.x+dx+S())%S(),(c.y+dy+S())%S()); adjustAffinity(start,c,0.05);} return true;}
-    if(nC.alive&&((start.friends[nC.id]||0)>1||compatibility(current,nC)>0.8)){chain.push(nC); current=nC;}
+    if(nC.alive&&!nC.isInsane&&((start.friends[nC.id]||0)>1||compatibility(current,nC)>0.8)){chain.push(nC); current=nC;}
     else{const v=chain.length>1?chain[chain.length-1]:start; if(v.strength<nC.strength)recordDeath(v,"squish"); else recordDeath(nC,"squish"); return false;}
   }
   return false;
@@ -412,7 +413,7 @@ function countAdjacent(x:number,y:number):number{let c=0; for(let dy=-1;dy<=1;dy
 function drawGrid(ctx: CanvasRenderingContext2D){
   if(!frameImg)return; ctx.imageSmoothingEnabled=false; const s=S();
   for(let y=0;y<s;y++){for(let x=0;x<s;x++){const off=(x+y*s)*4,i=I(x,y); const rock=solidGrid[i]*30,heat=heatField[i]*50,nutr=nutrientField[i]*50,moist=moistureField[i]*50; const dyeA=Math.min(0.4,(dyeRField[i]+dyeGField[i]+dyeBField[i])/765); const bR=10+rock+heat,bG=10+rock+nutr,bB=10+rock+moist; frame[off]=Math.min(255,bR*(1-dyeA)+dyeRField[i]*dyeA); frame[off+1]=Math.min(255,bG*(1-dyeA)+dyeGField[i]*dyeA); frame[off+2]=Math.min(255,bB*(1-dyeA)+dyeBField[i]*dyeA); frame[off+3]=255;}}
-  for(const c of livingCells.value){if(!c.alive)continue; const off=I(c.x,c.y)*4; frame[off]=c.r;frame[off+1]=c.g;frame[off+2]=c.b;frame[off+3]=c.isInsane?128:c.a;}
+  for(const c of livingCells.value){if(!c.alive)continue; const off=I(c.x,c.y)*4; if(c.isInsane){const grey=c.r*0.299+c.g*0.587+c.b*0.114; frame[off]=grey;frame[off+1]=grey;frame[off+2]=grey;}else{frame[off]=c.r;frame[off+1]=c.g;frame[off+2]=c.b;} frame[off+3]=c.a;}
   ctx.putImageData(frameImg,0,0);
 }
 let resizeObs:ResizeObserver|null=null;

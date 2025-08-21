@@ -1092,24 +1092,29 @@ function update() {
       }
     }
 
-    // Red cells bake the earth, hardening ground and drying it out
-    if (domR !== 0) {
-      const harden = 0.0025 * Rf * Math.abs(domR);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = (c.x + dx + S()) % S();
-          const ny = (c.y + dy + S()) % S();
-          const ni = I(nx, ny);
-          if (domR > 0) {
-            solidGrid[ni] = Math.min(6, solidGrid[ni] + harden);
-            moistureField[ni] = Math.max(0, moistureField[ni] - harden * 0.5);
-          } else {
-            erodeSolid(ni, harden);
-            moistureField[ni] += harden * 0.5;
+      // Red cells (fire) consume nearby terrain for energy, leaving ground dry
+      if (domR !== 0) {
+        const burn = 0.0025 * Rf * Math.abs(domR);
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = (c.x + dx + S()) % S();
+            const ny = (c.y + dy + S()) % S();
+            const ni = I(nx, ny);
+            if (domR > 0) {
+              const take = Math.min(burn, solidGrid[ni]);
+              if (take > 0) {
+                erodeSolid(ni, take);
+                moistureField[ni] = Math.max(0, moistureField[ni] - take * 0.5);
+                heatField[ni] += take * 0.2;
+                c.energy = Math.min(260, c.energy + take * 10);
+              }
+            } else {
+              solidGrid[ni] = Math.min(6, solidGrid[ni] + burn);
+              moistureField[ni] = Math.max(0, moistureField[ni] - burn * 0.5);
+            }
           }
         }
       }
-    }
 
     // Green cells crave space to grow – reward solitude but punish crowding
     const neighbours = countOccupiedAdjacent(c.x, c.y);

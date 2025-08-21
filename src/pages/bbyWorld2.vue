@@ -462,6 +462,12 @@ function colourDominance(v:number, o1:number, o2:number): number {
   return diff * Math.abs(diff) * 0.7;
 }
 
+function colourIntensity(r:number, g:number, b:number): number {
+  const maxC = Math.max(r, g, b);
+  const minC = Math.min(r, g, b);
+  return (maxC - minC) / 255;
+}
+
 /* Renderer buffer */
 let frame = new Uint8ClampedArray(0);
 let frameImg: ImageData | null = null;
@@ -787,7 +793,8 @@ function update() {
         fertAlpha = (FERTILITY_ALPHA_MAX - alphaN) / (FERTILITY_ALPHA_MAX - FERTILITY_ALPHA_PEAK);
       }
     }
-    c.fertility = ageFactor * fertAlpha;
+    const colourStr = colourIntensity(c.r, c.g, c.b);
+    c.fertility = ageFactor * fertAlpha * colourStr;
 
     let gain = 0;
     const handleField = (dom:number, field:Float32Array, idx:number) => {
@@ -1636,7 +1643,10 @@ function compatibility(a:GridCell,b:GridCell){
   const comp = (AR*BB + AG*BR + AB*BG) / 3;
   // normalise distance into [0,1] so compatibility stays bounded
   const dist = Math.hypot(AR-BR, AG-BG, AB-BB) / Math.sqrt(3);
-  return 0.6*comp + 0.4*(1 - dist);
+  const satA = colourIntensity(a.r, a.g, a.b);
+  const satB = colourIntensity(b.r, b.g, b.b);
+  const base = 0.6*comp + 0.4*(1 - dist);
+  return base * ((satA + satB) / 2);
 }
 
 function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {

@@ -1344,6 +1344,8 @@ const VIVID_SAT_THRESHOLD = 0.2
 const GENETIC_COMPAT_THRESHOLD = 0.15
 // Only start penalising family breeding after many alternative partners exist
 const FAMILY_PENALTY_THRESHOLD = 200
+// Require a healthy energy reserve before breeding to prioritise survival
+const REPRO_MIN_ENERGY = 120
 const BIRTH_FLASH_TICKS = 8
 // Cells previously faded extremely slowly which led to a world that would
 // quickly fill and then stagnate. Bumping the decay range up causes even
@@ -1836,7 +1838,13 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     const baseWar = (cell.aggression + target.aggression) * 0.35 + (heatField[tIndex] * 0.25);
     const pWar = Math.min(1, Math.max(0, baseWar - coopBoost * 0.5 - pairAff * 0.1));
 
-    if (compVal >= GENETIC_COMPAT_THRESHOLD && pCompat >= pWar){
+    // Breed only when both cells have ample energy
+    if (
+      compVal >= GENETIC_COMPAT_THRESHOLD &&
+      pCompat >= pWar &&
+      cell.energy > REPRO_MIN_ENERGY &&
+      target.energy > REPRO_MIN_ENERGY
+    ){
       adjustAffinity(cell, target, 0.5);
       const spawn = findEmptyAdjacent(newX, newY) || findEmptyAdjacent(cell.x, cell.y);
       if (spawn){

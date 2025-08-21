@@ -1000,10 +1000,10 @@ function update() {
     attemptAsexual(c, dom);
     c.energy = Math.min(c.energy, 260);
 
-    // Bright cells struggle near the depths and dim cells shun the dazzling.
+    // Bright cells struggle in low terrain and dim cells shun the dazzling.
     const brightness = (c.r + c.g + c.b) / 3;
-    const deep = S() * 0.75;
-    if (brightness > 200 && c.y > deep) {
+    const depth = solidGrid[ii]; // terrain height at this location
+    if (brightness > 200 && depth < 1.5) {
       c.energy -= (brightness - 200) * 0.01;
     }
     if (brightness < 100) {

@@ -1144,7 +1144,10 @@ function update() {
     if (domB !== 0) {
       let target = solidGrid[ii];
       let bx = c.x, by = c.y;
-      const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0]];
+      // Examine all four cardinal neighbours to locate height differences.
+      // A copy-paste bug duplicated the left direction and omitted the up
+      // check, which weakened blue's downhill attraction.
+      const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
       for (const [dx,dy] of dirs){
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();

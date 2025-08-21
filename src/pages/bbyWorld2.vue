@@ -695,7 +695,7 @@ function worldTick(totalR=0,totalG=0,totalB=0){
       const i = I(x,y);
       if (solidGrid[i] > 0){
         nutrientField[i] += Math.min(0.02*solidGrid[i], 0.05);
-        heatField[i] *= 0.999;
+        heatField[i]     += Math.min(0.01*solidGrid[i], 0.03); // sunlight bonus on high ground
       }
       heatField[i]     += skyR + base;
       moistureField[i] += skyB + base;
@@ -1076,6 +1076,15 @@ function update() {
           }
         }
       }
+      if (solidGrid[ii] > 0.1) {
+        c.attached = true;
+        c.rootId = c.id;
+        let count = 0;
+        for (const o of livingCells.value) {
+          if (o.attached && o.rootId === c.id) count++;
+        }
+        c.energy = Math.min(260, c.energy + count * 0.3);
+      }
     }
 
     // NEW: Animal behaviour: dark and purple cells ferry nutrients and gift energy
@@ -1368,6 +1377,9 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // rock more easily than tough ones. Invert the relationship so that
     // strong cells incur the minimum penalty while weak cells avoid solids.
     let solidPenalty = solidGrid[i] * (1 - cell.strength);
+    if (domR > 0) {
+      solidPenalty *= 0.1; // red cells ignore height
+    }
     // NEW: White/Grey (gas-like) cells are less affected by terrain and seek empty space
     if (Math.abs(cell.r - cell.g) < 20 && Math.abs(cell.g - cell.b) < 20) {
       solidPenalty *= 0.3;
@@ -1381,8 +1393,17 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     score -= (1 - cell.strength) * wet * 0.2;
 
     if (domG > 0) {
+      const currentH = solidGrid[I(cell.x, cell.y)];
+      const nextH = solidGrid[i];
+      let bonus = 0;
       if (wet > 0.1 && hasNearbyGreenBlue(nx, ny, 2)) {
-        score += wet * 0.3 * domG;
+        bonus += wet * 0.3 * domG;
+      }
+      if (nextH > currentH) {
+        bonus += (nextH - currentH) * 0.3 * domG;
+      }
+      if (bonus > 0) {
+        score += bonus;
       } else {
         score -= 0.4 * domG;
       }
@@ -1565,11 +1586,12 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const targetH = solidGrid[tIndex];
   const Rf = cell.r/255, Gf = cell.g/255, Bf = cell.b/255;
   const domB = colourDominance(Bf, Rf, Gf);
+  const domR = colourDominance(Rf, Bf, Gf);
   const heightDiff = targetH - currentH;
   if (domB > 0 && heightDiff > 0.1) return false;
   if (domB < 0 && heightDiff < -0.1) return false;
 
-  if (targetH > 0) {
+  if (targetH > 0 && domR <= 0) {
     // Base drag from traversing solid ground; climbing costs more.
     cell.energy -= targetH * (heightDiff > 0 ? 0.1 : 0.05);
 
@@ -1589,7 +1611,7 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
         performMove(cell, newX, newY);
         return true;
       }
-    } else if (heightDiff > 0) {
+    } else if (heightDiff > 0 && domR <= 0) {
       // Height difference determines how likely the cell is to become stuck.
       // Cells can climb terrain only up to a limit set by their strength.
       const climbCap = cell.strength * 3;
@@ -1657,9 +1679,33 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
 }
 
 function performMove(moving:GridCell, toX:number, toY:number){
-  spatialMap[I(moving.x, moving.y)] = null;
-  moving.x = toX; moving.y = toY;
-  spatialMap[I(toX, toY)] = moving;
+  const s = S();
+  const fromX = moving.x, fromY = moving.y;
+  spatialMap[I(fromX, fromY)] = null;
+  moving.x = (toX + s) % s; moving.y = (toY + s) % s;
+  spatialMap[I(moving.x, moving.y)] = moving;
+
+  // Move attached sprouts along with their root
+  if (moving.rootId === moving.id) {
+    const rawDx = (moving.x - fromX + s) % s;
+    const rawDy = (moving.y - fromY + s) % s;
+    const shiftX = rawDx > s/2 ? rawDx - s : rawDx;
+    const shiftY = rawDy > s/2 ? rawDy - s : rawDy;
+    for (const c of livingCells.value) {
+      if (c.attached && c.rootId === moving.id && c.id !== moving.id) {
+        const nx = (c.x + shiftX + s) % s;
+        const ny = (c.y + shiftY + s) % s;
+        if (!spatialMap[I(nx, ny)]) {
+          spatialMap[I(c.x, c.y)] = null;
+          c.x = nx; c.y = ny;
+          spatialMap[I(nx, ny)] = c;
+        } else {
+          c.attached = false;
+          c.rootId = c.id;
+        }
+      }
+    }
+  }
 }
 
 /* ===================== Interactions ===================== */

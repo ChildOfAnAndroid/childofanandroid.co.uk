@@ -2141,13 +2141,12 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
       let g = (baseG*(1-a) + glowG*a) | 0;
       let b = (baseB*(1-a) + glowB*a) | 0;
 
-      const m = solidGrid[ii];
-      if (m > 0) {
-        // Show stacked terrain as obvious grayscale height: higher mounds are brighter
-        const shade = Math.min(255, 80 + m * 30);
-        r = shade;
-        g = shade;
-        b = shade;
+      const rock = solidGrid[ii] * 30;
+      if (rock > 0) {
+        // Add subtle grayscale height similar to bbyWorld1
+        r = Math.min(255, r + rock);
+        g = Math.min(255, g + rock);
+        b = Math.min(255, b + rock);
       }
 
       const dr = dyeRField[ii];

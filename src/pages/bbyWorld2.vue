@@ -512,13 +512,20 @@ function applyPhysics(c: GridCell, dom: ColourName) {
     const burned = erodeSolid(hereIdx, 0.02);
     if (burned > 0) c.energy = Math.min(260, c.energy + burned * 5);
   } else if (dom === 'green') {
-    const ny = (c.y - 1 + s) % s;
-    const aboveIdx = I(c.x, ny);
-    // Greens climb toward higher terrain rather than just canvas top.
-    // Move only if the tile above is measurably higher than the current one,
-    // using the terrain height map rather than raw screen coordinates.
-    if (!spatialMap[aboveIdx] && solidGrid[aboveIdx] > hereH + 0.01) {
-      performMove(c, c.x, ny);
+    // Greens prefer higher nearby terrain but shouldn't always drift upward.
+    // Check all adjacent tiles and pick one of the higher spots at random.
+    const options: [number, number][] = [];
+    for (const [dx, dy] of HEADING_VECS) {
+      const nx = (c.x + dx + s) % s;
+      const ny = (c.y + dy + s) % s;
+      const ni = I(nx, ny);
+      if (!spatialMap[ni] && solidGrid[ni] > hereH + 0.01) {
+        options.push([nx, ny]);
+      }
+    }
+    if (options.length) {
+      const [mx, my] = options[(rand() * options.length) | 0];
+      performMove(c, mx, my);
     }
   }
 }
@@ -1673,7 +1680,12 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
 }
 
 function findEmptyAdjacent(x:number,y:number): [number,number] | null {
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  // The direction list previously duplicated [-1,0] and omitted [0,-1],
+  // meaning the search skipped one of the eight neighbouring tiles. When the
+  // only available space for a newborn was directly above the parents, the
+  // function incorrectly reported no free spot and reproduction failed.
+  // Include all four cardinal directions explicitly.
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   shuffleArray(dirs);
   for (const [dx,dy] of dirs) {
     const nx = (x + dx + S()) % S();
@@ -1688,7 +1700,9 @@ function findEmptyAdjacent(x:number,y:number): [number,number] | null {
 
 function updateAttachment(c: GridCell){
   if (!c.attached || c.rootId === c.id) return;
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0]];
+  // Same duplicate-direction bug existed here; ensure all adjacent tiles are
+  // checked so detached sprouts don't mistakenly lose their root.
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
   let connected = false;
   for (const [dx,dy] of dirs){
     const nx = (c.x + dx + S()) % S();
@@ -1703,7 +1717,9 @@ function updateAttachment(c: GridCell){
 }
 
 function countOccupiedAdjacent(x:number,y:number): number {
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+  // Check all eight neighbours; the previous duplication of [-1,0] meant the
+  // tile above was ignored.
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   let c=0;
   for (const [dx,dy] of dirs){
     const nx=(x+dx+S())%S();

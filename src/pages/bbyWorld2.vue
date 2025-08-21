@@ -496,50 +496,13 @@ function dominantColour(c: GridCell): ColourName {
 function applyPhysics(c: GridCell, dom: ColourName) {
   // Older physics pushed blue and green cells straight up or down each tick.
   // This ignored the terrain height map and caused tiles to bounce vertically
-  // across the board. Instead, only move if the neighbouring tile is actually
-  // lower (blue) or higher (green) terrain, allowing height to influence flow.
+  // across the board. Now movements are based solely on terrain height so the
+  // canvas' vertical dimension no longer influences behaviour.
   const s = S();
   const hereIdx = I(c.x, c.y);
   const hereH = solidGrid[hereIdx];
 
-  if (dom === 'blue' && !c.attached) {
-    // Count neighbouring blue cells so groups can act together
-    let group = 0;
-    for (const [dx, dy] of HEADING_VECS) {
-      const n = spatialMap[I((c.x + dx + s) % s, (c.y + dy + s) % s)];
-      if (n && n.alive && dominantColour(n) === 'blue') group++;
-    }
-
-    const ny = (c.y + 1) % s;
-    const belowIdx = I(c.x, ny);
-    const belowCell = spatialMap[belowIdx];
-
-    // Groups weigh more and erode terrain beneath them
-    if (group > 0) {
-      erodeSolid(belowIdx, group * 0.03);
-    }
-
-    if (!belowCell) {
-      // Heavy groups can descend even if terrain is level
-      if (solidGrid[belowIdx] + 0.01 < hereH || group >= 2) {
-        performMove(c, c.x, ny);
-      }
-    } else if (
-      group >= 2 &&
-      belowCell.alive &&
-      dominantColour(belowCell) === 'blue'
-    ) {
-      // Cascade movement so stacks travel together
-      const ny2 = (ny + 1) % s;
-      const belowIdx2 = I(c.x, ny2);
-      if (!spatialMap[belowIdx2] && solidGrid[belowIdx2] + 0.01 < solidGrid[belowIdx]) {
-        performMove(belowCell, c.x, ny2);
-        performMove(c, c.x, ny);
-      }
-    }
-    const head = dominantBlueHeading(c);
-    if (head !== null) c.heading = head;
-  } else if (dom === 'red') {
+  if (dom === 'red') {
     const burned = erodeSolid(hereIdx, 0.02);
     if (burned > 0) c.energy = Math.min(260, c.energy + burned * 5);
   } else if (dom === 'green') {
@@ -1188,6 +1151,8 @@ function update() {
 
     // Blue cells slip toward lower ground or climb high when suppressed
     if (domB !== 0) {
+      const head = dominantBlueHeading(c);
+      if (head !== null) c.heading = head;
       let target = solidGrid[ii];
       let bx = c.x, by = c.y;
       // Examine all four cardinal neighbours to locate height differences.

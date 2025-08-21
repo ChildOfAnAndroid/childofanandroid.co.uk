@@ -507,7 +507,10 @@ function applyPhysics(c: GridCell, dom: ColourName) {
   } else if (dom === 'green') {
     const ny = (c.y - 1 + s) % s;
     const aboveIdx = I(c.x, ny);
-    if (!spatialMap[aboveIdx] && solidGrid[aboveIdx] + 0.01 < hereH) {
+    // Greens climb toward higher terrain rather than just canvas top.
+    // Move only if the tile above is measurably higher than the current one,
+    // using the terrain height map rather than raw screen coordinates.
+    if (!spatialMap[aboveIdx] && solidGrid[aboveIdx] > hereH + 0.01) {
       performMove(c, c.x, ny);
     }
   }

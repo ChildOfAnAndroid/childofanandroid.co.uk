@@ -462,8 +462,11 @@ const BALANCE_RATE = 0.005; // environmental pressure toward colour parity
 function I(x:number,y:number){ const s=S(); return ((x & (s-1)) + ((y & (s-1)) * s)) >>> 0; }
 
 function colourDominance(v:number, o1:number, o2:number): number {
-  const diff = v - Math.max(o1, o2);
-  return diff * Math.abs(diff) * 0.7;
+  // Use the average of the other channels so dominance swings are gentler
+  // and no single colour overwhelms the world.
+  const avg = (o1 + o2) / 2;
+  const diff = v - avg;
+  return diff * Math.abs(diff) * 0.5;
 }
 
 function colourIntensity(r:number, g:number, b:number): number {
@@ -1965,7 +1968,8 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   function blendChannel(a:number, b:number, mut:number){
     const avg = a*wA + b*wB;
     const diff = a - b;
-    const drift = diff * (rand()*0.25 - 0.125); // bias away from middle
+    // Push away from the mid-point so blended colours stay vibrant instead of greying out
+    const drift = diff * (rand()*0.25 + 0.125);
     return Math.min(255, Math.max(0, Math.round(avg + drift + (rand()*mut - mut/2))));
   }
 

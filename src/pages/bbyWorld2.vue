@@ -824,6 +824,11 @@ function update() {
       nutrientField[ii] -= fuel;
       gain += fuel * 25; // Fire gets a large energy boost from fuel
       if (fuel === 0) c.energy -= 0.1; // Burn out without fuel
+      // NEW: moisture douses fire
+      const damp = moistureField[ii];
+      if (damp > 0.01) {
+        c.energy -= damp * domR * 5;
+      }
     } else {
       handleField(domR, heatField, ii); // Non-fire reds behave as before
     }
@@ -1050,6 +1055,25 @@ function update() {
           const siphon = Math.min(0.05 * domG, neighbour.energy);
           neighbour.energy -= siphon;
           c.energy = Math.min(260, c.energy + siphon);
+        }
+      }
+    }
+
+    // NEW: Fire cells consume nearby green cells for fuel
+    if (domR > 0) {
+      for (const [dx, dy] of shareDirs) {
+        const nx = (c.x + dx + S()) % S();
+        const ny = (c.y + dy + S()) % S();
+        const neighbour = spatialMap[I(nx, ny)];
+        if (!neighbour || !neighbour.alive) continue;
+        const nDomG = colourDominance(neighbour.g/255, neighbour.r/255, neighbour.b/255);
+        if (nDomG > 0) {
+          const burn = Math.min(0.08 * domR, neighbour.energy);
+          neighbour.energy -= burn;
+          c.energy = Math.min(260, c.energy + burn * 2);
+          if (neighbour.energy <= 0) {
+            recordDeath(neighbour, "war");
+          }
         }
       }
     }
@@ -1319,6 +1343,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     const nx = (cell.x + dx + S()) % S();
     const ny = (cell.y + dy + S()) % S();
     const i = I(nx,ny);
+    const neighbour = spatialMap[i];
 
     const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
     const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
@@ -1329,9 +1354,13 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // Blue cells shy from climbing higher ground
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
     want -= Math.max(0, hDiff) * Bf * domB;
-    // MODIFIED: Red cells hunt for fuel (nutrient and dryness)
+    // MODIFIED: Red cells hunt for fuel and stalk green plants
     if (domR > 0) {
       want += (nut - wet) * domR * 0.5;
+      if (hasNearbyGreen(nx, ny, 2)) {
+        want += 0.6 * domR;
+      }
+      want -= wet * domR * 0.7;
     }
 
     // Stronger cells should be less deterred by solid tiles. Previously the
@@ -1369,7 +1398,6 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     // Peek at the neighbour in this direction. Compatible neighbours draw
     // cells together while enemies repel, nudging movement toward emergent
     // groups.
-    const neighbour = spatialMap[i];
     if (neighbour && neighbour.alive) {
       const comp = compatibility(cell, neighbour);
       if (comp > 0.6) {
@@ -1455,6 +1483,22 @@ function hasNearbyGreenBlue(x:number,y:number,dist=2): boolean {
         const gDom = g>0.5 && g>r && g>b;
         const bDom = b>0.5 && b>r && b>g;
         if (gDom || bDom) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasNearbyGreen(x:number,y:number,dist=2): boolean {
+  for (let dy=-dist; dy<=dist; dy++){
+    for (let dx=-dist; dx<=dist; dx++){
+      if (dx===0 && dy===0) continue;
+      const nx=(x+dx+S())%S();
+      const ny=(y+dy+S())%S();
+      const neighbour = spatialMap[I(nx,ny)];
+      if (neighbour && neighbour.alive){
+        const nDomG = colourDominance(neighbour.g/255, neighbour.r/255, neighbour.b/255);
+        if (nDomG > 0) return true;
       }
     }
   }

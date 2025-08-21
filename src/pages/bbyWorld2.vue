@@ -2,176 +2,41 @@
 <template>
   <div class="page-container bbyworld-page">
     <div class="world-layout">
-      <div class="world-left">
-        <div class="vertical-panel">
-          <h1 class="page-title">bbyWorld</h1>
-
-          <div class="grp">
-            <label class="section" for="board-size">board size</label>
-            <div class="row3">
-              <button class="action" @click="boardSize = Math.max(16, boardSize - 16)">-</button>
-              <input id="board-size" type="number" v-model.number="boardSize" min="16" step="16" />
-              <button class="action" @click="boardSize = Math.min(1024, boardSize + 16)">+</button>
-            </div>
-            <small style="opacity:.7">changing size clears the world</small>
-          </div>
-
-          <div class="grp">
-            <label class="section">world</label>
-            <button class="action" @click="clearWorld">clear</button>
-          </div>
-
-          <div class="grp">
-            <label class="section">select a bby to place:</label>
-            <div class="card-swatch-bar">
-              <button
-                v-for="card in cards"
-                :key="card.label"
-                class="card-swatch"
-                :class="{ selected: selectedCardLabel === card.label }"
-                @click="selectCard(card.label)"
-              >
-                <img :src="card.stamp_url || card.url" :alt="card.label" />
-              </button>
-            </div>
-          </div>
-
-          <div class="grp">
-            <label class="section">stats</label>
-            <div class="world-stats">
-              <span>TIME: {{ elapsedTimeDisplay }}</span>
-              <span>CELLS: {{ livingCells.length }}</span>
-              <span>WAR: {{ stats.warDeaths }}</span>
-              <span>BBY: {{ stats.babyMerges }}</span>
-              <span>SQUISH: {{ stats.squishDeaths }}</span>
-              <span>FADE: {{ stats.fadedDeaths }}</span>
-              <span>AVG LIFE: {{ avgLifespan }}</span>
-            </div>
-          </div>
-
-          <div class="grp">
-            <label class="section">colour groups</label>
-            <div class="group-stats">
-              <div class="group-row header">
-                <span>colour</span>
-                <span>count</span>
-                <span>%</span>
-                <span>age</span>
-                <span>energy</span>
-                <span>strength</span>
-              </div>
-              <div
-                class="group-row"
-                v-for="g in sortedGroupStats"
-                :key="g.colour"
-                :class="{selected: highlightedGroup === g.colour}"
-                @click="selectGroup(g.colour)"
-              >
-                <div class="group-bar" :style="{ background: g.colour, width: g.percentage + '%' }"></div>
-                <span class="colour-cell">
-                  <span class="colour-swatch" :style="{ background: g.colour }"></span>
-                  {{ g.colour }}
-                </span>
-                <span>{{ g.count }}</span>
-                <span>{{ g.percentage.toFixed(1) }}%</span>
-                <span>{{ formatTicks(g.avgAge) }}</span>
-                <span>{{ g.avgEnergy.toFixed(1) }}</span>
-                <span>{{ g.avgStrength.toFixed(2) }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="grp" v-if="selectedGroupInfo">
-            <label class="section">group insight</label>
-            <div class="group-insight">
-              <span class="colour-swatch" :style="{ background: selectedGroupInfo.colour }"></span>
-              <span>{{ selectedGroupInfo.message }}</span>
-            </div>
-          </div>
-
-          <div class="grp" v-if="selectedCell">
-            <label class="section">cell {{ selectedCell.id }} info</label>
-            <div class="cell-stats">
-              <div class="cell-colour">
-                <span
-                  class="colour-swatch"
-                  :style="{ background: `rgba(${selectedCell.r},${selectedCell.g},${selectedCell.b},${selectedCell.a/255})` }"
-                ></span>
-                <span>{{ selectedCell.r }},{{ selectedCell.g }},{{ selectedCell.b }},{{ selectedCell.a }}</span>
-              </div>
-              <div>pos: {{ selectedCell.x }}, {{ selectedCell.y }}</div>
-              <div>age: {{ formatTicks(selectedCell.age) }}</div>
-              <div>energy: {{ selectedCell.energy.toFixed(1) }}</div>
-              <div>strength: {{ selectedCell.strength.toFixed(2) }}</div>
-              <div>aggr: {{ selectedCell.aggression.toFixed(2) }}</div>
-              <div>fert: {{ selectedCell.fertility.toFixed(2) }}</div>
-              <div>met: {{ selectedCell.metabolism.toFixed(2) }}</div>
-              <div>cargo: {{ selectedCell.cargo.toFixed(1) }}</div>
-              <div>spd: {{ selectedCell.speed }}</div>
-            </div>
-          </div>
-
-          <div class="grp" v-if="selectedCell">
-            <label class="section">cell {{ selectedCell.id }} family</label>
-            <div class="family-tree">
-              <div>
-                parents:
-                <template v-if="selectedFamily.parents.length">
-                  <span
-                    v-for="p in selectedFamily.parents"
-                    :key="p.id"
-                    class="family-link"
-                    @click="selectCellById(p.id)"
-                  >#{{ p.id }}</span>
-                </template>
-                <span v-else>none</span>
-              </div>
-              <div>
-                children:
-                <template v-if="selectedFamily.children.length">
-                  <span
-                    v-for="c in selectedFamily.children"
-                    :key="c.id"
-                    class="family-link"
-                    @click="selectCellById(c.id)"
-                  >#{{ c.id }}</span>
-                </template>
-                <span v-else>none</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="grp">
-            <label class="section" style="cursor:pointer" @click="showLegend = !showLegend">legend</label>
-            <div class="legend" v-show="showLegend">
-              <p><strong>colour:</strong> red wants to be on fire, blue wants to be wet, green wants to grow. transparent things are less strong.</p>
-              <p><strong>but:</strong> red burns lots of energy, greens need lots of room, blues pool together but slip off heights.</p>
-              <p><strong>bbys:</strong> when two cells make un bby, they're a mixture of their parents. the little flashes on screen are them being born!</p>
-              <p><strong>jobs:</strong> cells move toward the resources they need on the board.</p>
-              <p><strong>stats:</strong> % shows each colour's share of living cells, age and energy track group averages.</p>
-            </div>
-          </div>
-
-          <div class="grp">
-            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
-            <div class="row2">
-              <button class="action" @click="slowDown">-</button>
-              <button class="action" @click="speedUp">+</button>
-            </div>
-          </div>
-
-          <div class="grp">
-            <label class="section">zoom</label>
-            <div class="row3">
-              <button class="action" @click="zoomOut">-</button>
-              <div class="zoom-display">{{ (zoomFactor*100).toFixed(0) }}%</div>
-              <button class="action" @click="zoomIn">+</button>
-            </div>
-            <button class="action" @click="scopeActive = !scopeActive" :class="{active: scopeActive}">scope</button>
-            <button class="action" @click="resetView">reset view</button>
-          </div>
-        </div>
-      </div>
+      <worldLeftMenu
+        :board-size="boardSize"
+        :board-size-min="16"
+        :set-board-size="(v:number) => { boardSize = v }"
+        :dec-board="() => { boardSize = Math.max(16, boardSize - 16) }"
+        :inc-board="() => { boardSize = Math.min(1024, boardSize + 16) }"
+        :clear-world="clearWorld"
+        :cards="cards"
+        card-label="select a bby to place:"
+        :selected-card-label="selectedCardLabel"
+        :select-card="selectCard"
+        :elapsed-time-display="elapsedTimeDisplay"
+        :living-cells="livingCells"
+        :stats="stats"
+        :avg-lifespan="avgLifespan"
+        :sorted-group-stats="sortedGroupStats"
+        :highlighted-group="highlightedGroup"
+        :select-group="selectGroup"
+        :selected-group-info="selectedGroupInfo"
+        :selected-cell="selectedCell"
+        :selected-family="selectedFamily"
+        :format-ticks="formatTicks"
+        :ticks-per-second="ticksPerSecond"
+        :slow-down="slowDown"
+        :speed-up="speedUp"
+        :zoom-factor="zoomFactor"
+        :zoom-in="zoomIn"
+        :zoom-out="zoomOut"
+        :scope-active="scopeActive"
+        :toggle-scope="() => { scopeActive = !scopeActive }"
+        :reset-view="resetView"
+        :select-cell-by-id="selectCellById"
+        :show-legend="showLegend"
+        :toggle-legend="() => { showLegend = !showLegend }"
+      />
 
       <div class="world-right">
         <div
@@ -219,6 +84,7 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
+import worldLeftMenu from '@/components/worldLeftMenu.vue';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -291,9 +157,17 @@ function endPan() { isPanning = false; }
 
 /* ===================== Speed ===================== */
 const ticksPerSecond = ref(30);
+const paused = ref(false);
 const tickInterval = computed(() => 1000 / ticksPerSecond.value);
 function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
 function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
+function togglePause() {
+  paused.value = !paused.value;
+  if (!paused.value) {
+    timeSinceLastTick = 0;
+    lastTime = 0;
+  }
+}
 
 /* ===================== Cards / Stamps ===================== */
 const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);
@@ -580,26 +454,31 @@ function mainLoop(timestamp: number) {
     return;
   }
 
+  if (lastTime === 0) lastTime = timestamp;
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
-  timeSinceLastTick += deltaTime;
+  if (!paused.value) {
+    timeSinceLastTick += deltaTime;
 
-  // Cap the number of simulation updates processed in a single frame. When
-  // the tab is hidden or timers are throttled `deltaTime` can grow very
-  // large. Without a cap the loop below would attempt to "catch up" by
-  // running thousands of updates at once, freezing or crashing the page.
-  let performed = 0;
-  while (
-    timeSinceLastTick >= tickInterval.value &&
-    performed < MAX_UPDATES_PER_FRAME
-  ) {
-    update();
-    timeSinceLastTick -= tickInterval.value;
-    performed++;
-  }
+    // Cap the number of simulation updates processed in a single frame. When
+    // the tab is hidden or timers are throttled `deltaTime` can grow very
+    // large. Without a cap the loop below would attempt to "catch up" by
+    // running thousands of updates at once, freezing or crashing the page.
+    let performed = 0;
+    while (
+      timeSinceLastTick >= tickInterval.value &&
+      performed < MAX_UPDATES_PER_FRAME
+    ) {
+      update();
+      timeSinceLastTick -= tickInterval.value;
+      performed++;
+    }
 
-  if (performed === MAX_UPDATES_PER_FRAME) {
-    // Drop any excess accumulated time to avoid spiralling further.
+    if (performed === MAX_UPDATES_PER_FRAME) {
+      // Drop any excess accumulated time to avoid spiralling further.
+      timeSinceLastTick = 0;
+    }
+  } else {
     timeSinceLastTick = 0;
   }
 

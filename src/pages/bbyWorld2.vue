@@ -326,6 +326,8 @@ type GridCell = {
   friends: Record<number, number>; // pairwise affinity
   decayRate:number;        // alpha loss per tick
   lifespan: number;        // randomized lifespan in ticks
+  rootId: number;          // root id for sprouted plants
+  attached: boolean;       // whether movement is locked to a parent plant
 };
 
 /* ===================== World State ===================== */
@@ -717,6 +719,8 @@ function update() {
     const c = livingCells.value[i];
     if (!c.alive) continue;
 
+    updateAttachment(c);
+
     c.coop *= 0.95; // cooperative affinity decays each tick
     // Red aggression burns extra energy while alpha heft slows overall output
     c.energy -= c.metabolism + c.aggression*0.05;
@@ -966,6 +970,17 @@ function update() {
       }
     }
 
+    // Sprout new green tiles outward without a partner
+    if (domG > 0 && c.energy > 60 && rand() < domG * 0.02) {
+      const spot = findEmptyAdjacent(c.x, c.y);
+      if (spot) {
+        const [sx, sy] = spot;
+        const kid = sproutFrom(c, sx, sy);
+        livingCells.value.push(kid);
+        spatialMap[I(sx, sy)] = livingCells.value[livingCells.value.length - 1];
+      }
+    }
+
     // Blue cells slip toward lower ground or climb high when suppressed
     if (domB !== 0) {
       let target = solidGrid[ii];
@@ -1109,6 +1124,7 @@ function update() {
   for (let i = 0; i < updatesPerTick; i++) {
     const cell = pickRandomLivingCell();
     if (cell && cell.alive) {
+      if (cell.attached && cell.rootId !== cell.id) continue;
       const steps = cell.speed || 1;
       for (let s = 0; s < steps; s++) {
         const [dx, dy, newH] = chooseChainDir(cell);
@@ -1186,8 +1202,9 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
   const lifespan = baseLifespan + (rand() - 0.5) * (TICKS_PER_DAY * 5);
 
 
+  const id = nextCellId++;
   const cell: GridCell = {
-    id: nextCellId++,
+    id,
     r, g, b, a: A, x: px, y: py, energy, alive: true, birthTick: tickCount.value, age: 0,
     aggression, fertility, metabolism,
     strength, speed,
@@ -1197,6 +1214,8 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
     friends: {},
     decayRate: randomDecayRate(),
     lifespan,
+    rootId: id,
+    attached: false,
   };
   cellById[cell.id] = cell;
   familyTree[cell.id] = {parents: [], children: []};
@@ -1383,6 +1402,22 @@ function findEmptyAdjacent(x:number,y:number): [number,number] | null {
     }
   }
   return null;
+}
+
+function updateAttachment(c: GridCell){
+  if (!c.attached || c.rootId === c.id) return;
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0]];
+  let connected = false;
+  for (const [dx,dy] of dirs){
+    const nx = (c.x + dx + S()) % S();
+    const ny = (c.y + dy + S()) % S();
+    const n = spatialMap[I(nx, ny)];
+    if (n && n.alive && n.rootId === c.rootId){ connected = true; break; }
+  }
+  if (!connected){
+    c.attached = false;
+    c.rootId = c.id;
+  }
 }
 
 function countOccupiedAdjacent(x:number,y:number): number {
@@ -1642,6 +1677,22 @@ function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {
   adjustAffinity(cell, target, 2);
   adjustAffinity(cell, kid, 3);
   adjustAffinity(target, kid, 3);
+  return kid;
+}
+
+// Sprout a new green cell from a parent without needing a partner.
+function sproutFrom(parent: GridCell, x: number, y: number): GridCell {
+  const kid = makeCell(x, y, parent.r, parent.g, parent.b, parent.a, parent.lifespan);
+  kid.energy = Math.min(parent.energy * 0.5, 240);
+  parent.energy *= 0.5;
+  kid.aggression = parent.aggression;
+  kid.metabolism = parent.metabolism;
+  kid.decayRate = parent.decayRate;
+  kid.rootId = parent.rootId;
+  kid.attached = true;
+  familyTree[kid.id].parents = [parent.id];
+  familyTree[parent.id].children.push(kid.id);
+  adjustAffinity(parent, kid, 3);
   return kid;
 }
 

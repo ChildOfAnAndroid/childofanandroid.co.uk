@@ -1691,7 +1691,7 @@ function findEmptyAdjacent(x:number,y:number): [number,number] | null {
     const nx = (x + dx + S()) % S();
     const ny = (y + dy + S()) % S();
     const idx = I(nx, ny);
-    if (!spatialMap[idx] && solidGrid[idx] <= 0) {
+    if (!spatialMap[idx]) {
       return [nx, ny];
     }
   }

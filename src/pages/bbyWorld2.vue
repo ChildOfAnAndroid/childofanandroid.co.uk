@@ -468,6 +468,118 @@ function colourIntensity(r:number, g:number, b:number): number {
   return (maxC - minC) / 255;
 }
 
+function dominantColour(c: {r:number; g:number; b:number;}): 'red'|'green'|'blue'|'mixed' {
+  if (c.r > c.g && c.r > c.b) return 'red';
+  if (c.g > c.r && c.g > c.b) return 'green';
+  if (c.b > c.r && c.b > c.g) return 'blue';
+  return 'mixed';
+}
+
+function applyGenetics(cell: GridCell){
+  const dom = dominantColour(cell);
+  if (dom === 'red') {
+    cell.speed = Math.min(cell.speed + 1, 3);
+  } else if (dom === 'blue') {
+    cell.a = Math.max(0, cell.a - 30);
+  } else if (dom === 'green') {
+    cell.a = Math.min(255, cell.a + 30);
+  }
+}
+
+function applyPhysics(c: GridCell){
+  const dom = dominantColour(c);
+  const s = S();
+  if (dom === 'blue') {
+    const ny = (c.y + 1) % s;
+    if (!spatialMap[I(c.x, ny)]) {
+      performMove(c, c.x, ny);
+    }
+  } else if (dom === 'green') {
+    const ny = (c.y - 1 + s) % s;
+    if (!spatialMap[I(c.x, ny)]) {
+      performMove(c, c.x, ny);
+    }
+  } else if (dom === 'red') {
+    erodeSolid(I(c.x, c.y), 0.02);
+  }
+}
+
+function applyRules(c: GridCell){
+  const dom = dominantColour(c);
+  if (dom === 'blue') {
+    let count = 0;
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const n = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
+      if (n && dominantColour(n) === 'blue') count++;
+    }
+    if (count >= 2) c.energy = Math.min(260, c.energy + 0.5);
+  } else if (dom === 'red') {
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const n = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
+      if (!n || !n.alive) continue;
+      if (dominantColour(n) === 'green') {
+        const burn = Math.min(0.2, n.energy);
+        n.energy -= burn;
+        c.energy = Math.min(260, c.energy + burn);
+      } else if (dominantColour(n) === 'red' && c.energy > n.energy) {
+        const transfer = Math.min(0.1, c.energy - n.energy);
+        c.energy -= transfer;
+        n.energy = Math.min(260, n.energy + transfer);
+      }
+    }
+  } else if (dom === 'green') {
+    const idx = I(c.x, c.y);
+    const drink = Math.min(0.2, moistureField[idx]);
+    if (drink > 0) {
+      moistureField[idx] -= drink;
+      c.energy = Math.min(260, c.energy + drink * 5);
+    }
+  }
+}
+
+function applyNorms(c: GridCell){
+  const dom = dominantColour(c);
+  const s = S();
+  if (dom === 'green') {
+    const ny = (c.y - 1 + s) % s;
+    const up = spatialMap[I(c.x, ny)];
+    if (up && dominantColour(up) === 'green' && c.energy > 0.1) {
+      const transfer = 0.1;
+      c.energy -= transfer;
+      up.energy = Math.min(260, up.energy + transfer);
+    }
+  } else if (dom === 'blue') {
+    const ny = (c.y + 1) % s;
+    const down = spatialMap[I(c.x, ny)];
+    if (down && dominantColour(down) === 'blue' && c.cargo > 0) {
+      const flow = Math.min(0.1, c.cargo);
+      c.cargo -= flow;
+      down.cargo += flow;
+    }
+  } else if (dom === 'red') {
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const n = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
+      if (n && n.alive && dominantColour(n) !== 'red') {
+        n.energy -= 0.1;
+      }
+    }
+  }
+}
+
+function applySexualNorms(c: GridCell){
+  const dom = dominantColour(c);
+  if (dom === 'green' && c.fertility > 0.8 && rand() < 0.002) {
+    const spot = findEmptyAdjacent(c.x, c.y);
+    if (spot) {
+      const [bx, by] = spot;
+      const clone = makeCell(bx, by, c.r, c.g, c.b, c.a);
+      livingCells.value.push(clone);
+      spatialMap[I(bx, by)] = livingCells.value[livingCells.value.length - 1];
+      stats.value.babyMerges++;
+    }
+  }
+}
+
 /* Renderer buffer */
 let frame = new Uint8ClampedArray(0);
 let frameImg: ImageData | null = null;
@@ -726,6 +838,7 @@ function update() {
     if (!c.alive) continue;
 
     updateAttachment(c);
+    applyPhysics(c);
 
     c.coop *= 0.95; // cooperative affinity decays each tick
     // Red aggression burns extra energy while alpha heft slows overall output
@@ -749,6 +862,8 @@ function update() {
     const domR = colourDominance(Rf, Bf, Gf);
     const domB = colourDominance(Bf, Rf, Gf);
     const domG = colourDominance(Gf, Rf, Bf);
+    applyRules(c);
+    applyNorms(c);
 
     // transparency fades over time based on each cell's inherent decay rate
     if (c.age > c.lifespan) {
@@ -1130,6 +1245,8 @@ function update() {
         }
     }
 
+    applySexualNorms(c);
+
     // MODIFIED: Blue pixels (water) avoid squish death if pooled
     if (c.energy <= 0) {
       if (domB > 0) {
@@ -1264,6 +1381,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
     rootId: id,
     attached: false,
   };
+  applyGenetics(cell);
   cellById[cell.id] = cell;
   familyTree[cell.id] = {parents: [], children: []};
 
@@ -1840,7 +1958,8 @@ function compatibility(a:GridCell,b:GridCell){
   const satA = colourIntensity(a.r, a.g, a.b);
   const satB = colourIntensity(b.r, b.g, b.b);
   const base = 0.6*comp + 0.4*(1 - dist);
-  return base * ((satA + satB) / 2);
+  const same = 1 - dist;
+  return Math.min(1, base * ((satA + satB) / 2) + same * 0.1);
 }
 
 function mergeBaby(cell:GridCell,target:GridCell,x:number,y:number): GridCell {

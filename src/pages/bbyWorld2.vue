@@ -1541,9 +1541,15 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     const domB = colourDominance(Bf, Rf, Gf);
     const domG = colourDominance(Gf, Rf, Bf);
     let want = heat*Rf + wet*Bf + nut*Gf + (heat+wet+nut)*0.05;
-    // Blue cells shy from climbing higher ground
+    // Blue cells are pulled downhill and struggle to climb back up
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
-    want -= Math.max(0, hDiff) * Bf * domB;
+    if (hDiff > 0) {
+      // moving uphill is hard for blues
+      want -= hDiff * Bf * domB;
+    } else if (hDiff < 0) {
+      // strong attraction toward lower terrain
+      want += (-hDiff) * Bf * domB * 1.5;
+    }
     // MODIFIED: Red cells hunt for fuel and stalk green plants
     if (domR > 0) {
       want += (nut - wet) * domR * 0.5;

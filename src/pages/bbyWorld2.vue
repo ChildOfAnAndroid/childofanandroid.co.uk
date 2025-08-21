@@ -588,8 +588,22 @@ let frame = new Uint8ClampedArray(0);
 let frameImg: ImageData | null = null;
 
 /* ===================== RNG ===================== */
-let rng = mulberry32(1337);
+let rng = mulberry32(0);
 function mulberry32(a:number){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;};}
+function reseedRNG(seed?:number){
+  let s = seed;
+  if (s === undefined){
+    if (typeof crypto !== "undefined" && "getRandomValues" in crypto){
+      const buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      s = buf[0];
+    } else {
+      s = Math.floor(Math.random() * 0xffffffff);
+    }
+  }
+  rng = mulberry32(s);
+}
+reseedRNG();
 function rand(){ return rng(); }
 
 /* ===================== Init / Resize ===================== */
@@ -618,6 +632,7 @@ function clearWorld(){
   spatialMap.fill(null);
   stats.value = { warDeaths:0, babyMerges:0, squishDeaths:0, fadedDeaths:0, totalLifespan:0, deadCount:0 };
   tickCount.value = 0;
+  reseedRNG();
 }
 
 function applyBoardSize(){

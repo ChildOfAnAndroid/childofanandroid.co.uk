@@ -1446,8 +1446,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
   const heading = (Math.floor(rand()*4) as Heading);
   // Inherited lifespan with mutation
   const baseLifespan = parentLifespan || (TICKS_PER_DAY * 10 + rand() * TICKS_PER_DAY * 20);
-  // Extend lifespan by 10x
-  const lifespan = (baseLifespan + (rand() - 0.5) * (TICKS_PER_DAY * 5)) * 20;
+  const lifespan = (baseLifespan + (rand() - 0.5) * (TICKS_PER_DAY * 5)) * 200;
 
 
   const id = nextCellId++;

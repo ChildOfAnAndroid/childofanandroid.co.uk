@@ -486,17 +486,30 @@ function dominantColour(c: GridCell): ColourName {
   return dominantFromRGB(c.r, c.g, c.b);
 }
 
-function applyPhysics(c: GridCell, dom: ColourName){
+function applyPhysics(c: GridCell, dom: ColourName) {
+  // Older physics pushed blue and green cells straight up or down each tick.
+  // This ignored the terrain height map and caused tiles to bounce vertically
+  // across the board. Instead, only move if the neighbouring tile is actually
+  // lower (blue) or higher (green) terrain, allowing height to influence flow.
   const s = S();
-  if (dom === 'blue' && !c.attached){
+  const hereIdx = I(c.x, c.y);
+  const hereH = solidGrid[hereIdx];
+
+  if (dom === 'blue' && !c.attached) {
     const ny = (c.y + 1) % s;
-    if (!spatialMap[I(c.x, ny)]) performMove(c, c.x, ny);
+    const belowIdx = I(c.x, ny);
+    if (!spatialMap[belowIdx] && solidGrid[belowIdx] + 0.01 < hereH) {
+      performMove(c, c.x, ny);
+    }
   } else if (dom === 'red') {
-    const burned = erodeSolid(I(c.x, c.y), 0.02);
+    const burned = erodeSolid(hereIdx, 0.02);
     if (burned > 0) c.energy = Math.min(260, c.energy + burned * 5);
   } else if (dom === 'green') {
     const ny = (c.y - 1 + s) % s;
-    if (!spatialMap[I(c.x, ny)]) performMove(c, c.x, ny);
+    const aboveIdx = I(c.x, ny);
+    if (!spatialMap[aboveIdx] && solidGrid[aboveIdx] + 0.01 < hereH) {
+      performMove(c, c.x, ny);
+    }
   }
 }
 

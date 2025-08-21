@@ -1014,6 +1014,22 @@ function update() {
       }
     }
 
+    // NEW: Green (plant) cells siphon energy from adjacent blue (water) cells
+    if (domG > 0) {
+      for (const [dx, dy] of shareDirs) {
+        const nx = (c.x + dx + S()) % S();
+        const ny = (c.y + dy + S()) % S();
+        const neighbour = spatialMap[I(nx, ny)];
+        if (!neighbour || !neighbour.alive) continue;
+        const nDomB = colourDominance(neighbour.b/255, neighbour.r/255, neighbour.g/255);
+        if (nDomB > 0) {
+          const siphon = Math.min(0.05 * domG, neighbour.energy);
+          neighbour.energy -= siphon;
+          c.energy = Math.min(260, c.energy + siphon);
+        }
+      }
+    }
+
     // NEW: Animal behaviour: dark and purple cells ferry nutrients and gift energy
     const isAnimal = (c.r + c.g + c.b < 60) || (c.r > 150 && c.b > 150 && c.g < 80);
     if (isAnimal) {
@@ -1329,6 +1345,13 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
         score += comp * 0.2;
       } else {
         score -= (1 - comp) * 0.2;
+      }
+      // NEW: Green cells are drawn toward adjacent blue (water) tiles
+      if (domG > 0) {
+        const nDomB = colourDominance(neighbour.b/255, neighbour.r/255, neighbour.g/255);
+        if (nDomB > 0) {
+          score += 0.5 * domG;
+        }
       }
     }
 

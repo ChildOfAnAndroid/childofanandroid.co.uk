@@ -1244,7 +1244,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
   const heading = (Math.floor(rand()*4) as Heading);
   // Inherited lifespan with mutation
   const baseLifespan = parentLifespan || (TICKS_PER_DAY * 10 + rand() * TICKS_PER_DAY * 20);
-  const lifespan = baseLifespan + (rand() - 0.5) * (TICKS_PER_DAY * 5);
+  const lifespan = (baseLifespan + (rand() - 0.5) * (TICKS_PER_DAY * 5)) * 2;
 
 
   const id = nextCellId++;
@@ -1346,6 +1346,30 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
   const headings: Heading[] = [0, 1, 2, 3];
   shuffleArray(headings);
 
+  // Find the cell's most compatible mate and vector toward it
+  let bestMate: GridCell | null = null;
+  let bestComp = 0;
+  for (const other of livingCells.value) {
+    if (other.id === cell.id || !other.alive) continue;
+    const comp = compatibility(cell, other);
+    if (comp > bestComp) {
+      bestComp = comp;
+      bestMate = other;
+    }
+  }
+
+  const board = S();
+  let mateDx = 0, mateDy = 0, fertFactor = 0;
+  if (bestMate) {
+    mateDx = bestMate.x - cell.x;
+    mateDy = bestMate.y - cell.y;
+    if (mateDx > board / 2) mateDx -= board;
+    if (mateDx < -board / 2) mateDx += board;
+    if (mateDy > board / 2) mateDy -= board;
+    if (mateDy < -board / 2) mateDy += board;
+    fertFactor = (cell.fertility + bestMate.fertility) / 2;
+  }
+
   for (const h of headings) {
 
     const [dx,dy] = HEADING_VECS[h];
@@ -1442,6 +1466,21 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     }
     // amplify a touch of randomness so groups don't lock into perfect stability
     score += (rand()-0.5)*0.1;
+
+    // Attraction toward strongest compatible mate, scaled by fertility
+    if (bestMate) {
+      const currentDist = Math.abs(mateDx) + Math.abs(mateDy);
+      let ndx = mateDx - dx;
+      let ndy = mateDy - dy;
+      if (ndx > board / 2) ndx -= board;
+      if (ndx < -board / 2) ndx += board;
+      if (ndy > board / 2) ndy -= board;
+      if (ndy < -board / 2) ndy += board;
+      const newDist = Math.abs(ndx) + Math.abs(ndy);
+      if (newDist < currentDist) {
+        score += bestComp * fertFactor;
+      }
+    }
 
     prefs.push({h: h as Heading, score});
   }

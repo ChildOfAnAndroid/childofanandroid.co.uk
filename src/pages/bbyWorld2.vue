@@ -1344,8 +1344,8 @@ const VIVID_SAT_THRESHOLD = 0.2
 const GENETIC_COMPAT_THRESHOLD = 0.15
 // Only start penalising family breeding after many alternative partners exist
 const FAMILY_PENALTY_THRESHOLD = 200
-// Require a healthy energy reserve before breeding to prioritise survival
-const REPRO_MIN_ENERGY = 120
+// Minimum energy a cell must have (alongside its partner) before reproduction is attempted
+const REPRODUCTION_MIN_ENERGY = 80
 const BIRTH_FLASH_TICKS = 8
 // Cells previously faded extremely slowly which led to a world that would
 // quickly fill and then stagnate. Bumping the decay range up causes even
@@ -1477,20 +1477,23 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
   shuffleArray(headings);
 
   // Find the cell's most compatible mate and vector toward it
+  // but only if the cell has enough energy to prioritise reproduction.
   let bestMate: GridCell | null = null;
   let bestComp = 0;
-  for (const other of livingCells.value) {
-    if (other.id === cell.id || !other.alive) continue;
-    const comp = compatibility(cell, other);
-    if (comp > bestComp) {
-      bestComp = comp;
-      bestMate = other;
+  if (cell.energy > REPRODUCTION_MIN_ENERGY) {
+    for (const other of livingCells.value) {
+      if (other.id === cell.id || !other.alive) continue;
+      const comp = compatibility(cell, other);
+      if (comp > bestComp) {
+        bestComp = comp;
+        bestMate = other;
+      }
     }
   }
 
   const board = S();
   let mateDx = 0, mateDy = 0, fertFactor = 0;
-  if (bestMate) {
+  if (bestMate && cell.energy > REPRODUCTION_MIN_ENERGY) {
     mateDx = bestMate.x - cell.x;
     mateDy = bestMate.y - cell.y;
     if (mateDx > board / 2) mateDx -= board;
@@ -1607,7 +1610,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     score += (rand()-0.5)*0.1;
 
     // Attraction toward strongest compatible mate, scaled by fertility
-    if (bestMate) {
+    if (bestMate && cell.energy > REPRODUCTION_MIN_ENERGY) {
       const currentDist = Math.abs(mateDx) + Math.abs(mateDy);
       let ndx = mateDx - dx;
       let ndy = mateDy - dy;
@@ -1842,8 +1845,8 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     if (
       compVal >= GENETIC_COMPAT_THRESHOLD &&
       pCompat >= pWar &&
-      cell.energy > REPRO_MIN_ENERGY &&
-      target.energy > REPRO_MIN_ENERGY
+      cell.energy > REPRODUCTION_MIN_ENERGY &&
+      target.energy > REPRODUCTION_MIN_ENERGY
     ){
       adjustAffinity(cell, target, 0.5);
       const spawn = findEmptyAdjacent(newX, newY) || findEmptyAdjacent(cell.x, cell.y);

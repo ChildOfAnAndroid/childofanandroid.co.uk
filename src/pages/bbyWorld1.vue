@@ -130,8 +130,9 @@
 
           <div class="grp">
             <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
-            <div class="row2">
+            <div class="row3">
               <button class="action" @click="slowDown">-</button>
+              <button class="action" @click="togglePause">{{ isPaused ? 'play' : 'pause' }}</button>
               <button class="action" @click="speedUp">+</button>
             </div>
           </div>
@@ -325,6 +326,7 @@ function applyBoardSize(){
 
 const pan = ref({ x: 0, y: 0 }); const baseScale = ref(1); const zoomFactor = ref(1);
 const ticksPerSecond = ref(30);
+const isPaused = ref(false);
 const totalScale = computed(() => Math.max(1, Math.floor(baseScale.value * zoomFactor.value)));
 const canvasStyle = computed(() => ({ 
   transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, 
@@ -341,6 +343,7 @@ function endPan() { isPanning = false; }
 function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
 function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
 function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
+function togglePause() { isPaused.value = !isPaused.value; }
 
 /* ===================== Main Loop ===================== */
 let animationFrameId: number | null = null;
@@ -355,14 +358,16 @@ function mainLoop(timestamp: number) {
   if(lastTime === 0) lastTime = timestamp;
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
-  timeSinceLastTick += deltaTime;
-  let performed = 0;
-  while (timeSinceLastTick >= tickInterval && performed < MAX_UPDATES_PER_FRAME) {
-    update();
-    timeSinceLastTick -= tickInterval;
-    performed++;
+  if (!isPaused.value) {
+    timeSinceLastTick += deltaTime;
+    let performed = 0;
+    while (timeSinceLastTick >= tickInterval && performed < MAX_UPDATES_PER_FRAME) {
+      update();
+      timeSinceLastTick -= tickInterval;
+      performed++;
+    }
+    if (performed === MAX_UPDATES_PER_FRAME) timeSinceLastTick = 0;
   }
-  if (performed === MAX_UPDATES_PER_FRAME) timeSinceLastTick = 0;
   drawGrid(ctx);
   if (lastMouseEvent) updateScope(lastMouseEvent);
   animationFrameId = requestAnimationFrame(mainLoop);

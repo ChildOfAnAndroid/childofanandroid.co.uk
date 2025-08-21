@@ -503,11 +503,42 @@ function applyPhysics(c: GridCell, dom: ColourName) {
   const hereH = solidGrid[hereIdx];
 
   if (dom === 'blue' && !c.attached) {
+    // Count neighbouring blue cells so groups can act together
+    let group = 0;
+    for (const [dx, dy] of HEADING_VECS) {
+      const n = spatialMap[I((c.x + dx + s) % s, (c.y + dy + s) % s)];
+      if (n && n.alive && dominantColour(n) === 'blue') group++;
+    }
+
     const ny = (c.y + 1) % s;
     const belowIdx = I(c.x, ny);
-    if (!spatialMap[belowIdx] && solidGrid[belowIdx] + 0.01 < hereH) {
-      performMove(c, c.x, ny);
+    const belowCell = spatialMap[belowIdx];
+
+    // Groups weigh more and erode terrain beneath them
+    if (group > 0) {
+      erodeSolid(belowIdx, group * 0.03);
     }
+
+    if (!belowCell) {
+      // Heavy groups can descend even if terrain is level
+      if (solidGrid[belowIdx] + 0.01 < hereH || group >= 2) {
+        performMove(c, c.x, ny);
+      }
+    } else if (
+      group >= 2 &&
+      belowCell.alive &&
+      dominantColour(belowCell) === 'blue'
+    ) {
+      // Cascade movement so stacks travel together
+      const ny2 = (ny + 1) % s;
+      const belowIdx2 = I(c.x, ny2);
+      if (!spatialMap[belowIdx2] && solidGrid[belowIdx2] + 0.01 < solidGrid[belowIdx]) {
+        performMove(belowCell, c.x, ny2);
+        performMove(c, c.x, ny);
+      }
+    }
+    const head = dominantBlueHeading(c);
+    if (head !== null) c.heading = head;
   } else if (dom === 'red') {
     const burned = erodeSolid(hereIdx, 0.02);
     if (burned > 0) c.energy = Math.min(260, c.energy + burned * 5);
@@ -875,6 +906,7 @@ function update() {
     updateAttachment(c);
     const dom = dominantColour(c);
     applyPhysics(c, dom);
+    const blueGroup = dom === 'blue' ? countAdjacentBlue(c.x, c.y) : 0;
 
     c.coop *= 0.95; // cooperative affinity decays each tick
     // Red aggression burns extra energy while alpha heft slows overall output
@@ -1041,7 +1073,7 @@ function update() {
 
     // Blue cells slowly erode nearby solids and push debris outward
     if (domB !== 0) {
-      const erosion = 0.004 * Bf * Math.abs(domB);
+      const erosion = 0.004 * Bf * Math.abs(domB) * (1 + blueGroup * 0.5);
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = (c.x + dx + S()) % S();
@@ -1727,6 +1759,30 @@ function countOccupiedAdjacent(x:number,y:number): number {
     if (spatialMap[I(nx,ny)]) c++;
   }
   return c;
+}
+
+function countAdjacentBlue(x:number,y:number): number {
+  let c=0;
+  for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nx=(x+dx+S())%S();
+    const ny=(y+dy+S())%S();
+    const n=spatialMap[I(nx,ny)];
+    if (n && n.alive && dominantColour(n)==='blue') c++;
+  }
+  return c;
+}
+
+function dominantBlueHeading(cell:GridCell): Heading|null {
+  const counts=[0,0,0,0];
+  for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nx=(cell.x+dx+S())%S();
+    const ny=(cell.y+dy+S())%S();
+    const n=spatialMap[I(nx,ny)];
+    if (n && n.alive && dominantColour(n)==='blue') counts[n.heading]++;
+  }
+  let best=-1, bestCount=0;
+  for (let h=0; h<4; h++) if (counts[h]>bestCount){ bestCount=counts[h]; best=h; }
+  return bestCount>0 ? best as Heading : null;
 }
 
 function hasNearbyGreenBlue(x:number,y:number,dist=2): boolean {

@@ -476,9 +476,16 @@ function colourIntensity(r:number, g:number, b:number): number {
 }
 
 function dominantFromRGB(r:number,g:number,b:number): ColourName {
-  if (r > g && r > b) return 'red';
-  if (g > r && g > b) return 'green';
-  if (b > r && b > g) return 'blue';
+  // Treat colours as "mixed" unless one channel clearly dominates. This
+  // prevents near-neutral tones (e.g. purples with a slightly higher green
+  // value) from inheriting directional physics like the green cells' upward
+  // climb, which caused drifting across the board.
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max - min < 10) return null; // no strong dominance
+  if (max === r) return 'red';
+  if (max === g) return 'green';
+  if (max === b) return 'blue';
   return null;
 }
 

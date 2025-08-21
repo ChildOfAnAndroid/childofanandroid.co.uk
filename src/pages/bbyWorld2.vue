@@ -145,7 +145,7 @@
             <label class="section" style="cursor:pointer" @click="showLegend = !showLegend">legend</label>
             <div class="legend" v-show="showLegend">
               <p><strong>colour:</strong> red wants to be on fire, blue wants to be wet, green wants to grow. transparent things are less strong.</p>
-              <p><strong>but:</strong> red burns lots of energy, greens need lots of room, blues pool together but slip off heights.</p>
+              <p><strong>but:</strong> red burns lots of energy, greens need lots of room, blues pool together but slip off heights unless flowing with friends.</p>
               <p><strong>bbys:</strong> when two cells make un bby, they're a mixture of their parents. the little flashes on screen are them being born!</p>
               <p><strong>jobs:</strong> cells move toward the resources they need on the board.</p>
               <p><strong>stats:</strong> % shows each colour's share of living cells, age and energy track group averages.</p>
@@ -1439,6 +1439,15 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
       }
     }
 
+    if (domB > 0 && hasNearbyBlue(nx, ny, 2)) {
+      const currentH = solidGrid[I(cell.x, cell.y)];
+      const nextH = solidGrid[i];
+      score += wet * 0.3 * domB;
+      if (nextH > currentH) {
+        score += (nextH - currentH) * 0.2 * domB;
+      }
+    }
+
     // --- Social bias ---
     // Peek at the neighbour in this direction. Compatible neighbours draw
     // cells together while enemies repel, nudging movement toward emergent
@@ -1565,6 +1574,22 @@ function hasNearbyGreen(x:number,y:number,dist=2): boolean {
   return false;
 }
 
+function hasNearbyBlue(x:number,y:number,dist=2): boolean {
+  for (let dy=-dist; dy<=dist; dy++){
+    for (let dx=-dist; dx<=dist; dx++){
+      if (dx===0 && dy===0) continue;
+      const nx=(x+dx+S())%S();
+      const ny=(y+dy+S())%S();
+      const neighbour = spatialMap[I(nx,ny)];
+      if (neighbour && neighbour.alive){
+        const nDomB = colourDominance(neighbour.b/255, neighbour.r/255, neighbour.g/255);
+        if (nDomB > 0) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function congaMove(start:GridCell, dx:number, dy:number): boolean {
   const heading = start.heading;
   const chain: GridCell[] = [start];
@@ -1627,7 +1652,10 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
   const domB = colourDominance(Bf, Rf, Gf);
   const domR = colourDominance(Rf, Bf, Gf);
   const heightDiff = targetH - currentH;
-  if (domB > 0 && heightDiff > 0.1) return false;
+  if (domB > 0 && heightDiff > 0.1) {
+    if (!hasNearbyBlue(cell.x, cell.y, 1) || heightDiff > 0.6) return false;
+    cell.energy -= heightDiff * 0.05;
+  }
   if (domB < 0 && heightDiff < -0.1) return false;
 
   if (targetH > 0 && domR <= 0) {

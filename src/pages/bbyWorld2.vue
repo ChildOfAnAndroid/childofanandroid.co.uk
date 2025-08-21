@@ -1600,8 +1600,8 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
       const currentH = solidGrid[I(cell.x, cell.y)];
       const nextH = solidGrid[i];
       score += wet * 0.3 * domB;
-      if (nextH > currentH) {
-        score += (nextH - currentH) * 0.2 * domB;
+      if (nextH < currentH) {
+        score += (currentH - nextH) * 0.2 * domB;
       }
     }
 

@@ -1220,6 +1220,8 @@ const FERTILITY_ALPHA_PEAK = 0.7
 const VIVID_SAT_THRESHOLD = 0.2
 // Lower genetic compatibility threshold to allow more varied pairings
 const GENETIC_COMPAT_THRESHOLD = 0.15
+// Only start penalising family breeding after many alternative partners exist
+const FAMILY_PENALTY_THRESHOLD = 200
 const BIRTH_FLASH_TICKS = 8
 // Cells previously faded extremely slowly which led to a world that would
 // quickly fill and then stagnate. Bumping the decay range up causes even
@@ -1701,7 +1703,9 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     let pCompat = Math.min(1, compVal * 0.4 + (cell.fertility + target.fertility) * 0.05 + coopBoost);
     if (isCloseFamily(cell, target)) {
       const options = countCompatibleNonFamily(cell);
-      pCompat *= 1 / (1 + options);
+      if (options > FAMILY_PENALTY_THRESHOLD) {
+        pCompat *= FAMILY_PENALTY_THRESHOLD / options;
+      }
     }
     const baseWar = (cell.aggression + target.aggression) * 0.35 + (heatField[tIndex] * 0.25);
     const pWar = Math.min(1, Math.max(0, baseWar - coopBoost * 0.5 - pairAff * 0.1));

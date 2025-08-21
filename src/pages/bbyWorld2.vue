@@ -716,8 +716,10 @@ function update() {
 
     const ii = I(c.x, c.y);
     const Rf = c.r/255, Gf = c.g/255, Bf = c.b/255;
+    const domR = colourDominance(Rf, Bf, Gf);
+    const domG = colourDominance(Gf, Rf, Bf);
+    const domB = colourDominance(Bf, Rf, Gf);
     
-    // --- Universal Cell Logic ---
     c.age += 1;
     c.energy -= c.metabolism;
     if (c.age > c.lifespan) {
@@ -731,79 +733,61 @@ function update() {
       continue;
     }
     
-    // --- RESTRUCTURED PHYSICS: ENFORCE ECOLOGICAL ROLES ---
-    const role = dominantColour(c);
+    // --- CONTINUOUS PHYSICS MODEL ---
     let gain = 0;
 
-    switch (role) {
-      case 'blue': {
-        const domB = colourDominance(Bf, Rf, Gf);
-        const blueGroup = countAdjacentBlue(c.x, c.y);
-        const erosionPower = 0.007 * Bf * domB * (1 + blueGroup * 0.5);
-        
-        if (c.solidCargo < 1.0) {
-            const take = Math.min(erosionPower, solidGrid[ii], 1.0 - c.solidCargo);
-            if (take > 0) {
-                erodeSolid(ii, take);
-                c.solidCargo += take;
-                c.energy -= take * 3;
-            }
-        }
-        if (blueGroup >= 2) c.energy = Math.min(260, c.energy + blueGroup * 0.2);
-        
-        const take = Math.min(0.02 * domB, moistureField[ii]);
-        moistureField[ii] -= take;
-        gain += take * 10;
-        break;
+    // 1. Primary Energy Generation (Dominance-based)
+    if (domB > 0) { // Blue behavior
+      const blueGroup = countAdjacentBlue(c.x, c.y);
+      const erosionPower = 0.007 * Bf * domB * (1 + blueGroup * 0.5);
+      if (c.solidCargo < 1.0) {
+          const take = Math.min(erosionPower, solidGrid[ii], 1.0 - c.solidCargo);
+          if (take > 0) {
+              erodeSolid(ii, take); c.solidCargo += take; c.energy -= take * 3;
+          }
       }
-
-      case 'green': {
-        const domG = colourDominance(Gf, Rf, Bf);
-        const heat = heatField[ii];
-        const moisture = moistureField[ii];
-        if (heat > 0.1 && moisture > 0.1) {
-            const intake = Math.min(heat, moisture, 0.015) * domG;
-            heatField[ii] -= intake;
-            moistureField[ii] -= intake;
-            c.energy = Math.min(260, c.energy + intake * 60);
-        }
-        break;
-      }
-      
-      case 'red': {
-        const domR = colourDominance(Rf, Bf, Gf);
-        if (moistureField[ii] > 0.15) c.energy -= moistureField[ii] * 5;
-
-        const fuel = Math.min(nutrientField[ii], 0.02 * domR);
-        if (fuel > 0) {
-            nutrientField[ii] -= fuel;
-            c.energy = Math.min(260, c.energy + fuel * 30);
-            heatField[ii] += fuel * 0.5;
-        }
-
-        for (const [dx, dy] of HEADING_VECS) {
-            const neighbour = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
-            if (neighbour?.alive) {
-                const nDom = dominantColour(neighbour);
-                if (nDom === 'green') {
-                    const burn = Math.min(neighbour.energy, 15);
-                    neighbour.energy -= burn;
-                    c.energy = Math.min(260, c.energy + burn * 2.5);
-                    if (neighbour.energy <= 0) recordDeath(neighbour, "war");
-                }
-                if (nDom === 'blue') c.energy -= 10;
-            }
-        }
-        break;
-      }
-
-      default: { 
-        // Balanced/mixed cells get no primary energy, only from synergies
-        break;
+      if (blueGroup >= 2) c.energy = Math.min(260, c.energy + blueGroup * 0.2);
+    }
+    if (domG > 0) { // Green behavior
+      if (heatField[ii] > 0.1 && moistureField[ii] > 0.1) {
+          const intake = Math.min(heatField[ii], moistureField[ii], 0.015) * domG;
+          heatField[ii] -= intake; moistureField[ii] -= intake;
+          gain += intake * 60;
       }
     }
+    if (domR > 0) { // Red behavior
+      if (moistureField[ii] > 0.15) c.energy -= moistureField[ii] * 5;
 
-    // --- UNIVERSAL: MIXED COLOR SYNERGIES (Applied to ALL cells) ---
+      const fuel = Math.min(nutrientField[ii], 0.02 * domR);
+      if (fuel > 0) {
+          nutrientField[ii] -= fuel; gain += fuel * 30; heatField[ii] += fuel * 0.5;
+      }
+
+      for (const [dx, dy] of HEADING_VECS) { // Spread
+          const neighbour = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
+          if (neighbour?.alive && dominantColour(neighbour) === 'green') {
+              const burn = Math.min(neighbour.energy, 15);
+              neighbour.energy -= burn; gain += burn * 2.5;
+              if (neighbour.energy <= 0) recordDeath(neighbour, "war");
+          }
+      }
+    }
+    
+    // 2. Secondary Energy (All cells, based on color components)
+    const handleField = (dom:number, field:Float32Array, idx:number) => {
+        const amt = 0.02 * Math.abs(dom);
+        if (dom > 0) {
+          const take = Math.min(amt, field[idx]);
+          field[idx] -= take; gain += take * 10;
+        } else {
+          field[idx] += amt; gain -= amt * 10;
+        }
+    };
+    handleField(domB, moistureField, ii);
+    handleField(domG, nutrientField, ii);
+    handleField(domR, heatField, ii);
+    
+    // 3. Tertiary Energy (Synergies for mixed cells)
     const mixRB = Math.min(Rf, Bf);
     if (mixRB > 0.3) {
       const take = Math.min(0.01*mixRB, moistureField[ii]);
@@ -823,7 +807,7 @@ function update() {
     c.energy = Math.min(c.energy + gain, 260);
 
     if (c.energy <= 0) {
-      if (role === 'blue') {
+      if (dominantColour(c) === 'blue') {
         let pooled = false;
         for (const [dx, dy] of HEADING_VECS) {
           const neighbour = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
@@ -1024,33 +1008,30 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
 
     const heat = heatField[i], wet = moistureField[i], nut = nutrientField[i];
     const Rf = cell.r/255, Bf = cell.b/255, Gf = cell.g/255;
-    let want = 0;
+    const domR = colourDominance(Rf, Bf, Gf);
+    const domG = colourDominance(Gf, Rf, Bf);
+    const domB = colourDominance(Bf, Rf, Gf);
     
+    let want = 0;
     const hDiff = solidGrid[i] - solidGrid[I(cell.x, cell.y)];
-    const role = dominantColour(cell);
 
-    switch(role) {
-      case 'blue':
-        want += wet * Bf;
-        if (hDiff > 0) want -= hDiff * (Bf * colourDominance(Bf,Rf,Gf) + cell.solidCargo * 2);
-        else if (hDiff < 0) want += (-hDiff) * Bf * colourDominance(Bf,Rf,Gf) * 1.5;
-        break;
-      case 'green':
-        want += (heat + wet) * 0.8 * Gf;
-        want += hDiff * 0.8 * Gf; // Strong desire to climb
-        break;
-      case 'red':
-        want += heat * Rf;
-        want += (nut - wet) * colourDominance(Rf,Bf,Gf) * 0.5;
-        if (hasNearbyGreen(nx, ny, 2)) want += 0.6 * colourDominance(Rf,Bf,Gf);
-        break;
-      default:
-        want = heat*Rf + wet*Bf + nut*Gf;
-        break;
+    // Weighted desire based on color dominance
+    want += (heat * domR + wet * domB + nut * domG);
+
+    // Terrain interaction based on dominance
+    if (domB > 0) {
+        if (hDiff > 0) want -= hDiff * (domB + cell.solidCargo * 2);
+        else if (hDiff < 0) want += (-hDiff) * domB * 1.5;
+    }
+    if (domG > 0) {
+        want += hDiff * 0.8 * domG;
+    }
+    if (domR > 0 && hasNearbyGreen(nx, ny, 2)) {
+        want += 0.6 * domR;
     }
 
     let solidPenalty = solidGrid[i] * (1 - cell.strength);
-    if (role === 'red') solidPenalty *= 0.1;
+    if (domR > 0) solidPenalty *= 0.1;
     if (Math.abs(Rf - Gf) < 0.1 && Math.abs(Gf - Bf) < 0.1) solidPenalty *= 0.3;
     
     const turnPenalty = (h === cell.heading ? 0 : cell.turnBias);

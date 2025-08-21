@@ -1609,7 +1609,11 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     const coopBoost = (cell.coop + target.coop) * 0.2 + pairAff * 0.1;
     const compVal = compatibility(cell, target);
     // Soften compatibility and fertility scaling to encourage more breeding
-    const pCompat = Math.min(1, compVal * 0.4 + (cell.fertility + target.fertility) * 0.05 + coopBoost);
+    let pCompat = Math.min(1, compVal * 0.4 + (cell.fertility + target.fertility) * 0.05 + coopBoost);
+    if (isCloseFamily(cell, target)) {
+      const options = countCompatibleNonFamily(cell);
+      pCompat *= 1 / (1 + options);
+    }
     const baseWar = (cell.aggression + target.aggression) * 0.35 + (heatField[tIndex] * 0.25);
     const pWar = Math.min(1, Math.max(0, baseWar - coopBoost * 0.5 - pairAff * 0.1));
 
@@ -1685,6 +1689,28 @@ function adjustAffinity(a:GridCell, b:GridCell, delta:number){
   const clamp = (v:number)=>Math.min(10, Math.max(-10, v));
   a.friends[b.id] = clamp((a.friends[b.id]||0) + delta);
   b.friends[a.id] = clamp((b.friends[a.id]||0) + delta);
+}
+
+// Determine whether two cells are close family (parent/child or siblings)
+function isCloseFamily(a: GridCell, b: GridCell): boolean {
+  const fa = familyTree[a.id];
+  const fb = familyTree[b.id];
+  if (!fa || !fb) return false;
+  if (fa.parents.includes(b.id) || fa.children.includes(b.id)) return true;
+  if (fb.parents.includes(a.id) || fb.children.includes(a.id)) return true;
+  if (fa.parents.some(p => fb.parents.includes(p))) return true;
+  return false;
+}
+
+// Count how many non-family cells are compatible mates for the given cell
+function countCompatibleNonFamily(cell: GridCell): number {
+  let count = 0;
+  for (const other of livingCells.value) {
+    if (other.id === cell.id || !other.alive) continue;
+    if (isCloseFamily(cell, other)) continue;
+    if (compatibility(cell, other) >= GENETIC_COMPAT_THRESHOLD) count++;
+  }
+  return count;
 }
 
 function compatibility(a:GridCell,b:GridCell){

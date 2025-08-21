@@ -794,9 +794,8 @@ function update() {
       }
     }
     const colourSat = colourIntensity(c.r, c.g, c.b);
-    const vividFactor = colourSat < VIVID_SAT_THRESHOLD
-      ? colourSat / VIVID_SAT_THRESHOLD
-      : 1;
+    // Reduce vividness impact by giving even dull colours a baseline fertility
+    const vividFactor = 0.5 + 0.5 * Math.min(1, colourSat / VIVID_SAT_THRESHOLD);
     c.fertility = ageFactor * fertAlpha * vividFactor;
 
     let gain = 0;
@@ -1186,7 +1185,8 @@ const FERTILITY_ALPHA_MIN = 0.3
 const FERTILITY_ALPHA_MAX = 0.9
 const FERTILITY_ALPHA_PEAK = 0.7
 const VIVID_SAT_THRESHOLD = 0.2
-const GENETIC_COMPAT_THRESHOLD = 0.3
+// Lower genetic compatibility threshold to allow more varied pairings
+const GENETIC_COMPAT_THRESHOLD = 0.15
 const BIRTH_FLASH_TICKS = 8
 // Cells previously faded extremely slowly which led to a world that would
 // quickly fill and then stagnate. Bumping the decay range up causes even
@@ -1564,7 +1564,8 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     const pairAff = getAffinity(cell, target);
     const coopBoost = (cell.coop + target.coop) * 0.2 + pairAff * 0.1;
     const compVal = compatibility(cell, target);
-    const pCompat = Math.min(1, compVal * 0.8 + (cell.fertility + target.fertility) * 0.1 + coopBoost);
+    // Soften compatibility and fertility scaling to encourage more breeding
+    const pCompat = Math.min(1, compVal * 0.4 + (cell.fertility + target.fertility) * 0.05 + coopBoost);
     const baseWar = (cell.aggression + target.aggression) * 0.35 + (heatField[tIndex] * 0.25);
     const pWar = Math.min(1, Math.max(0, baseWar - coopBoost * 0.5 - pairAff * 0.1));
 

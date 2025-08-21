@@ -144,14 +144,13 @@
           <div class="grp">
             <label class="section" style="cursor:pointer" @click="showLegend = !showLegend">legend</label>
             <div class="legend" v-show="showLegend">
-              <p><strong>physics:</strong> blue falls downward, red burns through terrain, green grows upwards.</p>
-              <p><strong>genetics:</strong> red bbys start fast, blue bbys start light, green bbys start strong.</p>
-              <p><strong>rules:</strong> blue gains energy in groups, red seeks green to burn brighter and share fire, green drinks from water.</p>
-              <p><strong>norms:</strong> green forms vines to pass energy up, blue forms rivers to haul cargo, red tends to destroy.</p>
-              <p><strong>sexual norms:</strong> similar colours breed easier but all can mix; greens occasionally bud alone.</p>
+              <p><strong>physics:</strong> blue flows downward, red burns through terrain, green grows upwards</p>
+              <p><strong>genetics:</strong> red bbys born fast, blue bbys born light, green bbys born strong</p>
+              <p><strong>rules:</strong> blue gains energy in groups, red just wants to be on fire, green drinks from water</p>
+              <p><strong>norms:</strong> green passes up, blue carries along, red destroys all</p>
               <p><strong>bbys:</strong> when two cells make un bby, they're a mixture of their parents. the little flashes on screen are them being born!</p>
               <p><strong>jobs:</strong> cells move toward the resources they need on the board.</p>
-              <p><strong>stats:</strong> % shows each colour's share of living cells, age and energy track group averages.</p>
+              <p><strong>stats:</strong> % shows each colour's share of living cells, age and energy group averages.</p>
             </div>
           </div>
 

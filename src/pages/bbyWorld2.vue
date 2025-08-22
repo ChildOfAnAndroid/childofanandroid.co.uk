@@ -1908,7 +1908,7 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     const coopBoost = (cell.coop + target.coop) * 0.2 + pairAff * 0.1;
     const compVal = compatibility(cell, target);
     // Soften compatibility and fertility scaling to encourage more breeding; double for higher birth rate
-    let pCompat = Math.min(1, (0.05 + compVal * 0.35 + (cell.fertility + target.fertility) * 0.05 + coopBoost) * 3.3);
+    let pCompat = Math.min(1, (0.05 + compVal * 0.35 + (cell.fertility + target.fertility) * 0.05 + coopBoost) * 4.20);
     if (isCloseFamily(cell, target)) {
       const options = countCompatibleNonFamily(cell);
       if (options > FAMILY_PENALTY_THRESHOLD) {

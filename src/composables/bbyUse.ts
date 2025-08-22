@@ -107,6 +107,9 @@ function startClient() {
   setInterval(async () => {
     try {
       const serverState = await api.getState();
+      if (typeof serverState.eyes !== 'number' || serverState.eyes < 3) {
+        serverState.eyes = 5;
+      }
       Object.assign(bbyState, serverState);
 
       if (serverState.R !== undefined) {

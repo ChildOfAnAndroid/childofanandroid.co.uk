@@ -581,7 +581,7 @@ function applyNorms(c: GridCell, dom: ColourName){
 }
 
 function attemptAsexual(c: GridCell, dom: ColourName){
-  if (dom === 'green' && c.energy > 200 && rand() < 0.001){
+  if (dom === 'green' && c.energy > 200 && rand() < 0.002){
     const spot = findEmptyAdjacent(c.x, c.y);
     if (spot){
       const [sx, sy] = spot;
@@ -1907,8 +1907,8 @@ function attemptMove(cell:GridCell, dx:number, dy:number): boolean {
     const pairAff = getAffinity(cell, target);
     const coopBoost = (cell.coop + target.coop) * 0.2 + pairAff * 0.1;
     const compVal = compatibility(cell, target);
-    // Soften compatibility and fertility scaling to encourage more breeding
-    let pCompat = Math.min(1, 0.05 + compVal * 0.35 + (cell.fertility + target.fertility) * 0.05 + coopBoost);
+    // Soften compatibility and fertility scaling to encourage more breeding; double for higher birth rate
+    let pCompat = Math.min(1, (0.05 + compVal * 0.35 + (cell.fertility + target.fertility) * 0.05 + coopBoost) * 2);
     if (isCloseFamily(cell, target)) {
       const options = countCompatibleNonFamily(cell);
       if (options > FAMILY_PENALTY_THRESHOLD) {

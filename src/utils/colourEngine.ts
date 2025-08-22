@@ -21,9 +21,19 @@ export type StepContext = {
 
 export function clampByte(x:number){ return Math.max(0, Math.min(255, Math.round(x))); }
 
-export function hexToRGB(hx:string): RgbColor {
-  const h = hx.replace('#','');
-  return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
+export function hexToRGB(hx: string): RgbColor {
+  let h = hx.replace('#', '');
+  if (h.length === 3) {
+    h = h.split('').map(c => c + c).join('');
+  }
+  if (h.length !== 6) {
+    throw new Error(`Invalid hex colour: ${hx}`);
+  }
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
 }
 
 export function rgbToHsv(r:number,g:number,b:number){

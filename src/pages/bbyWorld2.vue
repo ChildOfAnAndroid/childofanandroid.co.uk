@@ -1046,7 +1046,7 @@ function update() {
               // determine where to push removed material
               let px: number, py: number;
               if (dx === 0 && dy === 0) {
-                const dirs = [[1,0],[-1,0],[0,1],[-1,0]];
+                const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
                 const d = dirs[(rand() * dirs.length) | 0];
                 px = (c.x + d[0] + S()) % S();
                 py = (c.y + d[1] + S()) % S();
@@ -1181,7 +1181,7 @@ function update() {
     }
 
     // --- Cooperation: share energy with compatible neighbours ---
-    const shareDirs:[number,number][] = [[1,0],[-1,0],[0,1],[-1,0]];
+    const shareDirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
     for (const [dx,dy] of shareDirs){
       const nx = (c.x + dx + S()) % S();
       const ny = (c.y + dy + S()) % S();
@@ -1376,11 +1376,11 @@ const FERTILITY_ALPHA_MIN = 0.3
 const FERTILITY_ALPHA_MAX = 0.9
 const FERTILITY_ALPHA_PEAK = 0.7
 // Lower genetic compatibility threshold to allow more varied pairings
-const GENETIC_COMPAT_THRESHOLD = 0.10
+const GENETIC_COMPAT_THRESHOLD = 0.05
 // Only start penalising family breeding after many alternative partners exist
-const FAMILY_PENALTY_THRESHOLD = 200
+const FAMILY_PENALTY_THRESHOLD = 420
 // Minimum energy a cell must have (alongside its partner) before reproduction is attempted
-const REPRODUCTION_MIN_ENERGY = 80
+const REPRODUCTION_MIN_ENERGY = 69
 const BIRTH_FLASH_TICKS = 8
 // Cells previously faded extremely slowly which led to a world that would
 // quickly fill and then stagnate. Bumping the decay range up causes even
@@ -1696,7 +1696,10 @@ function updateAttachment(c: GridCell){
   if (!c.attached || c.rootId === c.id) return;
   // Same duplicate-direction bug existed here; ensure all adjacent tiles are
   // checked so detached sprouts don't mistakenly lose their root.
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+  // Check all eight surrounding tiles. A previous copy/paste error duplicated
+  // the left direction and omitted the diagonals which allowed attached cells
+  // connected only diagonally to be treated as detached.
+  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   let connected = false;
   for (const [dx,dy] of dirs){
     const nx = (c.x + dx + S()) % S();

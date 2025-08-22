@@ -266,16 +266,27 @@ paint_ts     = array.array('L', [0] * PIX_COUNT)
 paint_life   = array.array('f', [0.0] * (PIX_COUNT * 2))
 paint_alpha0 = array.array('B', [0] * PIX_COUNT)
 
-try: # Load persisted paint buffers
+try:  # Load persisted paint buffers
     if os.path.exists(PAINT_STATE_FILE):
-        with open(PAINT_STATE_FILE, "rb") as f: paint_rgba[:] = f.read(PIX_COUNT * 4)
+        with open(PAINT_STATE_FILE, "rb") as f:
+            paint_rgba[:] = f.read(PIX_COUNT * 4)
     if os.path.exists(PAINT_TS_FILE):
-        with open(PAINT_TS_FILE, "rb") as f: paint_ts.fromfile(f, PIX_COUNT)
+        with open(PAINT_TS_FILE, "rb") as f:
+            arr = array.array('L')
+            arr.fromfile(f, PIX_COUNT)
+            paint_ts = arr
     if os.path.exists(PAINT_LIFE_FILE):
-        with open(PAINT_LIFE_FILE, "rb") as f: paint_life.fromfile(f, PIX_COUNT*2)
+        with open(PAINT_LIFE_FILE, "rb") as f:
+            arr = array.array('f')
+            arr.fromfile(f, PIX_COUNT * 2)
+            paint_life = arr
     if os.path.exists(PAINT_ALPHA0_FILE):
-        with open(PAINT_ALPHA0_FILE, "rb") as f: paint_alpha0.fromfile(f, PIX_COUNT)
-except Exception as e: print("[WARN] could not load paint buffers:", e)
+        with open(PAINT_ALPHA0_FILE, "rb") as f:
+            arr = array.array('B')
+            arr.fromfile(f, PIX_COUNT)
+            paint_alpha0 = arr
+except Exception as e:
+    print("[WARN] could not load paint buffers:", e)
 
 paint_events = deque(maxlen=2000)
 recent_paints = deque()

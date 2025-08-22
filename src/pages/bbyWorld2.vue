@@ -459,7 +459,19 @@ let dyeBField      = new Float32Array(S()*S());
 const DYE_RATE = 0.001; // how quickly cells tint terrain
 const BALANCE_RATE = 0.005; // environmental pressure toward colour parity
 
-function I(x:number,y:number){ const s=S(); return ((x & (s-1)) + ((y & (s-1)) * s)) >>> 0; }
+// Convert an x/y coordinate into an index for the world arrays.
+//
+// The previous implementation used a bitwise mask (`& (s-1)`) as a fast
+// modulus when wrapping coordinates.  This only works when `s` is a power of
+// two.  `boardSize` can be any multiple of 16, so sizes like 80 or 96 would
+// produce incorrect indices, causing cells to reference unrelated positions in
+// the arrays.  The modulo operator correctly wraps for all board sizes.
+function I(x:number, y:number){
+  const s = S();
+  const xi = ((x % s) + s) % s; // ensure 0 <= xi < s
+  const yi = ((y % s) + s) % s;
+  return xi + yi * s;
+}
 
 function colourDominance(v:number, o1:number, o2:number): number {
   // Use the average of the other channels so dominance swings are gentler

@@ -665,16 +665,28 @@ def pixel_aging_loop():
         time.sleep(FADE_TICK_SECONDS)
 
 def state_sync_loop():
-    if not LLM_SERVER_URL: print("[STATE_SYNC] FATAL: loop cannot run as LLM_SERVER_URL is not set."); return
-    print(f"[STATE_SYNC] active, polling {LLM_SERVER_URL} at {STATE_SYNC_HZ}Hz"); period = 1.0 / max(STATE_SYNC_HZ, 0.1)
+    if not LLM_SERVER_URL:
+        print("[STATE_SYNC] FATAL: loop cannot run as LLM_SERVER_URL is not set.")
+        return
+    print(f"[STATE_SYNC] active, polling {LLM_SERVER_URL} at {STATE_SYNC_HZ}Hz")
+    base_period = 1.0 / max(STATE_SYNC_HZ, 0.1)
+    period = base_period
+    failures = 0
     while True:
         try:
             r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/state", timeout=2)
             if r.ok:
-                with state_lock: babyState.update(r.json())
-            elif random.randint(0, 50) == 0: print(f"[STATE_SYNC][WARN] Failed to sync state, brain returned status: {r.status_code}")
+                with state_lock:
+                    babyState.update(r.json())
+                failures = 0
+                period = base_period
+            elif random.randint(0, 50) == 0:
+                print(f"[STATE_SYNC][WARN] Failed to sync state, brain returned status: {r.status_code}")
         except requests.exceptions.RequestException:
-            if random.randint(0, 50) == 0: print(f"[STATE_SYNC][WARN] Could not connect to brain server at {LLM_SERVER_URL}.")
+            failures += 1
+            if failures == 1 or failures % 5 == 0:
+                print(f"[STATE_SYNC][WARN] Could not connect to brain server at {LLM_SERVER_URL}.")
+            period = min(period * 2, 60)
         time.sleep(period)
 
 threading.Thread(target=pixel_aging_loop, daemon=True).start()

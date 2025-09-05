@@ -395,6 +395,7 @@ import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
 import { rgbToHex, hexToRGB, isColorDark, type EQType, type RgbaColor } from '@/utils/colourEngine';
+import { eventToCanvasCoords } from '@/utils/canvas';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage, getRandomBbyFactPrompt } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
@@ -758,12 +759,11 @@ function handleSequencerPointerMove(e:PointerEvent){ if(isDrawingOnSequencer) up
 function handleSequencerPointerUp(){ isDrawingOnSequencer=false; }
 function updateSequencerFromPointer(e:PointerEvent){
   const canvas = sequencerCanvas.value; if(!canvas) return;
-  const rect = canvas.getBoundingClientRect();
+  const { x, y } = eventToCanvasCoords(canvas, e);
   const resX = sequencerCols.value;
   const resY = sequencerRows.value;
-  const x = e.clientX-rect.left, y = e.clientY-rect.top;
-  const cellX = clamp(Math.floor(x/(rect.width/resX)),0,resX-1);
-  const cellY = clamp(Math.floor(y/(rect.height/resY)),0,resY-1);
+  const cellX = clamp(Math.floor(x/(canvas.width/resX)),0,resX-1);
+  const cellY = clamp(Math.floor(y/(canvas.height/resY)),0,resY-1);
   sequencerGrid.value[cellX].fill(0);
   sequencerGrid.value[cellX][cellY]=1;
   drawSequencer();

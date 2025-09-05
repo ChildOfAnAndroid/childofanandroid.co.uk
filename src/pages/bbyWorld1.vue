@@ -175,6 +175,7 @@ import { resolveCardLabel } from '@/utils/cards';
 import FamilyTree from '@/components/familyTree.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
+import { eventToCanvasCoords } from '@/utils/canvas';
 
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);
@@ -605,14 +606,11 @@ function loadSelectedImage() {
   img.src = tryUrls[idx];
 }
 
-function screenToWorld(event: MouseEvent): {x: number, y: number} | null {
+function screenToWorld(event: MouseEvent): { x: number, y: number } | null {
     const canvas = gameCanvas.value;
     if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    const scale = canvas.width / rect.width;
-    const worldX = Math.floor((event.clientX - rect.left) * scale);
-    const worldY = Math.floor((event.clientY - rect.top) * scale);
-    return {x: worldX, y: worldY};
+    const { x, y } = eventToCanvasCoords(canvas, event);
+    return { x: Math.floor(x), y: Math.floor(y) };
 }
 
 function handleCanvasClick(event: MouseEvent) {

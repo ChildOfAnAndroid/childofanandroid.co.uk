@@ -13,3 +13,11 @@ export function formatTicks(
   const day=totalDays%daysPerYear;
   return `${labels.year}${year} ${labels.day}${day}`;
 }
+
+export function createTickFormatter(
+  ticksPerDay=100,
+  daysPerYear=365,
+  labels:TickLabels={year:'Y', day:'D'}
+){
+  return (ticks:number)=>formatTicks(ticks, ticksPerDay, daysPerYear, labels);
+}

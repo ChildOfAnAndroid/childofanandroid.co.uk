@@ -199,10 +199,11 @@ import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
-import { formatTicks as baseFormatTicks } from '@/utils/time';
+import { createTickFormatter } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel } from '@/utils/cards';
+import { eventToCanvasCoords } from '@/utils/canvas';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -210,7 +211,7 @@ const { fetchBbyBookGallery, currentColour } = bbyUse();
 // world time constants
 const TICKS_PER_DAY = 69;
 const DAYS_PER_YEAR = 420;
-const formatTicks = (ticks:number) => baseFormatTicks(ticks, TICKS_PER_DAY, DAYS_PER_YEAR, {year:'Year ', day:'Day '});
+const formatTicks = createTickFormatter(TICKS_PER_DAY, DAYS_PER_YEAR, {year:'Year ', day:'Day '});
 
 /* ============== BOARD SIZE (dynamic) ============== */
 const boardSize = ref<number>(64);            // default 64×64
@@ -1366,10 +1367,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
 function placeImage(event: MouseEvent) {
   const canvas = gameCanvas.value; if (!canvas) return;
 
-  const rect = canvas.getBoundingClientRect();
-  const clickX = (event.clientX - rect.left) * (canvas.width / rect.width);
-  const clickY = (event.clientY - rect.top) * (canvas.height / rect.height);
-
+  const { x: clickX, y: clickY } = eventToCanvasCoords(canvas, event);
   const mouseGridX = Math.floor(clickX);
   const mouseGridY = Math.floor(clickY);
 
@@ -2183,9 +2181,9 @@ const updateScope = throttle((event: MouseEvent) => {
   const scope = scopeCanvas.value;
   const box = scopeBox.value;
   if (!canvas || !scope || !box || !frameImg) return;
-  const rect = canvas.getBoundingClientRect();
-  const hx = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
-  const hy = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
+  const { x: hxFloat, y: hyFloat } = eventToCanvasCoords(canvas, event);
+  const hx = Math.floor(hxFloat);
+  const hy = Math.floor(hyFloat);
   const ctx = scope.getContext('2d');
   if (!ctx) return;
   const SCOPE_SIZE = 9;

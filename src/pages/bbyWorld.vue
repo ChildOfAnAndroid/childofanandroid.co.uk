@@ -189,15 +189,16 @@ import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { luminance, colourGroupKey } from '@/utils/colourEngine';
-import { formatTicks as baseFormatTicks } from '@/utils/time';
+import { createTickFormatter } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel } from '@/utils/cards';
+import { eventToCanvasCoords } from '@/utils/canvas';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
-const formatTicks=(ticks:number)=>baseFormatTicks(ticks, TICKS_PER_DAY, DAYS_PER_YEAR);
+const formatTicks = createTickFormatter(TICKS_PER_DAY, DAYS_PER_YEAR);
 
 // --- UI STATE ---
 const boardSize=ref<number>(128); function S(){return boardSize.value;}
@@ -423,7 +424,12 @@ function loadSelectedImage(){
   img.onload=()=>{const max=64, sc=Math.min(1,max/Math.max(img.width,img.height)), w=Math.max(1,Math.floor(img.width*sc)), h=Math.max(1,Math.floor(img.height*sc)); const can=document.createElement("canvas"), ctx=can.getContext("2d",{willReadFrequently:true})!; can.width=w; can.height=h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0,w,h); loadedImageData=ctx.getImageData(0,0,w,h);};
   img.onerror=()=>{i++; if(i<urls.length){img.src=urls[i];}else{console.error("Failed to load stamp:",sel.label); loadedImageData=null;}}; img.src=urls[i];
 }
-function screenToWorld(e:MouseEvent):{x:number,y:number}|null{const c=gameCanvas.value; if(!c)return null; const r=c.getBoundingClientRect(), sc=c.width/r.width; return{x:Math.floor((e.clientX-r.left)*sc),y:Math.floor((e.clientY-r.top)*sc)};}
+function screenToWorld(e: MouseEvent): { x: number; y: number } | null {
+  const c = gameCanvas.value;
+  if (!c) return null;
+  const { x, y } = eventToCanvasCoords(c, e);
+  return { x: Math.floor(x), y: Math.floor(y) };
+}
 function handleCanvasClick(e:MouseEvent){const c=screenToWorld(e); if(!c)return; const cell=spatialMap[I(c.x,c.y)]; if(cell?.alive){selectedCell.value=cell;}else{placeImageAt(c.x,c.y);}}
 function placeImageAt(wX:number,wY:number){if(!loadedImageData)return; const sX=wX-Math.floor(loadedImageData.width/2),sY=wY-Math.floor(loadedImageData.height/2); for(let y=0;y<loadedImageData.height;y++){for(let x=0;x<loadedImageData.width;x++){const i=(y*loadedImageData.width+x)*4,a=loadedImageData.data[i+3]; if(a>50){const pX=(sX+x+S())%S(),pY=(sY+y+S())%S(); if(!spatialMap[I(pX,pY)]){const[r,g,b]=[loadedImageData.data[i],loadedImageData.data[i+1],loadedImageData.data[i+2]]; const n=makeCell(pX,pY,r,g,b,a); livingCells.value.push(n); spatialMap[I(pX,pY)]=n;}}}}}
 const elapsedTimeDisplay=computed(()=>formatTicks(tickCount.value));

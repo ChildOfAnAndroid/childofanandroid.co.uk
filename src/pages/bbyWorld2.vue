@@ -222,7 +222,7 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
-import { rgbToHex, hexToRGB } from '@/utils/colourEngine';
+import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 
 // pull Baby’s currentColour + gallery
@@ -357,14 +357,8 @@ interface ColourGroupStat {
   avgEnergy: number;
   avgStrength: number;
 }
-
-const GROUP_STEP = 48; // bucket size for colour grouping
-const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
-function groupKeyFromRGB(r: number, g: number, b: number) {
-  return rgbToHex(quant(r), quant(g), quant(b));
-}
 function groupKey(c: GridCell) {
-  return groupKeyFromRGB(c.r, c.g, c.b);
+  return colourGroupKey(c.r, c.g, c.b);
 }
 
 const highlightedGroup = ref<string | null>(null);

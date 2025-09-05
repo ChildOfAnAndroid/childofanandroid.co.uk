@@ -183,7 +183,7 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { throttle } from 'lodash';
-import { rgbToHex } from '@/utils/colourEngine';
+import { colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks } from '@/utils/time';
 
 // --- WORLD & UI STATE ---
@@ -683,8 +683,7 @@ const selectedFamily = computed(() => {
   };
 });
 interface ColourGroupStat { colour: string; count: number; percentage: number; avgAge: number; avgCharge: number; avgMass: number; }
-const GROUP_STEP = 48; const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
-function groupKey(c: Cell) { return rgbToHex(quant(c.r), quant(c.g), quant(c.b)); }
+function groupKey(c: Cell) { return colourGroupKey(c.r, c.g, c.b); }
 const groupStats = computed<ColourGroupStat[]>(() => {
   const base = { count: 0, totalAge: 0, totalCharge: 0, totalMass: 0 };
   const groups: Record<string, typeof base> = {}; const living = livingCells.value.filter(c => c.alive);

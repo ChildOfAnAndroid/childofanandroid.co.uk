@@ -196,7 +196,7 @@
 import { onMounted, ref, computed, onUnmounted, watch, reactive } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
-import { rgbToHex, luminance } from '@/utils/colourEngine';
+import { luminance, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 
 // --- TIME & FORMATTING ---
@@ -437,8 +437,8 @@ const aetherState=computed(()=>{if(aetherCharge.value>0.5)return'FRENZIED'; if(a
 const aetherColor=computed(()=>{const v=Math.round(127+aetherCharge.value*127); return`rgb(${v},127,${255-v})`;});
 const selectedCell=ref<Cell|null>(null); function selectCellById(id:number){const c=cellById[id]; if(c?.alive)selectedCell.value=c;}
 const selectedFamily=computed(()=>{if(!selectedCell.value)return{parents:[],children:[]}; const e=familyTree[selectedCell.value.id]||{parents:[],children:[]}; return{parents:e.parents.map(id=>cellById[id]).filter((c):c is Cell=>!!c?.alive),children:e.children.map(id=>cellById[id]).filter((c):c is Cell=>!!c?.alive),};});
-interface CGS{colour:string;count:number;percentage:number;avgAge:number;avgEnergy:number;avgStrength:number;} const GS=48; const q=(v:number)=>Math.min(255,Math.round(v/GS)*GS);
-function groupKey(c:Cell){return rgbToHex(q(c.r),q(c.g),q(c.b));}
+interface CGS{colour:string;count:number;percentage:number;avgAge:number;avgEnergy:number;avgStrength:number;}
+function groupKey(c:Cell){return colourGroupKey(c.r,c.g,c.b);}
 const groupStats=computed<CGS[]>(()=>{const b={count:0,totalAge:0,totalEnergy:0,totalStrength:0}; const g:Record<string,typeof b>={}; for(const c of livingCells.value){const k=groupKey(c); const gr=g[k]||(g[k]={...b}); gr.count++; gr.totalAge+=c.age; gr.totalEnergy+=c.energy; gr.totalStrength+=c.strength;} const t=livingCells.value.length; return Object.entries(g).map(([colour,grp])=>({colour,count:grp.count,percentage:t?(grp.count/t)*100:0,avgAge:grp.count?grp.totalAge/grp.count:0,avgEnergy:grp.count?grp.totalEnergy/grp.count:0,avgStrength:grp.count?grp.totalStrength/grp.count:0,}));});
 const sortedGroupStats=computed(()=>[...groupStats.value].sort((a,b)=>b.count-a.count)); const highlightedGroup=ref<string|null>(null);
 function selectGroup(c:string){highlightedGroup.value=highlightedGroup.value===c?null:c;}

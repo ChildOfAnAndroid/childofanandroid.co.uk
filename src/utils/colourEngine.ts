@@ -49,6 +49,15 @@ export function isColorDark(c: RgbColor): boolean {
   return luminance(c) < 128;
 }
 
+export const DEFAULT_GROUP_STEP = 48;
+export function quantizeColour(v: number, step: number = DEFAULT_GROUP_STEP): number {
+  return Math.min(255, Math.round(v / step) * step);
+}
+
+export function colourGroupKey(r: number, g: number, b: number, step: number = DEFAULT_GROUP_STEP): string {
+  return rgbToHex(quantizeColour(r, step), quantizeColour(g, step), quantizeColour(b, step));
+}
+
 export function rgbToHsv(r:number,g:number,b:number){
   r/=255; g/=255; b/=255;
   const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;

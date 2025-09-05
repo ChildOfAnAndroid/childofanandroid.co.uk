@@ -168,7 +168,7 @@ import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
-import { eventToCanvasCoords } from '@/utils/canvas';
+import { eventToCellCoords } from '@/utils/canvas';
 import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
 // --- WORLD & UI STATE ---
@@ -565,8 +565,7 @@ async function loadSelectedImage() {
 function screenToWorld(event: MouseEvent): { x: number, y: number } | null {
     const canvas = gameCanvas.value;
     if (!canvas) return null;
-    const { x, y } = eventToCanvasCoords(canvas, event);
-    return { x: Math.floor(x), y: Math.floor(y) };
+    return eventToCellCoords(canvas, event);
 }
 
 function handleCanvasClick(event: MouseEvent) {

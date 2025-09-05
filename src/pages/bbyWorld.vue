@@ -195,7 +195,7 @@ import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
-import { eventToCanvasCoords } from '@/utils/canvas';
+import { eventToCellCoords } from '@/utils/canvas';
 import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
 // --- TIME & FORMATTING ---
@@ -425,8 +425,7 @@ async function loadSelectedImage(){
 function screenToWorld(e: MouseEvent): { x: number; y: number } | null {
   const c = gameCanvas.value;
   if (!c) return null;
-  const { x, y } = eventToCanvasCoords(c, e);
-  return { x: Math.floor(x), y: Math.floor(y) };
+  return eventToCellCoords(c, e);
 }
 function handleCanvasClick(e:MouseEvent){const c=screenToWorld(e); if(!c)return; const cell=spatialMap[I(c.x,c.y)]; if(cell?.alive){selectedCell.value=cell;}else{placeImageAt(c.x,c.y);}}
 function placeImageAt(wX:number,wY:number){if(!loadedImageData)return; const sX=wX-Math.floor(loadedImageData.width/2),sY=wY-Math.floor(loadedImageData.height/2); for(let y=0;y<loadedImageData.height;y++){for(let x=0;x<loadedImageData.width;x++){const i=(y*loadedImageData.width+x)*4,a=loadedImageData.data[i+3]; if(a>50){const pX=(sX+x+S())%S(),pY=(sY+y+S())%S(); if(!spatialMap[I(pX,pY)]){const[r,g,b]=[loadedImageData.data[i],loadedImageData.data[i+1],loadedImageData.data[i+2]]; const n=makeCell(pX,pY,r,g,b,a); livingCells.value.push(n); spatialMap[I(pX,pY)]=n;}}}}}

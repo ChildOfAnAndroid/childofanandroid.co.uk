@@ -145,16 +145,7 @@
               <div>cargo: {{ selectedCell.cargo.toFixed(1) }} | strength: {{ selectedCell.strength.toFixed(2) }}</div>
             </div>
              <label class="section">cell {{ selectedCell.id }} family</label>
-            <div class="family-tree">
-              <div> Parents:
-                <template v-if="selectedFamily.parents.length"><span v-for="p in selectedFamily.parents" :key="p.id" class="family-link" @click="selectCellById(p.id)">#{{ p.id }}</span></template>
-                <span v-else>none</span>
-              </div>
-              <div> Children:
-                <template v-if="selectedFamily.children.length"><span v-for="c in selectedFamily.children" :key="c.id" class="family-link" @click="selectCellById(c.id)">#{{ c.id }}</span></template>
-                <span v-else>none</span>
-              </div>
-            </div>
+            <FamilyTree :family="selectedFamily" :select-cell="selectCellById" />
           </div>
           
           <!-- VIEW CONTROLS -->
@@ -198,6 +189,7 @@ import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { luminance, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
+import FamilyTree from '@/components/familyTree.vue';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
@@ -480,9 +472,7 @@ canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; 
 .card-swatch{border:var(--border);padding:2px;background:var(--panel-colour);cursor:pointer}
 .card-swatch img{height:32px; image-rendering:pixelated; display:block}
 .card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
-.cell-stats, .family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
-.family-link:hover{text-decoration:underline}
+.cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .params-container { gap: 0.75rem; }
 .params-container details { border: var(--border); border-radius: var(--border-radius-small); padding: 0.5rem; }
 .params-container summary { padding-bottom: 0.5rem; font-weight: bold;}

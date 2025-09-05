@@ -99,22 +99,7 @@
 
           <div class="grp" v-if="selectedCell">
             <label class="section">cell {{ selectedCell.id }} family</label>
-            <div class="family-tree">
-              <div>
-                parents:
-                <template v-if="selectedFamily.parents.length">
-                  <span v-for="p in selectedFamily.parents" :key="p.id" class="family-link" @click="selectCellById(p.id)">#{{ p.id }}</span>
-                </template>
-                <span v-else>none (primordial)</span>
-              </div>
-              <div>
-                children:
-                <template v-if="selectedFamily.children.length">
-                  <span v-for="c in selectedFamily.children" :key="c.id" class="family-link" @click="selectCellById(c.id)">#{{ c.id }}</span>
-                </template>
-                <span v-else>none</span>
-              </div>
-            </div>
+            <FamilyTree :family="selectedFamily" :select-cell="selectCellById" no-parents-text="none (primordial)" />
           </div>
 
           <div class="grp">
@@ -185,6 +170,7 @@ import { bbyUse } from '@/composables/bbyUse.ts';
 import { throttle } from 'lodash';
 import { colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks } from '@/utils/time';
+import FamilyTree from '@/components/familyTree.vue';
 
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);
@@ -767,8 +753,5 @@ canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; 
 .card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
 .cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
 .cell-colour{display:flex;align-items:center;gap:.25rem}
-.family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
-.family-link:hover{text-decoration:underline}
 @media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

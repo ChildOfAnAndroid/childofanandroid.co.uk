@@ -113,32 +113,7 @@
 
           <div class="grp" v-if="selectedCell">
             <label class="section">cell {{ selectedCell.id }} family</label>
-            <div class="family-tree">
-              <div>
-                parents:
-                <template v-if="selectedFamily.parents.length">
-                  <span
-                    v-for="p in selectedFamily.parents"
-                    :key="p.id"
-                    class="family-link"
-                    @click="selectCellById(p.id)"
-                  >#{{ p.id }}</span>
-                </template>
-                <span v-else>none</span>
-              </div>
-              <div>
-                children:
-                <template v-if="selectedFamily.children.length">
-                  <span
-                    v-for="c in selectedFamily.children"
-                    :key="c.id"
-                    class="family-link"
-                    @click="selectCellById(c.id)"
-                  >#{{ c.id }}</span>
-                </template>
-                <span v-else>none</span>
-              </div>
-            </div>
+            <FamilyTree :family="selectedFamily" :select-cell="selectCellById" />
           </div>
 
           <div class="grp">
@@ -224,6 +199,7 @@ import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
+import FamilyTree from '@/components/familyTree.vue';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -2371,11 +2347,8 @@ const avgLifespan = computed(() => {
 .card-swatch{border:var(--border);padding:2px;background:var(--panel-colour);cursor:pointer}
 .card-swatch img{width:32px;height:32px;image-rendering:pixelated;display:block}
 .card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
-.group-insight{display:flex;align-items:center;gap:.5rem;font-size:var(--small-font-size)}
-.family-tree{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.family-link{cursor:pointer;margin-right:.25rem;color:var(--accent-colour)}
-.family-link:hover{text-decoration:underline}
-.cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.cell-colour{display:flex;align-items:center;gap:.25rem}
+ .group-insight{display:flex;align-items:center;gap:.5rem;font-size:var(--small-font-size)}
+ .cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
+ .cell-colour{display:flex;align-items:center;gap:.25rem}
 @media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

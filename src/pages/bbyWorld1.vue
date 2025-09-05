@@ -113,14 +113,13 @@
             </div>
           </div>
 
-          <div class="grp">
-            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
-            <div class="row3">
-              <button class="action" @click="slowDown">-</button>
-              <button class="action" @click="togglePause">{{ isPaused ? 'play' : 'pause' }}</button>
-              <button class="action" @click="speedUp">+</button>
-            </div>
-          </div>
+            <SpeedControls
+              :ticksPerSecond="ticksPerSecond"
+              :speedUp="speedUp"
+              :slowDown="slowDown"
+              :isPaused="isPaused"
+              :togglePause="togglePause"
+            />
 
           <div class="grp">
             <label class="section">zoom</label>
@@ -170,14 +169,15 @@ import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { throttle } from 'lodash';
 import { colourGroupKey } from '@/utils/colourEngine';
-import { formatTicks } from '@/utils/time';
+import { useWorldTime } from '@/composables/useWorldTime';
 import { resolveCardLabel } from '@/utils/cards';
-import FamilyTree from '@/components/familyTree.vue';
+import SpeedControls from '@/components/speedControls.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { eventToCanvasCoords } from '@/utils/canvas';
 
 // --- WORLD & UI STATE ---
+const TICKS_PER_DAY = 100, DAYS_PER_YEAR = 365;
 const boardSize = ref<number>(128);
 function S(){ return boardSize.value; }
 const gameCanvas = ref<HTMLCanvasElement | null>(null);
@@ -634,8 +634,11 @@ function placeImageAt(worldX: number, worldY: number) {
         }
     }}
 }
-const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
-const avgLifespan = computed(() => stats.value.deadCount > 0 ? formatTicks(Math.floor(stats.value.totalLifespan / stats.value.deadCount)) : "---");
+const { formatTicks, elapsedTimeDisplay, avgLifespan } = useWorldTime(
+  tickCount,
+  stats,
+  { ticksPerDay: TICKS_PER_DAY, daysPerYear: DAYS_PER_YEAR }
+);
 const selectedCell = ref<Cell | null>(null);
 function selectCellById(id: number) { const cell = cellById[id]; if (cell && cell.alive) selectedCell.value = cell; }
 const selectedFamily = computed(() => {

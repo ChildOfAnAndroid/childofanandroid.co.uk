@@ -129,14 +129,13 @@
             </div>
           </div>
 
-          <div class="grp">
-            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
-            <div class="row3">
-              <button class="action" @click="slowDown">-</button>
-              <button class="action" @click="togglePause">{{ isPaused ? 'play' : 'pause' }}</button>
-              <button class="action" @click="speedUp">+</button>
-            </div>
-          </div>
+            <SpeedControls
+              :ticksPerSecond="ticksPerSecond"
+              :speedUp="speedUp"
+              :slowDown="slowDown"
+              :isPaused="isPaused"
+              :togglePause="togglePause"
+            />
 
           <div class="grp">
             <label class="section">zoom</label>
@@ -199,8 +198,8 @@ import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
-import { createTickFormatter } from '@/utils/time';
-import FamilyTree from '@/components/familyTree.vue';
+import { useWorldTime } from '@/composables/useWorldTime';
+import SpeedControls from '@/components/speedControls.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel } from '@/utils/cards';
 import { eventToCanvasCoords } from '@/utils/canvas';
@@ -211,7 +210,6 @@ const { fetchBbyBookGallery, currentColour } = bbyUse();
 // world time constants
 const TICKS_PER_DAY = 69;
 const DAYS_PER_YEAR = 420;
-const formatTicks = createTickFormatter(TICKS_PER_DAY, DAYS_PER_YEAR, {year:'Year ', day:'Day '});
 
 /* ============== BOARD SIZE (dynamic) ============== */
 const boardSize = ref<number>(64);            // default 64×64
@@ -2240,14 +2238,16 @@ const updateScope = throttle((event: MouseEvent) => {
   box.style.top = `${event.clientY + offsetY}px`;
 }, 16);
 
-/* ===================== Derived ===================== */
-const elapsedTimeDisplay = computed(() => formatTicks(tickCount.value));
-
-const avgLifespan = computed(() => {
-  return stats.value.deadCount > 0
-    ? formatTicks(stats.value.totalLifespan / stats.value.deadCount)
-    : "–";
-});
+  /* ===================== Derived ===================== */
+  const { formatTicks, elapsedTimeDisplay, avgLifespan } = useWorldTime(
+    tickCount,
+    stats,
+    {
+      ticksPerDay: TICKS_PER_DAY,
+      daysPerYear: DAYS_PER_YEAR,
+      labels: { year: 'Year ', day: 'Day ' }
+    }
+  );
 </script>
 
 <style scoped>

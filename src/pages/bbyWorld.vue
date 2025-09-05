@@ -149,10 +149,11 @@
           </div>
           
           <!-- VIEW CONTROLS -->
-          <div class="grp">
-            <label class="section">speed ({{ ticksPerSecond }} TPS)</label>
-            <div class="row2"><button class="action" @click="slowDown">-</button><button class="action" @click="speedUp">+</button></div>
-          </div>
+          <SpeedControls
+            :ticksPerSecond="ticksPerSecond"
+            :speedUp="speedUp"
+            :slowDown="slowDown"
+          />
           <div class="grp">
             <label class="section">zoom</label>
             <div class="row3"><button class="action" @click="zoomOut">-</button><div class="zoom-display">{{ (totalScale*100/baseScale).toFixed(0) }}%</div><button class="action" @click="zoomIn">+</button></div>
@@ -189,8 +190,8 @@ import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { luminance, colourGroupKey } from '@/utils/colourEngine';
-import { createTickFormatter } from '@/utils/time';
-import FamilyTree from '@/components/familyTree.vue';
+import { useWorldTime } from '@/composables/useWorldTime';
+import SpeedControls from '@/components/speedControls.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel } from '@/utils/cards';
@@ -198,7 +199,6 @@ import { eventToCanvasCoords } from '@/utils/canvas';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
-const formatTicks = createTickFormatter(TICKS_PER_DAY, DAYS_PER_YEAR);
 
 // --- UI STATE ---
 const boardSize=ref<number>(128); function S(){return boardSize.value;}
@@ -432,8 +432,11 @@ function screenToWorld(e: MouseEvent): { x: number; y: number } | null {
 }
 function handleCanvasClick(e:MouseEvent){const c=screenToWorld(e); if(!c)return; const cell=spatialMap[I(c.x,c.y)]; if(cell?.alive){selectedCell.value=cell;}else{placeImageAt(c.x,c.y);}}
 function placeImageAt(wX:number,wY:number){if(!loadedImageData)return; const sX=wX-Math.floor(loadedImageData.width/2),sY=wY-Math.floor(loadedImageData.height/2); for(let y=0;y<loadedImageData.height;y++){for(let x=0;x<loadedImageData.width;x++){const i=(y*loadedImageData.width+x)*4,a=loadedImageData.data[i+3]; if(a>50){const pX=(sX+x+S())%S(),pY=(sY+y+S())%S(); if(!spatialMap[I(pX,pY)]){const[r,g,b]=[loadedImageData.data[i],loadedImageData.data[i+1],loadedImageData.data[i+2]]; const n=makeCell(pX,pY,r,g,b,a); livingCells.value.push(n); spatialMap[I(pX,pY)]=n;}}}}}
-const elapsedTimeDisplay=computed(()=>formatTicks(tickCount.value));
-const avgLifespan=computed(()=>stats.value.deadCount>0?formatTicks(stats.value.totalLifespan/stats.value.deadCount):"---");
+const { formatTicks, elapsedTimeDisplay, avgLifespan } = useWorldTime(
+  tickCount,
+  stats,
+  { ticksPerDay: TICKS_PER_DAY, daysPerYear: DAYS_PER_YEAR }
+);
 const aetherState=computed(()=>{if(aetherCharge.value>0.5)return'FRENZIED'; if(aetherCharge.value<-0.5)return'CALM'; return'NEUTRAL';});
 const aetherColor=computed(()=>{const v=Math.round(127+aetherCharge.value*127); return`rgb(${v},127,${255-v})`;});
 const selectedCell=ref<Cell|null>(null); function selectCellById(id:number){const c=cellById[id]; if(c?.alive)selectedCell.value=c;}

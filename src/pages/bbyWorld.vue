@@ -20,7 +20,7 @@
           <div class="grp">
             <label class="section">select a cell stamp to place:</label>
             <div class="card-swatch-bar">
-              <button v-for="card in cards" :key="card.label" class="card-swatch" :class="{ selected: selectedCardLabel === card.label }" @click="selectCard(card.label)">
+              <button v-for="card in cards" :key="card.label" class="card-swatch" :class="{ selected: selectedCardLabel?.toLowerCase() === card.label.toLowerCase() }" @click="selectCard(card.label)">
                 <img :src="card.stamp_url || card.url" :alt="card.label" />
               </button>
             </div>
@@ -187,6 +187,7 @@
 import { onMounted, ref, computed, onUnmounted, watch, reactive } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
+import { usePanZoom } from '@/composables/usePanZoom';
 import { luminance, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
@@ -275,17 +276,10 @@ function clearWorld(){
   tickCount.value=0; nextCellId=1; aetherCharge.value=0;
 }
 function applyBoardSize(){pan.value={x:0,y:0}; zoomFactor.value=1; const c=gameCanvas.value; if(c){c.width=S(); c.height=S();} allocateWorldArrays(S()); clearWorld(); computeBaseScale();}
-const pan=ref({x:0,y:0}), baseScale=ref(1), zoomFactor=ref(1), ticksPerSecond=ref(30);
-const totalScale=computed(()=>Math.max(1,Math.floor(baseScale.value*zoomFactor.value)));
-const canvasStyle=computed(()=>({transform:`translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, transformOrigin:"top left", willChange:'transform'}));
-function zoomIn(){zoomFactor.value=Math.min(16, zoomFactor.value*1.25);} function zoomOut(){zoomFactor.value=Math.max(0.25, zoomFactor.value/1.25);}
-function resetView(){pan.value={x:0,y:0}; zoomFactor.value=1; computeBaseScale();}
-let isPanning=false, lastPan={x:0,y:0};
-function startPan(e:MouseEvent){if(e.button!==1&&e.button!==2)return; isPanning=true; lastPan={x:e.clientX,y:e.clientY};}
-function onMouseMove(e:MouseEvent){lastMouseEvent=e; if(isPanning){pan.value.x+=e.clientX-lastPan.x; pan.value.y+=e.clientY-lastPan.y; lastPan={x:e.clientX,y:e.clientY};}}
-function endPan(){isPanning=false;} function onWheelZoom(e:WheelEvent){e.deltaY<0?zoomIn():zoomOut();}
+const ticksPerSecond=ref(30);
+const { pan, baseScale, zoomFactor, totalScale, canvasStyle, zoomIn, zoomOut, resetView, startPan, onMouseMove: panZoomMouseMove, endPan, onWheelZoom, computeBaseScale } = usePanZoom(stageEl, boardSize, { maxZoom: 16 });
+function onMouseMove(e:MouseEvent){ lastMouseEvent=e; panZoomMouseMove(e); }
 function speedUp(){ticksPerSecond.value=Math.min(240,ticksPerSecond.value+10);} function slowDown(){ticksPerSecond.value=Math.max(1,ticksPerSecond.value-10);}
-function computeBaseScale(){const s=stageEl.value; if(!s)return; const w=s.clientWidth,h=s.clientHeight,sz=S(); if(w<=0||h<=0||sz<=0)return; baseScale.value=Math.max(1,Math.floor(Math.min(w/sz,h/sz)));}
 
 /* ===================== Main Loop ===================== */
 let animationFrameId:number|null=null, lastTime=0, timeSinceLastTick=0; const MAX_UPDATES_PER_FRAME=5;
@@ -414,9 +408,17 @@ let resizeObs:ResizeObserver|null=null;
 onMounted(async()=>{try{const g=await fetchBbyBookGallery(); cards.value=g.map(c=>({label:c.factName,url:c.url,stamp_url:c.stamp_url})); if(cards.value.length>0)selectCard(cards.value[0].label);}catch(e){console.error("Failed to fetch gallery:",e);} applyBoardSize(); if(stageEl.value){resizeObs=new ResizeObserver(()=>computeBaseScale()); resizeObs.observe(stageEl.value);} if(scopeCanvas.value){scopeCanvas.value.width=256; scopeCanvas.value.height=256;} animationFrameId=requestAnimationFrame(mainLoop);});
 onUnmounted(()=>{if(animationFrameId)cancelAnimationFrame(animationFrameId); if(resizeObs&&stageEl.value)resizeObs.disconnect();});
 watch(boardSize,()=>applyBoardSize()); watch(selectedCardLabel,()=>loadSelectedImage());
-function selectCard(label:string){selectedCardLabel.value=label; loadSelectedImage();}
+function selectCard(label:string){
+  const match=cards.value.find(c=>c.label.toLowerCase()===label.toLowerCase());
+  selectedCardLabel.value=match?match.label:label;
+  loadSelectedImage();
+}
 function loadSelectedImage(){
-  const sel=cards.value.find(c=>c.label===selectedCardLabel.value); if(!sel)return; const urls:string[]=[]; if(sel.stamp_url)urls.push(sel.stamp_url); urls.push(sel.url.replace(/\.png$/i,'.stamp.png')); urls.push(sel.url); const img=new Image(); img.crossOrigin="Anonymous"; let i=0;
+  const label=selectedCardLabel.value;
+  const sel=label?cards.value.find(c=>c.label.toLowerCase()===label.toLowerCase()):undefined;
+  if(!sel)return;
+  selectedCardLabel.value=sel.label;
+  const urls:string[]=[]; if(sel.stamp_url)urls.push(sel.stamp_url); urls.push(sel.url.replace(/\.png$/i,'.stamp.png')); urls.push(sel.url); const img=new Image(); img.crossOrigin="Anonymous"; let i=0;
   img.onload=()=>{const max=64, sc=Math.min(1,max/Math.max(img.width,img.height)), w=Math.max(1,Math.floor(img.width*sc)), h=Math.max(1,Math.floor(img.height*sc)); const can=document.createElement("canvas"), ctx=can.getContext("2d",{willReadFrequently:true})!; can.width=w; can.height=h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0,w,h); loadedImageData=ctx.getImageData(0,0,w,h);};
   img.onerror=()=>{i++; if(i<urls.length){img.src=urls[i];}else{console.error("Failed to load stamp:",sel.label); loadedImageData=null;}}; img.src=urls[i];
 }

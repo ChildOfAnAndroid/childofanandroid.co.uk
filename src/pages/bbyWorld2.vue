@@ -28,7 +28,7 @@
                 v-for="card in cards"
                 :key="card.label"
                 class="card-swatch"
-                :class="{ selected: selectedCardLabel === card.label }"
+                :class="{ selected: selectedCardLabel?.toLowerCase() === card.label.toLowerCase() }"
                 @click="selectCard(card.label)"
               >
                 <img :src="card.stamp_url || card.url" :alt="card.label" />
@@ -197,6 +197,7 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
+import { usePanZoom } from '@/composables/usePanZoom';
 import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
@@ -222,47 +223,14 @@ const hoverCell = ref<GridCell | null>(null);
 const hoverEnv = ref({ x: 0, y: 0, heat: 0, moisture: 0, nutrient: 0 });
 let lastMouseEvent: MouseEvent | null = null;
 
-const pan = ref({ x: 0, y: 0 });
-
-// “fit” scale (computed vs stage), and user zoom factor (1.0 = fit)
-const baseScale = ref(1);          // computed to fit canvas in stage
-const zoomFactor = ref(1);         // user-controlled, relative to fit
+const { pan, zoomFactor, canvasStyle, zoomIn, zoomOut, onWheelZoom, resetView, startPan, onMouseMove: panZoomMouseMove, endPan, computeBaseScale } = usePanZoom(stageEl, boardSize, { maxZoom: 8 });
 const scopeActive = ref(false);
 const showLegend = ref(false);
-
-// total scale applied to canvas
-const totalScale = computed(() => {
-  return Math.max(1, Math.round(baseScale.value * zoomFactor.value));
-});
-
-// style for canvas transform
-const canvasStyle = computed(() => ({
-  transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`,
-  transformOrigin: "top left",
-}));
-
-function zoomIn()  { zoomFactor.value = Math.min(8, zoomFactor.value * 1.25); }
-function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
-function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
-
-/* Pan controls */
-let isPanning = false;
-let lastPan = { x: 0, y: 0 };
-function startPan(e: MouseEvent) {
-  if (e.button !== 1 && e.button !== 2) return;
-  isPanning = true;
-  lastPan = { x: e.clientX, y: e.clientY };
-}
 function onMouseMove(e: MouseEvent) {
-  if (isPanning) {
-    pan.value.x += e.clientX - lastPan.x;
-    pan.value.y += e.clientY - lastPan.y;
-    lastPan = { x: e.clientX, y: e.clientY };
-  }
+  panZoomMouseMove(e);
   lastMouseEvent = e;
   updateScope(e);
 }
-function endPan() { isPanning = false; }
 
 /* ===================== Speed ===================== */
 const ticksPerSecond = ref(30);
@@ -278,7 +246,8 @@ const selectedCardLabel = ref<string | null>(null);
 let loadedImageData: ImageData | null = null;
 
 function selectCard(label: string) {
-  selectedCardLabel.value = label;
+  const match = cards.value.find(c => c.label.toLowerCase() === label.toLowerCase());
+  selectedCardLabel.value = match ? match.label : label;
 }
 
 /* ===================== Cell / World Types ===================== */
@@ -615,34 +584,17 @@ function clearWorld(){
   reseedRNG();
 }
 
-function applyBoardSize(){
-  // reset pan/zoom to fit
-  pan.value = {x:0, y:0};
-  zoomFactor.value = 1;
+  function applyBoardSize(){
+    // reset pan/zoom to fit
+    pan.value = {x:0, y:0};
+    zoomFactor.value = 1;
   // resize canvas attrs
   const canvas = gameCanvas.value;
   if (canvas){ canvas.width = S(); canvas.height = S(); }
   allocateWorldArrays(S());
-  clearWorld();
-  computeBaseScale(); // recalc fit scale
-}
-
-function computeBaseScale(){
-  const stage = stageEl.value;
-  if (!stage) return;
-  const w = stage.clientWidth;
-  const h = stage.clientHeight;
-  const s = S();
-  if (w <= 0 || h <= 0 || s <= 0) return;
-  // fit entire board into stage using integer scale for crisp pixels
-  baseScale.value = Math.max(1, Math.floor(Math.min(w / s, h / s)));
-}
-
-function resetView(){
-  pan.value = { x: 0, y: 0 };
-  zoomFactor.value = 1;
-  computeBaseScale();
-}
+    clearWorld();
+    computeBaseScale(); // recalc fit scale
+  }
 
 /* stage resize observer */
 let resizeObs: ResizeObserver | null = null;
@@ -1310,8 +1262,10 @@ function update() {
 
 /* ===================== Image / Stamping ===================== */
 function loadSelectedImage() {
-  const selected = cards.value.find(c => c.label === selectedCardLabel.value);
+  const label = selectedCardLabel.value;
+  const selected = label ? cards.value.find(c => c.label.toLowerCase() === label.toLowerCase()) : undefined;
   if (!selected) return;
+  selectedCardLabel.value = selected.label;
 
   const tryUrls: string[] = [];
   if (selected.stamp_url) tryUrls.push(selected.stamp_url);

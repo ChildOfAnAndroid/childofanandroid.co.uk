@@ -28,7 +28,7 @@
                 v-for="card in cards"
                 :key="card.label"
                 class="card-swatch"
-                :class="{ selected: selectedCardLabel === card.label }"
+                :class="{ selected: selectedCardLabel?.toLowerCase() === card.label.toLowerCase() }"
                 @click="selectCard(card.label)"
               >
                 <img :src="card.stamp_url || card.url" :alt="card.label" />
@@ -167,6 +167,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { bbyUse } from '@/composables/bbyUse.ts';
+import { usePanZoom } from '@/composables/usePanZoom';
 import { throttle } from 'lodash';
 import { colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks } from '@/utils/time';
@@ -262,19 +263,9 @@ function allocateWorldArrays(size:number){
   if (ctx) { frameImg = ctx.createImageData(size, size); frame = frameImg.data; }
 }
 
-function computeBaseScale(){
-  const stage = stageEl.value;
-  if (!stage) return;
-  const w = stage.clientWidth;
-  const h = stage.clientHeight;
-  const s = S();
-  if (w <= 0 || h <= 0 || s <= 0) return;
-  baseScale.value = Math.max(1, Math.floor(Math.min(w / s, h / s)));
-}
-
-function clearWorld(){
-  livingCells.value.length = 0;
-  spatialMap.fill(null);
+  function clearWorld(){
+    livingCells.value.length = 0;
+    spatialMap.fill(null);
   Object.keys(cellById).forEach(key => delete cellById[Number(key)]);
   Object.keys(familyTree).forEach(key => delete familyTree[Number(key)]);
   const s = S();
@@ -301,23 +292,10 @@ function applyBoardSize(){
   computeBaseScale();
 }
 
-const pan = ref({ x: 0, y: 0 }); const baseScale = ref(1); const zoomFactor = ref(1);
 const ticksPerSecond = ref(30);
 const isPaused = ref(false);
-const totalScale = computed(() => Math.max(1, Math.floor(baseScale.value * zoomFactor.value)));
-const canvasStyle = computed(() => ({ 
-  transform: `translate(${Math.round(pan.value.x)}px, ${Math.round(pan.value.y)}px) scale(${totalScale.value})`, 
-  transformOrigin: "top left",
-  willChange: 'transform'
-}));
-function zoomIn() { zoomFactor.value = Math.min(16, zoomFactor.value * 1.25); }
-function zoomOut() { zoomFactor.value = Math.max(0.25, zoomFactor.value / 1.25); }
-function resetView(){ pan.value = { x: 0, y: 0 }; zoomFactor.value = 1; computeBaseScale(); }
-let isPanning = false; let lastPan = { x: 0, y: 0 };
-function startPan(e: MouseEvent) { if (e.button !== 1 && e.button !== 2) return; isPanning = true; lastPan = { x: e.clientX, y: e.clientY }; }
-function onMouseMove(e: MouseEvent) { lastMouseEvent = e; if (isPanning) { pan.value.x += e.clientX - lastPan.x; pan.value.y += e.clientY - lastPan.y; lastPan = { x: e.clientX, y: e.clientY }; } }
-function endPan() { isPanning = false; }
-function onWheelZoom(e: WheelEvent) { e.deltaY < 0 ? zoomIn() : zoomOut(); }
+const { pan, zoomFactor, canvasStyle, zoomIn, zoomOut, resetView, startPan, onMouseMove: panZoomMouseMove, endPan, onWheelZoom, computeBaseScale } = usePanZoom(stageEl, boardSize, { maxZoom: 16 });
+function onMouseMove(e: MouseEvent) { lastMouseEvent = e; panZoomMouseMove(e); }
 function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
 function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
 function togglePause() { isPaused.value = !isPaused.value; }
@@ -586,12 +564,17 @@ onMounted(async () => {
 onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId); if (resizeObs && stageEl.value) resizeObs.disconnect(); });
 watch(boardSize, () => applyBoardSize());
 watch(selectedCardLabel, () => loadSelectedImage());
-function selectCard(label: string) { selectedCardLabel.value = label; }
+function selectCard(label: string) {
+  const match = cards.value.find(c => c.label.toLowerCase() === label.toLowerCase());
+  selectedCardLabel.value = match ? match.label : label;
+}
 
 // FULLY FIXED: This function now uses the robust, multi-URL-attempt logic from version 1.
 function loadSelectedImage() {
-  const selected = cards.value.find(c => c.label === selectedCardLabel.value);
+  const label = selectedCardLabel.value;
+  const selected = label ? cards.value.find(c => c.label.toLowerCase() === label.toLowerCase()) : undefined;
   if (!selected) return;
+  selectedCardLabel.value = selected.label;
 
   const tryUrls: string[] = [];
   if (selected.stamp_url) tryUrls.push(selected.stamp_url);

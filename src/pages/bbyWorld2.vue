@@ -202,6 +202,7 @@ import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
+import { resolveCardLabel } from '@/utils/cards';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -242,8 +243,7 @@ const selectedCardLabel = ref<string | null>(null);
 let loadedImageData: ImageData | null = null;
 
 function selectCard(label: string) {
-  const match = cards.value.find(c => c.label.toLowerCase() === label.toLowerCase());
-  selectedCardLabel.value = match ? match.label : label;
+  selectedCardLabel.value = resolveCardLabel(cards.value, label);
 }
 
 /* ===================== Cell / World Types ===================== */

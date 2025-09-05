@@ -171,6 +171,7 @@ import { usePanZoom } from '@/composables/usePanZoom';
 import { throttle } from 'lodash';
 import { colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks } from '@/utils/time';
+import { resolveCardLabel } from '@/utils/cards';
 import FamilyTree from '@/components/familyTree.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
@@ -562,8 +563,7 @@ onUnmounted(() => { if (animationFrameId) cancelAnimationFrame(animationFrameId)
 watch(boardSize, () => applyBoardSize());
 watch(selectedCardLabel, () => loadSelectedImage());
 function selectCard(label: string) {
-  const match = cards.value.find(c => c.label.toLowerCase() === label.toLowerCase());
-  selectedCardLabel.value = match ? match.label : label;
+  selectedCardLabel.value = resolveCardLabel(cards.value, label);
 }
 
 // FULLY FIXED: This function now uses the robust, multi-URL-attempt logic from version 1.

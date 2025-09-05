@@ -21,20 +21,12 @@
             <button class="action" @click="clearWorld">clear</button>
           </div>
 
-          <div class="grp">
-            <label class="section">select a bby to place:</label>
-            <div class="card-swatch-bar">
-              <button
-                v-for="card in cards"
-                :key="card.label"
-                class="card-swatch"
-                :class="{ selected: selectedCardLabel?.toLowerCase() === card.label.toLowerCase() }"
-                @click="selectCard(card.label)"
-              >
-                <img :src="card.stamp_url || card.url" :alt="card.label" />
-              </button>
-            </div>
-          </div>
+          <CardSwatchBar
+            :cards="cards"
+            :selected-card-label="selectedCardLabel"
+            @select="selectCard"
+            label="select a bby to place:"
+          />
 
           <div class="grp">
             <label class="section">stats</label>
@@ -201,10 +193,12 @@ import { hexToRGB, colourGroupKeyFromCell } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
 import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
+import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
 import { eventToCanvasCoords } from '@/utils/canvas';
 import { clamp } from '@/utils/math';
+import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -558,17 +552,8 @@ function clearWorld(){
   reseedRNG();
 }
 
-  function applyBoardSize(){
-    // reset pan/zoom to fit
-    pan.value = {x:0, y:0};
-    zoomFactor.value = 1;
-  // resize canvas attrs
-  const canvas = gameCanvas.value;
-  if (canvas){ canvas.width = S(); canvas.height = S(); }
-  allocateWorldArrays(S());
-    clearWorld();
-    computeBaseScale(); // recalc fit scale
-  }
+  const applyBoardSize = () =>
+    applyBoardSizeUtil(pan, zoomFactor, gameCanvas, S(), allocateWorldArrays, clearWorld, computeBaseScale);
 
 /* stage resize observer */
 let resizeObs: ResizeObserver | null = null;

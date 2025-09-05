@@ -17,14 +17,12 @@
           </div>
           
           <!-- PLACEMENT CONTROLS -->
-          <div class="grp">
-            <label class="section">select a cell stamp to place:</label>
-            <div class="card-swatch-bar">
-              <button v-for="card in cards" :key="card.label" class="card-swatch" :class="{ selected: selectedCardLabel?.toLowerCase() === card.label.toLowerCase() }" @click="selectCard(card.label)">
-                <img :src="card.stamp_url || card.url" :alt="card.label" />
-              </button>
-            </div>
-          </div>
+          <CardSwatchBar
+            :cards="cards"
+            :selected-card-label="selectedCardLabel"
+            @select="selectCard"
+            label="select a cell stamp to place:"
+          />
 
           <!-- STATS -->
           <div class="grp">
@@ -193,10 +191,12 @@ import { luminance, colourGroupKeyFromCell } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
 import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
+import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
 import { eventToCanvasCoords } from '@/utils/canvas';
+import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
@@ -280,7 +280,7 @@ function clearWorld(){
   stats.value={warDeaths:0,squishDeaths:0,fadedDeaths:0,reproductions:0,totalLifespan:0,deadCount:0};
   tickCount.value=0; nextCellId=1; aetherCharge.value=0;
 }
-function applyBoardSize(){pan.value={x:0,y:0}; zoomFactor.value=1; const c=gameCanvas.value; if(c){c.width=S(); c.height=S();} allocateWorldArrays(S()); clearWorld(); computeBaseScale();}
+const applyBoardSize = () => applyBoardSizeUtil(pan, zoomFactor, gameCanvas, S(), allocateWorldArrays, clearWorld, computeBaseScale);
 const { ticksPerSecond, tickInterval, speedUp, slowDown } = useSimulationSpeed(30);
 const { pan, baseScale, zoomFactor, totalScale, canvasStyle, zoomIn, zoomOut, resetView, startPan, onMouseMove: panZoomMouseMove, endPan, onWheelZoom, computeBaseScale } = usePanZoom(stageEl, boardSize, { maxZoom: 16 });
 function onMouseMove(e:MouseEvent){ lastMouseEvent=e; panZoomMouseMove(e); }

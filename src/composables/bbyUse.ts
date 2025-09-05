@@ -342,6 +342,12 @@ export async function fetchBbyBookGallery() {
       }>>
     ]);
 
+    // Create a lookup where keys are normalised to lowercase so that
+    // gallery labels can match bbybook entries without case sensitivity.
+    const bookLower = Object.fromEntries(
+      Object.entries(book).map(([k, v]) => [k.toLowerCase(), v])
+    );
+
     const decodeLabel = (l: string) => {
       try { return decodeURIComponent(l); } catch { return l; }
     };
@@ -354,15 +360,15 @@ export async function fetchBbyBookGallery() {
       }))
       // Only include gallery items that have a matching entry in the bbybook.
       .filter((item): item is { url: string; stamp_url?: string; author?: string; label: string } =>
-        !!item.label && !!book[item.label]
+        !!item.label && !!bookLower[item.label.toLowerCase()]
       )
       // Return the full data needed for the styled card.
       .map(item => ({
         url: item.url,
-        stamp_url: item.stamp_url, // MODIFIED: Pass through the stamp_url
+        stamp_url: item.stamp_url, // Pass through the optional stamp_url
         imageAuthor: item.author,
         factName: item.label,      // The name of the fact (e.g., "cat" or an emoji)
-        factData: book[item.label] // The full object with all details
+        factData: bookLower[item.label.toLowerCase()] // The full object with all details
       }));
   } catch (error) {
     console.error('Could not fetch bbybook gallery:', error);
@@ -374,8 +380,8 @@ export async function getRandomBbyFactPrompt() {
   try {
     if (Object.keys(bbyFacts.value).length === 0) await fetchBbyFacts();
     const gallery = await api.getGallery() as { label?: string }[];
-    const labels = new Set(gallery.map(g => g.label).filter(Boolean));
-    const entries = Object.entries(bbyFacts.value).filter(([key]) => !labels.has(key));
+    const labels = new Set(gallery.map(g => g.label?.toLowerCase()).filter(Boolean) as string[]);
+    const entries = Object.entries(bbyFacts.value).filter(([key]) => !labels.has(key.toLowerCase()));
     if (entries.length === 0) return null;
     const [name, data] = entries[Math.floor(Math.random() * entries.length)];
     return { name, ...data } as { name: string; value: string; author: string };

@@ -199,6 +199,7 @@ import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
+import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel } from '@/utils/cards';
@@ -331,32 +332,13 @@ const selectedFamily = computed(() => {
   };
 });
 
-const groupStats = computed<ColourGroupStat[]>(() => {
-  const base = {
-    count: 0,
-    totalStrength: 0,
-    totalAge: 0,
-    totalEnergy: 0,
-  };
-  const groups: Record<string, typeof base> = {};
-  for (const c of livingCells.value) {
-    const key = groupKey(c);
-    const g = groups[key] || (groups[key] = { ...base });
-    g.count++;
-    g.totalStrength += c.strength;
-    g.totalAge += c.age;
-    g.totalEnergy += c.energy;
-  }
-  const total = livingCells.value.length;
-  return Object.entries(groups).map(([colour, grp]) => ({
-    colour,
-    count: grp.count,
-    percentage: total ? (grp.count / total) * 100 : 0,
-    avgAge: grp.count ? grp.totalAge / grp.count : 0,
-    avgEnergy: grp.count ? grp.totalEnergy / grp.count : 0,
-    avgStrength: grp.count ? grp.totalStrength / grp.count : 0,
-  }));
-});
+const groupStats = computed<ColourGroupStat[]>(() =>
+  computeGroupStats(
+    livingCells.value,
+    groupKey,
+    { avgAge: c => c.age, avgEnergy: c => c.energy, avgStrength: c => c.strength }
+  )
+);
 
 const sortedGroupStats = computed(() =>
   [...groupStats.value].sort((a, b) => b.count - a.count)

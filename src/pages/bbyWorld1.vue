@@ -170,6 +170,7 @@ import { usePanZoom } from '@/composables/usePanZoom';
 import { throttle } from 'lodash';
 import { colourGroupKey } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
+import { computeGroupStats } from '@/utils/groupStats';
 import { resolveCardLabel } from '@/utils/cards';
 import SpeedControls from '@/components/speedControls.vue';
 import { rand, seedRand } from '@/utils/rng';
@@ -651,19 +652,13 @@ const selectedFamily = computed(() => {
 });
 interface ColourGroupStat { colour: string; count: number; percentage: number; avgAge: number; avgCharge: number; avgMass: number; }
 function groupKey(c: Cell) { return colourGroupKey(c.r, c.g, c.b); }
-const groupStats = computed<ColourGroupStat[]>(() => {
-  const base = { count: 0, totalAge: 0, totalCharge: 0, totalMass: 0 };
-  const groups: Record<string, typeof base> = {}; const living = livingCells.value.filter(c => c.alive);
-  for (const c of living) {
-    const key = groupKey(c); const g = groups[key] || (groups[key] = { ...base });
-    g.count++; g.totalAge += c.age; g.totalCharge += c.charge; g.totalMass += c.a / 255;
-  }
-  const total = living.length;
-  return Object.entries(groups).map(([colour, grp]) => ({ colour, count: grp.count,
-    percentage: total ? (grp.count / total) * 100 : 0, avgAge: grp.count ? grp.totalAge / grp.count : 0,
-    avgCharge: grp.count ? grp.totalCharge / grp.count : 0, avgMass: grp.count ? grp.totalMass / grp.count : 0,
-  }));
-});
+const groupStats = computed<ColourGroupStat[]>(() =>
+  computeGroupStats(
+    livingCells.value.filter(c => c.alive),
+    groupKey,
+    { avgAge: c => c.age, avgCharge: c => c.charge, avgMass: c => c.a / 255 }
+  )
+);
 const sortedGroupStats = computed(() => [...groupStats.value].sort((a, b) => b.count - a.count));
 const highlightedGroup = ref<string | null>(null);
 function selectGroup(colour: string) { highlightedGroup.value = highlightedGroup.value === colour ? null : colour; }

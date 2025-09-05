@@ -191,6 +191,7 @@ import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
 import { luminance, colourGroupKey } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
+import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
@@ -443,8 +444,15 @@ const selectedCell=ref<Cell|null>(null); function selectCellById(id:number){cons
 const selectedFamily=computed(()=>{if(!selectedCell.value)return{parents:[],children:[]}; const e=familyTree[selectedCell.value.id]||{parents:[],children:[]}; return{parents:e.parents.map(id=>cellById[id]).filter((c):c is Cell=>!!c?.alive),children:e.children.map(id=>cellById[id]).filter((c):c is Cell=>!!c?.alive),};});
 interface CGS{colour:string;count:number;percentage:number;avgAge:number;avgEnergy:number;avgStrength:number;}
 function groupKey(c:Cell){return colourGroupKey(c.r,c.g,c.b);}
-const groupStats=computed<CGS[]>(()=>{const b={count:0,totalAge:0,totalEnergy:0,totalStrength:0}; const g:Record<string,typeof b>={}; for(const c of livingCells.value){const k=groupKey(c); const gr=g[k]||(g[k]={...b}); gr.count++; gr.totalAge+=c.age; gr.totalEnergy+=c.energy; gr.totalStrength+=c.strength;} const t=livingCells.value.length; return Object.entries(g).map(([colour,grp])=>({colour,count:grp.count,percentage:t?(grp.count/t)*100:0,avgAge:grp.count?grp.totalAge/grp.count:0,avgEnergy:grp.count?grp.totalEnergy/grp.count:0,avgStrength:grp.count?grp.totalStrength/grp.count:0,}));});
-const sortedGroupStats=computed(()=>[...groupStats.value].sort((a,b)=>b.count-a.count)); const highlightedGroup=ref<string|null>(null);
+const groupStats=computed<CGS[]>(()=>
+  computeGroupStats(
+    livingCells.value,
+    groupKey,
+    { avgAge:c=>c.age, avgEnergy:c=>c.energy, avgStrength:c=>c.strength }
+  )
+);
+const sortedGroupStats=computed(()=>[...groupStats.value].sort((a,b)=>b.count-a.count));
+const highlightedGroup=ref<string|null>(null);
 function selectGroup(c:string){highlightedGroup.value=highlightedGroup.value===c?null:c;}
 const hoverInfo=ref({x:0,y:0,heat:0,moisture:0,nutrient:0,solid:0,psi:0,lam:0,sig:0,dyeR:0,dyeG:0,dyeB:0,cell:null as Cell|null});
 const updateScope=throttle((e:MouseEvent)=>{if(!scopeActive.value)return; const s=scopeCanvas.value,b=scopeBox.value; if(!s||!b||!frameImg)return; const c=screenToWorld(e); if(!c)return; const hx=c.x,hy=c.y; const ctx=s.getContext('2d'); if(!ctx)return; const SS=9,h=Math.floor(SS/2),pS=s.width/SS,sz=S(); ctx.imageSmoothingEnabled=false; ctx.clearRect(0,0,s.width,s.height); for(let dy=0;dy<SS;dy++){for(let dx=0;dx<SS;dx++){const sx=hx-h+dx,sy=hy-h+dy; let r=0,g=0,bl=0,a=255; if(sx>=0&&sy>=0&&sx<sz&&sy<sz){const o=I(sx,sy)*4; r=frame[o];g=frame[o+1];bl=frame[o+2];a=frame[o+3];} ctx.fillStyle=`rgba(${r},${g},${bl},${a/255})`; ctx.fillRect(dx*pS,dy*pS,pS,pS);}} ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(h*pS,h*pS,pS,pS); if(hx>=0&&hy>=0&&hx<sz&&hy<sz){const i=I(hx,hy); hoverInfo.value={x:hx,y:hy,heat:heatField[i],moisture:moistureField[i],nutrient:nutrientField[i],solid:solidGrid[i],psi:fieldPsi[i],lam:fieldLam[i],sig:fieldSig[i],dyeR:Math.round(dyeRField[i]),dyeG:Math.round(dyeGField[i]),dyeB:Math.round(dyeBField[i]),cell:spatialMap[i]||null};} const sr=stageEl.value?.getBoundingClientRect(); if(!sr)return; const bX=e.clientX-sr.left,bY=e.clientY-sr.top; const oX=(bX/sr.width<0.5)?20:-b.offsetWidth-20,oY=(bY/sr.height<0.5)?20:-b.offsetHeight-20; b.style.left=`${e.clientX+oX}px`; b.style.top=`${e.clientY+oY}px`;},16);

@@ -173,6 +173,7 @@ import { colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
 import { rand, seedRand } from '@/utils/rng';
+import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);
@@ -292,13 +293,9 @@ function applyBoardSize(){
   computeBaseScale();
 }
 
-const ticksPerSecond = ref(30);
-const isPaused = ref(false);
+const { ticksPerSecond, isPaused, tickInterval, speedUp, slowDown, togglePause } = useSimulationSpeed(30);
 const { pan, zoomFactor, canvasStyle, zoomIn, zoomOut, resetView, startPan, onMouseMove: panZoomMouseMove, endPan, onWheelZoom, computeBaseScale } = usePanZoom(stageEl, boardSize, { maxZoom: 16 });
 function onMouseMove(e: MouseEvent) { lastMouseEvent = e; panZoomMouseMove(e); }
-function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
-function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
-function togglePause() { isPaused.value = !isPaused.value; }
 
 /* ===================== Main Loop ===================== */
 let animationFrameId: number | null = null;
@@ -309,16 +306,16 @@ const MAX_UPDATES_PER_FRAME = 5;
 function mainLoop(timestamp: number) {
   const ctx = gameCanvas.value?.getContext("2d", { willReadFrequently: true });
   if (!ctx) { animationFrameId = requestAnimationFrame(mainLoop); return; }
-  const tickInterval = 1000 / ticksPerSecond.value;
-  if(lastTime === 0) lastTime = timestamp;
+  const interval = tickInterval.value;
+  if (lastTime === 0) lastTime = timestamp;
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
   if (!isPaused.value) {
     timeSinceLastTick += deltaTime;
     let performed = 0;
-    while (timeSinceLastTick >= tickInterval && performed < MAX_UPDATES_PER_FRAME) {
+    while (timeSinceLastTick >= interval && performed < MAX_UPDATES_PER_FRAME) {
       update();
-      timeSinceLastTick -= tickInterval;
+      timeSinceLastTick -= interval;
       performed++;
     }
     if (performed === MAX_UPDATES_PER_FRAME) timeSinceLastTick = 0;

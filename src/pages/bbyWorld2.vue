@@ -201,6 +201,7 @@ import { usePanZoom } from '@/composables/usePanZoom';
 import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
+import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -233,12 +234,7 @@ function onMouseMove(e: MouseEvent) {
 }
 
 /* ===================== Speed ===================== */
-const ticksPerSecond = ref(30);
-const tickInterval = computed(() => 1000 / ticksPerSecond.value);
-const isPaused = ref(false);
-function speedUp() { ticksPerSecond.value = Math.min(240, ticksPerSecond.value + 10); }
-function slowDown() { ticksPerSecond.value = Math.max(1, ticksPerSecond.value - 10); }
-function togglePause() { isPaused.value = !isPaused.value; }
+const { ticksPerSecond, tickInterval, isPaused, speedUp, slowDown, togglePause } = useSimulationSpeed(30);
 
 /* ===================== Cards / Stamps ===================== */
 const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);

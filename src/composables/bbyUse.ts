@@ -3,6 +3,7 @@
 import { reactive, readonly, ref, watch } from 'vue';
 import _ from 'lodash';
 import { api } from '@/api'; // <-- Import the new API module
+import { setRootColourVars } from '@/utils/colourEngine';
 
 interface Bubble {
   id: string;
@@ -407,24 +408,20 @@ export async function pollActivityForAutosnap() {
   setTimeout(pollActivityForAutosnap, 7000);
 }
 
-watch(currentColour, (newColour) => {
-  const r = Math.round(newColour.r); const g = Math.round(newColour.g); const b = Math.round(newColour.b);
-  const root = document.documentElement;
-  root.style.setProperty('--bby-colour', `rgba(${r}, ${g}, ${b}, 0.9)`);
-  const panelR = Math.max(0, r - 75); const panelG = Math.max(0, g - 100); const panelB = Math.max(0, b - 75);
-  root.style.setProperty('--bby-colour-panel', `rgb(${panelR}, ${panelG}, ${panelB})`);
-  const borderR = Math.max(0, r - 30); const borderG = Math.max(0, g - 40); const borderB = Math.max(0, b - 30);
-  root.style.setProperty('--bby-colour-dark', `rgb(${borderR}, ${borderG}, ${borderB})`);
-  const bgR = Math.max(0, r - 135); const bgG = Math.max(0, g - 180); const bgB = Math.max(0, b - 135);
-  root.style.setProperty('--bby-colour-black', `rgb(${bgR}, ${bgG}, ${bgB})`);
-}, { deep: true, immediate: true });
-watch(userColour, (newUserColour) => {
-  const { r, g, b } = newUserColour;
-  const root = document.documentElement;
-  root.style.setProperty('--user-colour', `rgb(${r}, ${g}, ${b})`);
-  const hoverR = Math.max(0, r - 30); const hoverG = Math.max(0, g - 40); const hoverB = Math.max(0, b - 30);
-  root.style.setProperty('--user-colour-dark', `rgb(${hoverR}, ${hoverG}, ${hoverB})`);
-}, { deep: true, immediate: true });
+  watch(currentColour, (newColour) => {
+    setRootColourVars('bby-colour', newColour, [
+      { suffix: '', alpha: 0.9 },
+      { suffix: '-panel', dr: -75, dg: -100, db: -75 },
+      { suffix: '-dark', dr: -30, dg: -40, db: -30 },
+      { suffix: '-black', dr: -135, dg: -180, db: -135 },
+    ]);
+  }, { deep: true, immediate: true });
+  watch(userColour, (newUserColour) => {
+    setRootColourVars('user-colour', newUserColour, [
+      { suffix: '' },
+      { suffix: '-dark', dr: -30, dg: -40, db: -30 },
+    ]);
+  }, { deep: true, immediate: true });
 
 export function bbyUse() {
   startClient();

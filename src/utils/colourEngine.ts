@@ -126,3 +126,25 @@ export function computeNextColours(n: number, start: RgbColor | string, ctx: Ste
   for (let i = 0; i < n; i++) { c = stepColourOnce(c, ctx); out.push({ ...c }); }
   return out;
 }
+
+export interface ColourVariant {
+  suffix: string;
+  dr?: number;
+  dg?: number;
+  db?: number;
+  alpha?: number;
+}
+
+export function setRootColourVars(prefix: string, colour: RgbColor, variants: ColourVariant[]): void {
+  const root = document.documentElement;
+  const clamp = (v: number) => Math.max(0, Math.round(v));
+  for (const v of variants) {
+    const r = clamp(colour.r + (v.dr ?? 0));
+    const g = clamp(colour.g + (v.dg ?? 0));
+    const b = clamp(colour.b + (v.db ?? 0));
+    const value = v.alpha !== undefined
+      ? `rgba(${r}, ${g}, ${b}, ${v.alpha})`
+      : `rgb(${r}, ${g}, ${b})`;
+    root.style.setProperty(`--${prefix}${v.suffix}`, value);
+  }
+}

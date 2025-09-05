@@ -191,6 +191,7 @@ import { usePanZoom } from '@/composables/usePanZoom';
 import { luminance, colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks as baseFormatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
+import { rand, seedRand } from '@/utils/rng';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
@@ -248,7 +249,7 @@ let fieldPsi=new Float32Array(0), fieldLam=new Float32Array(0), fieldSig=new Flo
 let dyeRField=new Float32Array(0), dyeGField=new Float32Array(0), dyeBField=new Float32Array(0);
 const aetherCharge = ref(0);
 let frame=new Uint8ClampedArray(0), frameImg:ImageData|null=null;
-let rng_seed=Date.now(); function rand(){rng_seed=(rng_seed*16807+1)%2147483647; return (rng_seed-1)/2147483646;}
+seedRand(Date.now());
 const p: number[] = []; for(let i=0; i<512; i++) p[i] = Math.floor(rand()*256);
 const perm = [...p, ...p];
 const fade = (t: number) => t*t*t*(t*(t*6-15)+10); const lerp = (t:number,a:number,b:number) => a+t*(b-a);

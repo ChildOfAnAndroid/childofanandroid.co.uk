@@ -172,6 +172,7 @@ import { throttle } from 'lodash';
 import { colourGroupKey } from '@/utils/colourEngine';
 import { formatTicks } from '@/utils/time';
 import FamilyTree from '@/components/familyTree.vue';
+import { rand, seedRand } from '@/utils/rng';
 
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);
@@ -233,8 +234,7 @@ const UPDATES_PER_TICK_DIVISOR = 50;
 const SPAWN_COOLDOWN = 50;
 
 // --- RNG & Noise ---
-let rng_seed = Date.now();
-function rand() { rng_seed = (rng_seed * 16807 + 1) % 2147483647; return (rng_seed - 1) / 2147483646; }
+seedRand(Date.now());
 const p: number[] = []; for(let i=0; i<512; i++) p[i] = Math.floor(rand()*256);
 const perm = [...p, ...p];
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -699,42 +699,7 @@ const updateScope = throttle((event: MouseEvent) => {
 </script>
 
 <style scoped>
-/* THIS CSS IS NOW BASED ON THE FIRST (WORKING) VERSION FOR CORRECT LAYOUT */
+@import "../styles/bbyworld-shared.css";
+
 .page-container { display:flex; width:100%; height:var(--full-height); box-sizing:border-box; padding:var(--padding); }
-.world-layout{display:flex;flex-direction:row;width:100%;height:100%;gap:var(--spacing);overflow:hidden}
-.world-left{flex:1 1 320px;min-width:280px;height:100%;display:flex;flex-direction:column}
-.world-right{flex:0 1 var(--full-height);display:flex;align-items:center;justify-content:center;height:100%;max-width:var(--full-height);min-width:0;position:relative}
-.vertical-panel{position:relative;width:100%;height:100%;overflow-y:auto;padding:var(--padding);background:var(--panel-colour);border:var(--border);border-radius:var(--border-radius);box-shadow:var(--box-shadow);display:flex;flex-direction:column;gap:calc(var(--spacing)*1.1)}
-.vertical-panel h1{margin:0;text-align:center;line-height:1.05}
-.world-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.group-row{display:grid;grid-template-columns: 2fr 1fr 1fr 1.5fr 1fr 1fr; gap:.25rem;position:relative;cursor:pointer; align-items: center;}
-.group-row.header{font-weight:700;cursor:default}
-.group-row.selected{outline:1px solid var(--accent-colour);}
-.group-bar{position:absolute;top:0;left:0;bottom:0;opacity:.2;pointer-events:none}
-.colour-cell{display:flex;align-items:center;gap:.25rem}
-.colour-swatch{width:1rem;height:1rem;border:var(--border);border-radius:2px; flex-shrink: 0;}
-.world-stage{position:relative;width:100%;height:100%;max-width:100%;max-height:100%;aspect-ratio:1/1;overflow:hidden;border:var(--border);border-radius:var(--border-radius);background:var(--bby-colour-black)}
-.stack{width:100%;height:100%;display:grid;align-items:start;justify-content:start}
-.stack > * { grid-area: 1 / 1; }
-canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
-.zoom-scope{position:fixed;width:256px;height:256px;pointer-events:none;z-index:1000}
-.zoom-scope canvas{width:100%;height:100%;image-rendering:pixelated;display:block}
-.zoom-scope .scope-info{position:absolute;bottom:0;left:0;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px;font-family:monospace;line-height:1.2;white-space:nowrap}
-.grp{display:flex;flex-direction:column;gap:.5rem}
-.legend{font-size:var(--small-font-size);display:flex;flex-direction:column;gap:.25rem;line-height:1.2}
-.section{font-size:var(--small-font-size);text-align:center;opacity:.85;letter-spacing:.1em;text-transform:uppercase}
-.action{display:block;width:100%;padding:.4rem .5rem;transition:all .2s ease-out;text-align:center}
-.action.active,.action:active{background:var(--accent-hover);border-color:var(--accent-colour)!important}
-.row2{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem}
-.row3{display:grid;grid-template-columns:1fr auto 1fr;gap:.5rem;align-items:center}
-.zoom-display{text-align:center;font-size:var(--small-font-size)}
-#board-size{width:4rem;text-align:center}
-.card-swatch-bar{display:flex;flex-wrap:wrap;gap:.5rem}
-.card-swatch{border:var(--border);padding:2px;background:var(--panel-colour);cursor:pointer}
-.card-swatch img{width:32px;height:32px;image-rendering:pixelated;display:block}
-.card-swatch.selected{border-color:var(--accent-colour);background:var(--accent-hover)}
-.cell-stats{display:flex;flex-direction:column;gap:.25rem;font-size:var(--small-font-size)}
-.cell-colour{display:flex;align-items:center;gap:.25rem}
-@media (max-width:720px){.world-layout{flex-direction:column}.world-left{width:100%;flex-basis:auto;height:auto}.vertical-panel{overflow-y:visible}.world-right{width:100%;max-width:none;flex:0 0 auto}}
 </style>

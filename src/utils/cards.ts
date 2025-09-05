@@ -1,3 +1,5 @@
+import { loadImage } from './images';
+
 export interface CardLike { label: string }
 
 export function resolveCardLabel<T extends CardLike>(cards: T[], label: string): string {
@@ -7,16 +9,6 @@ export function resolveCardLabel<T extends CardLike>(cards: T[], label: string):
 
 export interface StampCard extends CardLike { url: string; stamp_url?: string }
 
-function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
 export async function loadCardStamp(card: StampCard, maxSize = 64): Promise<ImageData | null> {
   const urls: string[] = [];
   if (card.stamp_url) urls.push(card.stamp_url);
@@ -25,7 +17,7 @@ export async function loadCardStamp(card: StampCard, maxSize = 64): Promise<Imag
 
   for (const url of urls) {
     try {
-      const img = await loadImage(url);
+      const img = await loadImage(url, { crossOrigin: 'Anonymous' });
       const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
       const w = Math.max(1, Math.floor(img.width * scale));
       const h = Math.max(1, Math.floor(img.height * scale));

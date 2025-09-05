@@ -168,7 +168,8 @@ import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
-import { eventToCanvasCoords } from '@/utils/canvas';
+import { eventToCellCoords } from '@/utils/canvas';
+import { screenToWorld } from '@/utils/canvas';
 import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
 // --- WORLD & UI STATE ---
@@ -565,12 +566,11 @@ async function loadSelectedImage() {
 function screenToWorld(event: MouseEvent): { x: number, y: number } | null {
     const canvas = gameCanvas.value;
     if (!canvas) return null;
-    const { x, y } = eventToCanvasCoords(canvas, event);
-    return { x: Math.floor(x), y: Math.floor(y) };
+    return eventToCellCoords(canvas, event);
 }
 
 function handleCanvasClick(event: MouseEvent) {
-    const coords = screenToWorld(event);
+    const coords = screenToWorld(gameCanvas.value, event);
     if (!coords) return;
     const clickedCell = spatialMap[I(coords.x, coords.y)];
     if (clickedCell && clickedCell.alive) { selectedCell.value = clickedCell; } else { placeImageAt(coords.x, coords.y); }
@@ -620,7 +620,7 @@ const hoverInfo = ref({ x: 0, y: 0, psi: 0, lam: 0, sig: 0, solid: 0, cell: null
 const updateScope = throttle((event: MouseEvent) => {
   if (!scopeActive.value) return;
   const scope = scopeCanvas.value, box = scopeBox.value; if (!scope || !box || !frameImg) return;
-  const coords = screenToWorld(event); if (!coords) return;
+  const coords = screenToWorld(gameCanvas.value, event); if (!coords) return;
   const hx = coords.x, hy = coords.y;
   const ctx = scope.getContext('2d'); if (!ctx) return;
   const SCOPE_SIZE = 9; const half = Math.floor(SCOPE_SIZE / 2); const pixelSize = scope.width / SCOPE_SIZE; const s = S();

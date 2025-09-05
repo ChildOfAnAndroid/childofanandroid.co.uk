@@ -196,7 +196,7 @@ import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
-import { eventToCanvasCoords } from '@/utils/canvas';
+import { eventToCellCoords } from '@/utils/canvas';
 import { clamp } from '@/utils/math';
 import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
@@ -1304,9 +1304,7 @@ function makeCell(px:number,py:number,r:number,g:number,b:number,a:number, paren
 function placeImage(event: MouseEvent) {
   const canvas = gameCanvas.value; if (!canvas) return;
 
-  const { x: clickX, y: clickY } = eventToCanvasCoords(canvas, event);
-  const mouseGridX = Math.floor(clickX);
-  const mouseGridY = Math.floor(clickY);
+  const { x: mouseGridX, y: mouseGridY } = eventToCellCoords(canvas, event);
 
   const existing = spatialMap[I(mouseGridX, mouseGridY)];
   if (existing) {
@@ -2117,9 +2115,7 @@ const updateScope = throttle((event: MouseEvent) => {
   const scope = scopeCanvas.value;
   const box = scopeBox.value;
   if (!canvas || !scope || !box || !frameImg) return;
-  const { x: hxFloat, y: hyFloat } = eventToCanvasCoords(canvas, event);
-  const hx = Math.floor(hxFloat);
-  const hy = Math.floor(hyFloat);
+  const { x: hx, y: hy } = eventToCellCoords(canvas, event);
   const ctx = scope.getContext('2d');
   if (!ctx) return;
   const SCOPE_SIZE = 9;

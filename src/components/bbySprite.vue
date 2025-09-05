@@ -15,6 +15,7 @@ import bbyBodyUrl from '@/assets/bbySprites/bbyBODY.png';
 import bbyCheeksUrl from '@/assets/bbySprites/bbyCHEEKS.png';
 import bbyEyesUrl from '@/assets/bbySprites/bbyEYES.png';
 import bbyMouthUrl from '@/assets/bbySprites/bbyMOUTH.png';
+import { loadImage } from '@/utils/images';
 
 const { bbyState, currentColour, tintStrength, requestStateChange, paintOverlayData, paintVersion } = bbyUse();
 
@@ -38,14 +39,6 @@ let maskedPaintCanvas: HTMLCanvasElement;
 let mctx: CanvasRenderingContext2D;
 
 defineExpose({ bbyCanvas });
-
-const loadImage = (src: string): Promise<HTMLImageElement> =>
-  new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = (e) => reject(`Failed to load image: ${src} - ${e}`);
-    img.src = src;
-  });
 
 watch(paintVersion, () => {
   if (!pctx) return;

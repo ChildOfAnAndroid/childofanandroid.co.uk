@@ -52,11 +52,8 @@ function ensureTmpCanvas(force=false) {
   }
 }
 
-function exportCanvas(): HTMLCanvasElement | null {
-  ensureTmpCanvas();
-  if (!tmpCanvas || !tmpCtx || !currentPaintData.value) return null;
-  tmpCtx.clearRect(0, 0, SPRITE_W, SPRITE_H);
-  tmpCtx.putImageData(currentPaintData.value, 0, 0);
+function createScaledCanvasFromTmp(): HTMLCanvasElement | null {
+  if (!tmpCanvas) return null;
   const scale = overlay.value ? Math.round(overlay.value.width / SPRITE_W) : 8;
   const outCanvas = document.createElement('canvas');
   outCanvas.width = SPRITE_W * scale;
@@ -66,6 +63,14 @@ function exportCanvas(): HTMLCanvasElement | null {
   outCtx.imageSmoothingEnabled = false;
   outCtx.drawImage(tmpCanvas, 0, 0, outCanvas.width, outCanvas.height);
   return outCanvas;
+}
+
+function exportCanvas(): HTMLCanvasElement | null {
+  ensureTmpCanvas();
+  if (!tmpCanvas || !tmpCtx || !currentPaintData.value) return null;
+  tmpCtx.clearRect(0, 0, SPRITE_W, SPRITE_H);
+  tmpCtx.putImageData(currentPaintData.value, 0, 0);
+  return createScaledCanvasFromTmp();
 }
 
 function exportRawCanvas(): HTMLCanvasElement | null {
@@ -102,15 +107,7 @@ function exportCompositeCanvas(): HTMLCanvasElement | null {
     paintLayerCtx.putImageData(currentPaintData.value, 0, 0);
     tmpCtx.drawImage(paintLayerCanvas, 0, 0);
   }
-  const scale = overlay.value ? Math.round(overlay.value.width / SPRITE_W) : 8;
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = SPRITE_W * scale;
-  outCanvas.height = SPRITE_H * scale;
-  const outCtx = outCanvas.getContext('2d');
-  if (!outCtx) return null;
-  outCtx.imageSmoothingEnabled = false;
-  outCtx.drawImage(tmpCanvas, 0, 0, outCanvas.width, outCanvas.height);
-  return outCanvas;
+  return createScaledCanvasFromTmp();
 }
 
 // REMOVED: The global idx function was the source of the bug.

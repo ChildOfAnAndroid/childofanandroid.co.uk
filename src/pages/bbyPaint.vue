@@ -396,6 +396,7 @@ import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
 import { rgbToHex, hexToRGB, isColorDark, type EQType, type RgbaColor } from '@/utils/colourEngine';
 import { eventToCanvasCoords } from '@/utils/canvas';
+import { clamp } from '@/utils/math';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage, getRandomBbyFactPrompt } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
@@ -482,7 +483,6 @@ const sequencerCanvas = ref<HTMLCanvasElement | null>(null);
 let isDrawingOnSequencer = false;
 
 // helpers
-const clamp = (v:number, mi:number, ma:number)=>Math.max(mi, Math.min(ma, v));
 
 // number formatting + controls
 function format2(n:number|{value:number}){ const v=typeof n==='number'?n:(n as any).value; return (Math.round(v*100)/100).toFixed(2); }

@@ -189,13 +189,13 @@ import { onMounted, ref, computed, onUnmounted, watch, reactive } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
-import { luminance, colourGroupKey } from '@/utils/colourEngine';
+import { luminance, colourGroupKeyFromCell } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
 import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
-import { resolveCardLabel } from '@/utils/cards';
+import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
 import { eventToCanvasCoords } from '@/utils/canvas';
 
 // --- TIME & FORMATTING ---
@@ -332,7 +332,7 @@ function update() {
     if(aetherCharge.value > 0.8 && rand() < params.aetherInsanityChance) c.isInsane = true;
     if(c.a<VISIBLE_ALPHA||c.energy<=0||c.charge<=0){recordDeath(c,"fade"); continue;}
     
-    let fert=0; if((c.lifeStage==='ADULT'||c.lifeStage==='ELDER')&&!c.isInsane){const ageF=Math.min(1,c.age/c.lifespan),alphaN=c.a/255; let fertA=0; if(alphaN>=FERTILITY_ALPHA_MIN&&alphaN<=FERTILITY_ALPHA_MAX){fertA=(alphaN<=FERTILITY_ALPHA_PEAK)?(alphaN-FERTILITY_ALPHA_MIN)/(FERTILITY_ALPHA_PEAK-FERTILITY_ALPHA_MIN):(FERTILITY_ALPHA_MAX-alphaN)/(FERTILITY_ALPHA_MAX-FERTILITY_ALPHA_PEAK);} const rank=rankMap.get(groupKey(c))??10; fert=ageF*fertA*(1.0-(rank*params.dominancePenalty));}
+    let fert=0; if((c.lifeStage==='ADULT'||c.lifeStage==='ELDER')&&!c.isInsane){const ageF=Math.min(1,c.age/c.lifespan),alphaN=c.a/255; let fertA=0; if(alphaN>=FERTILITY_ALPHA_MIN&&alphaN<=FERTILITY_ALPHA_MAX){fertA=(alphaN<=FERTILITY_ALPHA_PEAK)?(alphaN-FERTILITY_ALPHA_MIN)/(FERTILITY_ALPHA_PEAK-FERTILITY_ALPHA_MIN):(FERTILITY_ALPHA_MAX-alphaN)/(FERTILITY_ALPHA_MAX-FERTILITY_ALPHA_PEAK);} const rank=rankMap.get(colourGroupKeyFromCell(c))??10; fert=ageF*fertA*(1.0-(rank*params.dominancePenalty));}
     c.fertility=fert;
   }
   
@@ -414,16 +414,13 @@ onUnmounted(()=>{if(animationFrameId)cancelAnimationFrame(animationFrameId); if(
 watch(boardSize,()=>applyBoardSize()); watch(selectedCardLabel,()=>loadSelectedImage());
 function selectCard(label:string){
   selectedCardLabel.value = resolveCardLabel(cards.value, label);
-  loadSelectedImage();
 }
-function loadSelectedImage(){
+async function loadSelectedImage(){
   const label=selectedCardLabel.value;
   const sel=label?cards.value.find(c=>c.label.toLowerCase()===label.toLowerCase()):undefined;
   if(!sel)return;
   selectedCardLabel.value=sel.label;
-  const urls:string[]=[]; if(sel.stamp_url)urls.push(sel.stamp_url); urls.push(sel.url.replace(/\.png$/i,'.stamp.png')); urls.push(sel.url); const img=new Image(); img.crossOrigin="Anonymous"; let i=0;
-  img.onload=()=>{const max=64, sc=Math.min(1,max/Math.max(img.width,img.height)), w=Math.max(1,Math.floor(img.width*sc)), h=Math.max(1,Math.floor(img.height*sc)); const can=document.createElement("canvas"), ctx=can.getContext("2d",{willReadFrequently:true})!; can.width=w; can.height=h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0,w,h); loadedImageData=ctx.getImageData(0,0,w,h);};
-  img.onerror=()=>{i++; if(i<urls.length){img.src=urls[i];}else{console.error("Failed to load stamp:",sel.label); loadedImageData=null;}}; img.src=urls[i];
+  loadedImageData = await loadCardStamp(sel);
 }
 function screenToWorld(e: MouseEvent): { x: number; y: number } | null {
   const c = gameCanvas.value;
@@ -443,11 +440,10 @@ const aetherColor=computed(()=>{const v=Math.round(127+aetherCharge.value*127); 
 const selectedCell=ref<Cell|null>(null); function selectCellById(id:number){const c=cellById[id]; if(c?.alive)selectedCell.value=c;}
 const selectedFamily=computed(()=>{if(!selectedCell.value)return{parents:[],children:[]}; const e=familyTree[selectedCell.value.id]||{parents:[],children:[]}; return{parents:e.parents.map(id=>cellById[id]).filter((c):c is Cell=>!!c?.alive),children:e.children.map(id=>cellById[id]).filter((c):c is Cell=>!!c?.alive),};});
 interface CGS{colour:string;count:number;percentage:number;avgAge:number;avgEnergy:number;avgStrength:number;}
-function groupKey(c:Cell){return colourGroupKey(c.r,c.g,c.b);}
 const groupStats=computed<CGS[]>(()=>
   computeGroupStats(
     livingCells.value,
-    groupKey,
+    colourGroupKeyFromCell,
     { avgAge:c=>c.age, avgEnergy:c=>c.energy, avgStrength:c=>c.strength }
   )
 );

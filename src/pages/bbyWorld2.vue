@@ -197,13 +197,14 @@ import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { usePanZoom } from '@/composables/usePanZoom';
-import { hexToRGB, colourGroupKey } from '@/utils/colourEngine';
+import { hexToRGB, colourGroupKeyFromCell } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
 import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
-import { resolveCardLabel } from '@/utils/cards';
+import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
 import { eventToCanvasCoords } from '@/utils/canvas';
+import { clamp } from '@/utils/math';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -298,10 +299,6 @@ interface ColourGroupStat {
   avgEnergy: number;
   avgStrength: number;
 }
-function groupKey(c: GridCell) {
-  return colourGroupKey(c.r, c.g, c.b);
-}
-
 const highlightedGroup = ref<string | null>(null);
 function selectGroup(colour: string) {
   highlightedGroup.value = highlightedGroup.value === colour ? null : colour;
@@ -335,7 +332,7 @@ const selectedFamily = computed(() => {
 const groupStats = computed<ColourGroupStat[]>(() =>
   computeGroupStats(
     livingCells.value,
-    groupKey,
+    colourGroupKeyFromCell,
     { avgAge: c => c.age, avgEnergy: c => c.energy, avgStrength: c => c.strength }
   )
 );
@@ -1238,37 +1235,12 @@ function update() {
 }
 
 /* ===================== Image / Stamping ===================== */
-function loadSelectedImage() {
+async function loadSelectedImage() {
   const label = selectedCardLabel.value;
   const selected = label ? cards.value.find(c => c.label.toLowerCase() === label.toLowerCase()) : undefined;
   if (!selected) return;
   selectedCardLabel.value = selected.label;
-
-  const tryUrls: string[] = [];
-  if (selected.stamp_url) tryUrls.push(selected.stamp_url);
-  tryUrls.push(selected.url.replace(/\.png$/i, '.stamp.png'));
-  tryUrls.push(selected.url);
-
-  const img = new Image();
-  img.crossOrigin = "Anonymous";
-  let idx = 0;
-
-  img.onload = () => {
-    const scale = Math.min(1, 64 / Math.max(img.width, img.height)); // MAX_STAMP=64
-    const outW = Math.max(1, Math.floor(img.width * scale));
-    const outH = Math.max(1, Math.floor(img.height * scale));
-
-    const tempCanvas = document.createElement("canvas");
-    const ctx = tempCanvas.getContext("2d", { willReadFrequently: true })!;
-    tempCanvas.width = outW; tempCanvas.height = outH;
-    (ctx as any).imageSmoothingEnabled = false;
-
-    ctx.drawImage(img, 0, 0, outW, outH);
-    loadedImageData = ctx.getImageData(0, 0, outW, outH);
-  };
-
-  img.onerror = () => { idx++; if (idx < tryUrls.length) img.src = tryUrls[idx]; };
-  img.src = tryUrls[idx];
+  loadedImageData = await loadCardStamp(selected);
 }
 
 const VISIBLE_ALPHA = 0.2 * 255
@@ -1914,9 +1886,8 @@ function getAffinity(a:GridCell, b:GridCell){
 }
 
 function adjustAffinity(a:GridCell, b:GridCell, delta:number){
-  const clamp = (v:number)=>Math.min(10, Math.max(-10, v));
-  a.friends[b.id] = clamp((a.friends[b.id]||0) + delta);
-  b.friends[a.id] = clamp((b.friends[a.id]||0) + delta);
+  a.friends[b.id] = clamp((a.friends[b.id]||0) + delta, -10, 10);
+  b.friends[a.id] = clamp((b.friends[a.id]||0) + delta, -10, 10);
 }
 
 // Determine whether two cells are close family (parent/child or siblings)
@@ -2132,7 +2103,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     frame[off+2] = c.b;
     frame[off+3] = Math.max(0, Math.min(255, c.a));
 
-    if (highlightedGroup.value && groupKey(c) === highlightedGroup.value) {
+    if (highlightedGroup.value && colourGroupKeyFromCell(c) === highlightedGroup.value) {
       frame[off  ] = Math.min(255, frame[off  ] + 100);
       frame[off+1] = Math.min(255, frame[off+1] + 100);
       frame[off+2] = Math.min(255, frame[off+2] + 100);

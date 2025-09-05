@@ -73,6 +73,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { clamp } from '@/utils/math';
 
 const { size, resolution } = defineProps<{ size: number; resolution: number }>();
 const emit = defineEmits<{
@@ -91,8 +92,8 @@ const resLocal = ref<number>(resolution);
 // keep local in sync if parent changes resolution externally
 watch(() => resolution, (v) => { if (v !== resLocal.value) resLocal.value = v; });
 
-function clamp(n: number, lo = RES_MIN, hi = RES_MAX) {
-  return Math.max(lo, Math.min(hi, Math.round(n)));
+function clampResolution(n: number, lo = RES_MIN, hi = RES_MAX) {
+  return clamp(Math.round(n), lo, hi);
 }
 
 function onSizeInput(e: Event) {
@@ -101,18 +102,18 @@ function onSizeInput(e: Event) {
 }
 
 function onResInput() {
-  const val = clamp(resLocal.value);
+  const val = clampResolution(resLocal.value);
   resLocal.value = val;
   emit('update:resolution', val);
 }
 
 function nudge(delta: number) {
-  resLocal.value = clamp(resLocal.value + delta);
+  resLocal.value = clampResolution(resLocal.value + delta);
   onResInput();
 }
 
 function setPreset(p: number) {
-  resLocal.value = clamp(p);
+  resLocal.value = clampResolution(p);
   onResInput();
 }
 </script>

@@ -58,6 +58,10 @@ export function colourGroupKey(r: number, g: number, b: number, step: number = D
   return rgbToHex(quantizeColour(r, step), quantizeColour(g, step), quantizeColour(b, step));
 }
 
+export function colourGroupKeyFromCell(c: { r: number; g: number; b: number }, step: number = DEFAULT_GROUP_STEP): string {
+  return colourGroupKey(c.r, c.g, c.b, step);
+}
+
 export function rgbToHsv(r:number,g:number,b:number){
   r/=255; g/=255; b/=255;
   const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;

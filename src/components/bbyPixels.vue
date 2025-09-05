@@ -16,10 +16,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, c
 import { throttle } from 'lodash';
 import BbySprite from '@/components/bbySprite.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
-import { stepColourOnce, clampByte, hexToRGB, rgbToHex } from '@/utils/colourEngine';
-import type { EQType, RgbColor } from '@/utils/colourEngine';
-
-type RgbaColor = { r: number; g: number; b: number; a: number };
+import { stepColourOnce, clampByte, hexToRGB, rgbToHex, type EQType, type RgbColor, type RgbaColor } from '@/utils/colourEngine';
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
 type StrokeState = { brushColor: RgbColor; };
 let strokeState: StrokeState | null = null;

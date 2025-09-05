@@ -196,11 +196,12 @@
 import { onMounted, ref, computed, onUnmounted, watch, reactive } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
-import { rgbToHex } from '@/utils/colourEngine';
+import { rgbToHex, luminance } from '@/utils/colourEngine';
+import { formatTicks as baseFormatTicks } from '@/utils/time';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
-function formatTicks(ticks:number){ const d=Math.floor(ticks/TICKS_PER_DAY); return `Y${Math.floor(d/DAYS_PER_YEAR)} D${d%DAYS_PER_YEAR}`; }
+const formatTicks=(ticks:number)=>baseFormatTicks(ticks, TICKS_PER_DAY, DAYS_PER_YEAR);
 
 // --- UI STATE ---
 const boardSize=ref<number>(128); function S(){return boardSize.value;}
@@ -414,7 +415,7 @@ function countAdjacent(x:number,y:number):number{let c=0; for(let dy=-1;dy<=1;dy
 function drawGrid(ctx: CanvasRenderingContext2D){
   if(!frameImg)return; ctx.imageSmoothingEnabled=false; const s=S();
   for(let y=0;y<s;y++){for(let x=0;x<s;x++){const off=(x+y*s)*4,i=I(x,y); const rock=solidGrid[i]*30,heat=heatField[i]*50,nutr=nutrientField[i]*50,moist=moistureField[i]*50; const dyeA=Math.min(0.4,(dyeRField[i]+dyeGField[i]+dyeBField[i])/765); const bR=10+rock+heat,bG=10+rock+nutr,bB=10+rock+moist; frame[off]=Math.min(255,bR*(1-dyeA)+dyeRField[i]*dyeA); frame[off+1]=Math.min(255,bG*(1-dyeA)+dyeGField[i]*dyeA); frame[off+2]=Math.min(255,bB*(1-dyeA)+dyeBField[i]*dyeA); frame[off+3]=255;}}
-  for(const c of livingCells.value){if(!c.alive)continue; const off=I(c.x,c.y)*4; if(c.isInsane){const grey=c.r*0.299+c.g*0.587+c.b*0.114; frame[off]=grey;frame[off+1]=grey;frame[off+2]=grey;}else{frame[off]=c.r;frame[off+1]=c.g;frame[off+2]=c.b;} frame[off+3]=c.a;}
+  for(const c of livingCells.value){if(!c.alive)continue; const off=I(c.x,c.y)*4; if(c.isInsane){const grey=luminance(c); frame[off]=grey;frame[off+1]=grey;frame[off+2]=grey;}else{frame[off]=c.r;frame[off+1]=c.g;frame[off+2]=c.b;} frame[off+3]=c.a;}
   ctx.putImageData(frameImg,0,0);
 }
 let resizeObs:ResizeObserver|null=null;

@@ -184,17 +184,7 @@ import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { throttle } from 'lodash';
 import { rgbToHex } from '@/utils/colourEngine';
-
-// --- TIME & FORMATTING ---
-const TICKS_PER_DAY = 100;
-const DAYS_PER_YEAR = 365;
-function formatTicks(ticks: number) {
-  if (ticks < 0) return "---";
-  const totalDays = Math.floor(ticks / TICKS_PER_DAY);
-  const year = Math.floor(totalDays / DAYS_PER_YEAR);
-  const day = totalDays % DAYS_PER_YEAR;
-  return `Y${year} D${day}`;
-}
+import { formatTicks } from '@/utils/time';
 
 // --- WORLD & UI STATE ---
 const boardSize = ref<number>(128);

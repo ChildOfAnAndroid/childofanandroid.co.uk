@@ -1,6 +1,7 @@
 // src/utils/colourEngine.ts
 export type EQType = 'user'|'bby'|'red'|'green'|'blue'|'rainbow';
 export type RgbColor = { r: number; g: number; b: number };
+export type RgbaColor = { r: number; g: number; b: number; a: number };
 
 export type StepContext = {
   activeEqs: Set<EQType>;
@@ -38,6 +39,14 @@ export function hexToRGB(hx: string): RgbColor {
 
 export function rgbToHex(r: number, g: number, b: number): string {
   return `#${[r, g, b].map(x => clampByte(x).toString(16).padStart(2, '0')).join('')}`;
+}
+
+export function luminance({ r, g, b }: RgbColor): number {
+  return r * 0.299 + g * 0.587 + b * 0.114;
+}
+
+export function isColorDark(c: RgbColor): boolean {
+  return luminance(c) < 128;
 }
 
 export function rgbToHsv(r:number,g:number,b:number){

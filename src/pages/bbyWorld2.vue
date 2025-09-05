@@ -223,6 +223,7 @@ import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { rgbToHex, hexToRGB } from '@/utils/colourEngine';
+import { formatTicks as baseFormatTicks } from '@/utils/time';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -230,13 +231,7 @@ const { fetchBbyBookGallery, currentColour } = bbyUse();
 // world time constants
 const TICKS_PER_DAY = 69;
 const DAYS_PER_YEAR = 420;
-
-function formatTicks(ticks: number) {
-  const totalDays = Math.floor(ticks / TICKS_PER_DAY);
-  const year = Math.floor(totalDays / DAYS_PER_YEAR);
-  const day = totalDays % DAYS_PER_YEAR;
-  return `Year ${year} Day ${day}`;
-}
+const formatTicks = (ticks:number) => baseFormatTicks(ticks, TICKS_PER_DAY, DAYS_PER_YEAR, {year:'Year ', day:'Day '});
 
 /* ============== BOARD SIZE (dynamic) ============== */
 const boardSize = ref<number>(64);            // default 64×64

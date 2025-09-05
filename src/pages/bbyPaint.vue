@@ -394,13 +394,10 @@ import colourScope from '@/components/colourScope.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
-import { rgbToHex, hexToRGB } from '@/utils/colourEngine';
+import { rgbToHex, hexToRGB, isColorDark, type EQType, type RgbaColor } from '@/utils/colourEngine';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage, getRandomBbyFactPrompt } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
-type RgbColor = { r: number; g: number; b: number };
-type RgbaColor = { r: number; g: number; b: number; a: number };
-type EQType = 'user' | 'bby' | 'red' | 'green' | 'blue' | 'rainbow';
 type LfoWaveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'ramp' | 'random' | 'sequence';
 type InfluenceTarget = 'rainbowInfluence' | 'bbyInfluence' | 'userColorInfluence' | 'redInfluence' | 'greenInfluence' | 'blueInfluence';
 type ResizeDirection = 'left' | 'right' | 'top' | 'bottom';
@@ -485,7 +482,6 @@ let isDrawingOnSequencer = false;
 
 // helpers
 const clamp = (v:number, mi:number, ma:number)=>Math.max(mi, Math.min(ma, v));
-const isColorDark = ({ r, g, b }: RgbColor): boolean => (r * 0.299 + g * 0.587 + b * 0.114) < 128;
 
 // number formatting + controls
 function format2(n:number|{value:number}){ const v=typeof n==='number'?n:(n as any).value; return (Math.round(v*100)/100).toFixed(2); }

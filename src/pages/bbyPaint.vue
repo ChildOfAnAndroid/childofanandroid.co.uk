@@ -394,6 +394,7 @@ import colourScope from '@/components/colourScope.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import bubbleGraveyard from '@/components/bubbleGraveyard.vue';
 import tempoFader from '@/components/tempoFader.vue';
+import { rgbToHex, hexToRGB } from '@/utils/colourEngine';
 const { currentColour, saveCompositeToServer, pollActivityForAutosnap, userColour, author, saveTestGridImage, getRandomBbyFactPrompt } = bbyUse();
 
 type Mode = 'paint' | 'blend' | 'erase' | 'eyedropper' | 'behind';
@@ -484,9 +485,6 @@ let isDrawingOnSequencer = false;
 
 // helpers
 const clamp = (v:number, mi:number, ma:number)=>Math.max(mi, Math.min(ma, v));
-const clampByte = (x:number)=>Math.max(0, Math.min(255, Math.round(x)));
-const rgbToHex = (r:number,g:number,b:number)=>"#"+[r,g,b].map(x=>{const h=clampByte(x).toString(16);return h.length===1?'0'+h:h;}).join('');
-const hexToRGB = (hx:string): RgbColor => { const h=hx.replace('#',''); return {r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16)}; };
 const isColorDark = ({ r, g, b }: RgbColor): boolean => (r * 0.299 + g * 0.587 + b * 0.114) < 128;
 
 // number formatting + controls

@@ -222,6 +222,7 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { throttle } from 'lodash';
 import { bbyUse } from '@/composables/bbyUse.ts';
+import { rgbToHex, hexToRGB } from '@/utils/colourEngine';
 
 // pull Baby’s currentColour + gallery
 const { fetchBbyBookGallery, currentColour } = bbyUse();
@@ -362,15 +363,6 @@ interface ColourGroupStat {
   avgStrength: number;
 }
 
-function rgbToHex(r: number, g: number, b: number) {
-  return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function hexToRgb(hex: string) {
-  const h = hex.replace('#', '');
-  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
-}
-
 const GROUP_STEP = 48; // bucket size for colour grouping
 const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
 function groupKeyFromRGB(r: number, g: number, b: number) {
@@ -387,7 +379,7 @@ function selectGroup(colour: string) {
 
 const selectedGroupInfo = computed(() => {
   if (!highlightedGroup.value) return null;
-  const { r, g, b } = hexToRgb(highlightedGroup.value);
+  const { r, g, b } = hexToRGB(highlightedGroup.value);
   const msgs: string[] = [];
   if (r > g && r > b) msgs.push('High red boosts aggression and heat-seeking.');
   if (g > r && g > b) msgs.push('Green fuels metabolism and nutrient hunger.');

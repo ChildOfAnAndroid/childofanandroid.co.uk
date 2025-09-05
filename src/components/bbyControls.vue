@@ -17,11 +17,11 @@
 import { ref } from 'vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
 import chatControls from '@/components/chatControls.vue';
+import { hexToRGB, rgbToHex } from '@/utils/colourEngine';
 
 const { bbyState, say, requestStateChange, sayRandomFact, author, setUsername, clearBubbles, userColour, setUserColour, setBbyTintColour } = bbyUse();
 
-const toHex = (c: {r: number, g: number, b: number}) => `#${[c.r, c.g, c.b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
-const colourInput = ref(toHex(userColour.value));
+const colourInput = ref(rgbToHex(userColour.value.r, userColour.value.g, userColour.value.b));
 const usernameInput = ref(author.value);
 
 const handleFactClick = () => {
@@ -37,13 +37,12 @@ const handleUsernameUpdate = () => {
 };
 
 const updateUserColourAndTint = () => {
-  const hex = colourInput.value.replace('#', '');
-  if (hex.length === 6) {
-    const R = parseInt(hex.substring(0, 2), 16);
-    const G = parseInt(hex.substring(2, 4), 16);
-    const B = parseInt(hex.substring(4, 6), 16);
-    setUserColour(R, G, B); // Set for future bubbles
-    setBbyTintColour(R, G, B); // Set for BBY tint right now
+  try {
+    const { r, g, b } = hexToRGB(colourInput.value);
+    setUserColour(r, g, b); // Set for future bubbles
+    setBbyTintColour(r, g, b); // Set for BBY tint right now
+  } catch {
+    /* ignore invalid colour */
   }
 };
 
@@ -51,7 +50,7 @@ const randomiseUserColourAndTint = () => {
   const R = Math.floor(Math.random() * 256);
   const G = Math.floor(Math.random() * 256);
   const B = Math.floor(Math.random() * 256);
-  colourInput.value = `#${[R, G, B].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+  colourInput.value = rgbToHex(R, G, B);
   setUserColour(R, G, B);
   setBbyTintColour(R, G, B);
 };

@@ -16,7 +16,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, defineProps, defineExpose, c
 import { throttle } from 'lodash';
 import BbySprite from '@/components/bbySprite.vue';
 import { bbyUse } from '@/composables/bbyUse.ts';
-import { stepColourOnce } from '@/utils/colourEngine';
+import { stepColourOnce, clampByte, hexToRGB, rgbToHex } from '@/utils/colourEngine';
 import type { EQType, RgbColor } from '@/utils/colourEngine';
 
 type RgbaColor = { r: number; g: number; b: number; a: number };
@@ -116,11 +116,8 @@ function exportCompositeCanvas(): HTMLCanvasElement | null {
   return outCanvas;
 }
 
-function clampByte(x:number){ return Math.max(0, Math.min(255, Math.round(x))); }
 // REMOVED: The global idx function was the source of the bug.
 // function idx(x:number,y:number){ return (y*SPRITE_W+x)*4; }
-function hexToRGB(hx:string): RgbColor { const h=hx.replace('#',''); return {r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16)}; }
-function rgbToHex(r:number,g:number,b:number){ return "#"+[r,g,b].map(x=>{const hex=clampByte(x).toString(16); return hex.length===1?'0'+hex:hex;}).join(''); }
 let cachedBase:Uint8ClampedArray|null=null;
 function getBabyCanvas(){ if(props.isTestCanvas) return null; const el = spriteComp.value?.$el as HTMLElement|undefined; return el&&el.tagName==='CANVAS' ? (el as HTMLCanvasElement) : null; }
 function cacheBabyAtStrokeStart(){
@@ -254,6 +251,15 @@ function onPointerLeave(){
 function blendRgbColors(base: RgbColor, blend: RgbColor, amount: number): RgbColor {
   const inv = 1 - amount; return { r: clampByte(blend.r * amount + base.r * inv), g: clampByte(blend.g * amount + base.g * inv), b: clampByte(blend.b * amount + base.b * inv), };
 }
+function applyBrushColor(stroke: StrokeState, x:number, y:number){
+  const next = stepColourOnce(stroke.brushColor, { activeEqs: props.activeEQs, userColour: props.userSetColor, bbyColour: props.bbyColor, tempo: props.tempo, userColorInfluence: props.userColorInfluence, bbyInfluence: props.bbyInfluence, redInfluence: props.redInfluence, greenInfluence: props.greenInfluence, blueInfluence: props.blueInfluence, rainbowInfluence: props.rainbowInfluence, baseStep: 0.05, rainbowHueStep: 20, });
+  setPixel(x, y, next.r, next.g, next.b, 255);
+  stroke.brushColor = next;
+  const finalHex = rgbToHex(next.r, next.g, next.b);
+  if (props.hexColor !== finalHex) emit("color-picked", finalHex);
+  if (!props.isTestCanvas) throttledReactionUpdate(next.r, next.g, next.b);
+}
+
 function paint(e:PointerEvent){
   const p=cssToPixel(e.clientX,e.clientY); if(!p || !strokeState) return;
   const pixelKey = `${p.x},${p.y}`; if (isDown && paintedPixelsInStroke.has(pixelKey) && (props.mode === 'paint' || props.mode === 'behind')) return;
@@ -261,19 +267,15 @@ function paint(e:PointerEvent){
   const { x, y } = p;
   switch (props.mode) {
     case 'eyedropper': { const c = readCurrentRGB(x,y); if(c) emit('color-picked', rgbToHex(c.r,c.g,c.b)); return; }
-    case 'paint': {
-      const next = stepColourOnce(strokeState.brushColor, { activeEqs: props.activeEQs, userColour: props.userSetColor, bbyColour: props.bbyColor, tempo: props.tempo, userColorInfluence: props.userColorInfluence, bbyInfluence: props.bbyInfluence, redInfluence: props.redInfluence, greenInfluence: props.greenInfluence, blueInfluence: props.blueInfluence, rainbowInfluence: props.rainbowInfluence, baseStep: 0.05, rainbowHueStep: 20, });
-      setPixel(x, y, next.r, next.g, next.b, 255); strokeState.brushColor = next; const finalHex = rgbToHex(next.r, next.g, next.b);
-      if (props.hexColor !== finalHex) emit('color-picked', finalHex); if (!props.isTestCanvas) throttledReactionUpdate(next.r, next.g, next.b);
-      break;
-    }
-    case 'behind': {
-      const existing = readCurrentRGB(x, y); if (existing.a !== 0) return;
-      const next = stepColourOnce(strokeState.brushColor, { activeEqs: props.activeEQs, userColour: props.userSetColor, bbyColour: props.bbyColor, tempo: props.tempo, userColorInfluence: props.userColorInfluence, bbyInfluence: props.bbyInfluence, redInfluence: props.redInfluence, greenInfluence: props.greenInfluence, blueInfluence: props.blueInfluence, rainbowInfluence: props.rainbowInfluence, baseStep: 0.05, rainbowHueStep: 20, });
-      setPixel(x, y, next.r, next.g, next.b, 255); strokeState.brushColor = next; const finalHex = rgbToHex(next.r, next.g, next.b);
-      if (props.hexColor !== finalHex) emit('color-picked', finalHex); if (!props.isTestCanvas) throttledReactionUpdate(next.r, next.g, next.b);
-      break;
-    }
+      case 'paint': {
+        applyBrushColor(strokeState, x, y);
+        break;
+      }
+      case 'behind': {
+        const existing = readCurrentRGB(x, y); if (existing.a !== 0) return;
+        applyBrushColor(strokeState, x, y);
+        break;
+      }
     case 'blend': {
       const baseColor = readCurrentRGB(x, y); if (baseColor.a === 0) return;
       const brushColor = hexToRGB(props.hexColor); const blendAmount = (props.blendOpacity / 100) * (props.tempo / 100);

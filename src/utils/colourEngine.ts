@@ -36,6 +36,10 @@ export function hexToRGB(hx: string): RgbColor {
   };
 }
 
+export function rgbToHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b].map(x => clampByte(x).toString(16).padStart(2, '0')).join('')}`;
+}
+
 export function rgbToHsv(r:number,g:number,b:number){
   r/=255; g/=255; b/=255;
   const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;

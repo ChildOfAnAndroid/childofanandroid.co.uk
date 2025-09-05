@@ -183,6 +183,7 @@
 import { onMounted, ref, computed, onUnmounted, watch } from "vue";
 import { bbyUse } from '@/composables/bbyUse.ts';
 import { throttle } from 'lodash';
+import { rgbToHex } from '@/utils/colourEngine';
 
 // --- TIME & FORMATTING ---
 const TICKS_PER_DAY = 100;
@@ -693,7 +694,6 @@ const selectedFamily = computed(() => {
 });
 interface ColourGroupStat { colour: string; count: number; percentage: number; avgAge: number; avgCharge: number; avgMass: number; }
 const GROUP_STEP = 48; const quant = (v: number) => Math.min(255, Math.round(v / GROUP_STEP) * GROUP_STEP);
-function rgbToHex(r: number, g: number, b: number) { return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`; }
 function groupKey(c: Cell) { return rgbToHex(quant(c.r), quant(c.g), quant(c.b)); }
 const groupStats = computed<ColourGroupStat[]>(() => {
   const base = { count: 0, totalAge: 0, totalCharge: 0, totalMass: 0 };

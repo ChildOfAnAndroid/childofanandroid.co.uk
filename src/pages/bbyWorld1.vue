@@ -163,7 +163,7 @@ import { throttle } from 'lodash';
 import { colourGroupKeyFromCell } from '@/utils/colourEngine';
 import { useWorldTime } from '@/composables/useWorldTime';
 import { computeGroupStats } from '@/utils/groupStats';
-import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
+import { resolveCardLabel, loadCardStamp, type StampCard } from '@/utils/cards';
 import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { rand, seedRand } from '@/utils/rng';
@@ -182,7 +182,7 @@ const scopeBox = ref<HTMLDivElement | null>(null);
 const scopeActive = ref(false);
 let lastMouseEvent: MouseEvent | null = null;
 const { fetchBbyBookGallery } = bbyUse();
-const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);
+const cards = ref<StampCard[]>([]);
 const selectedCardLabel = ref<string | null>(null);
 let loadedImageData: ImageData | null = null;
 

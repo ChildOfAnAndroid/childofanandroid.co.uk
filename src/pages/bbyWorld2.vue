@@ -195,7 +195,7 @@ import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
-import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
+import { resolveCardLabel, loadCardStamp, type StampCard } from '@/utils/cards';
 import { eventToCellCoords } from '@/utils/canvas';
 import { clamp } from '@/utils/math';
 import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
@@ -233,7 +233,7 @@ function onMouseMove(e: MouseEvent) {
 const { ticksPerSecond, tickInterval, isPaused, speedUp, slowDown, togglePause } = useSimulationSpeed(30);
 
 /* ===================== Cards / Stamps ===================== */
-const cards = ref<{ label: string; url: string; stamp_url?: string }[]>([]);
+const cards = ref<StampCard[]>([]);
 const selectedCardLabel = ref<string | null>(null);
 let loadedImageData: ImageData | null = null;
 

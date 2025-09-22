@@ -4,6 +4,7 @@ import { reactive, readonly, ref, watch } from 'vue';
 import _ from 'lodash';
 import { api } from '@/api'; // <-- Import the new API module
 import { setRootColourVars } from '@/utils/colourEngine';
+import { getPrimaryStampUrl } from '@/utils/cards';
 
 interface Bubble {
   id: string;
@@ -353,24 +354,42 @@ export async function fetchBbyBookGallery() {
       try { return decodeURIComponent(l); } catch { return l; }
     };
 
-    return gallery
-      // Decode any percent-encoded labels so emoji names match the bbybook keys.
-      .map(item => ({
-        ...item,
-        label: item.label ? decodeLabel(item.label) : undefined,
-      }))
-      // Only include gallery items that have a matching entry in the bbybook.
-      .filter((item): item is { url: string; stamp_url?: string; author?: string; label: string } =>
-        !!item.label && !!bookLower[item.label.toLowerCase()]
-      )
-      // Return the full data needed for the styled card.
-      .map(item => ({
+    const results: {
+      url: string;
+      stamp_url: string;
+      imageAuthor?: string;
+      factName: string;
+      factData: { value: string; author: string; timestamp: number; teach_bonus: number; num_produced: number; id: number };
+    }[] = [];
+
+    for (const item of gallery) {
+      const decodedLabel = item.label ? decodeLabel(item.label) : undefined;
+      if (!decodedLabel) continue;
+
+      const factData = bookLower[decodedLabel.toLowerCase()];
+      if (!factData) continue;
+
+      const stampUrl = getPrimaryStampUrl({
+        label: decodedLabel,
         url: item.url,
-        stamp_url: item.stamp_url, // Pass through the optional stamp_url
+        stamp_url: item.stamp_url,
+      });
+
+      if (!stampUrl) {
+        console.warn('[bbyBook] skipping gallery item without stamp image:', decodedLabel);
+        continue;
+      }
+
+      results.push({
+        url: item.url,
+        stamp_url: stampUrl,
         imageAuthor: item.author,
-        factName: item.label,      // The name of the fact (e.g., "cat" or an emoji)
-        factData: bookLower[item.label.toLowerCase()] // The full object with all details
-      }));
+        factName: decodedLabel,
+        factData,
+      });
+    }
+
+    return results;
   } catch (error) {
     console.error('Could not fetch bbybook gallery:', error);
     return [];

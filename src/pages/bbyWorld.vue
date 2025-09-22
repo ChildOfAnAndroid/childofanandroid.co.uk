@@ -194,7 +194,7 @@ import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
-import { resolveCardLabel, loadCardStamp } from '@/utils/cards';
+import { resolveCardLabel, loadCardStamp, type StampCard } from '@/utils/cards';
 import { screenToWorld } from '@/utils/canvas';
 import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 
@@ -208,7 +208,7 @@ const scopeCanvas=ref<HTMLCanvasElement|null>(null), scopeBox=ref<HTMLDivElement
 const scopeActive=ref(false);
 let lastMouseEvent:MouseEvent|null=null;
 const { fetchBbyBookGallery }=bbyUse();
-const cards=ref<{label:string; url:string; stamp_url?:string}[]>([]);
+const cards=ref<StampCard[]>([]);
 const selectedCardLabel=ref<string|null>(null);
 let loadedImageData:ImageData|null=null;
 

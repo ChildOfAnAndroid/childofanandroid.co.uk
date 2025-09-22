@@ -9,11 +9,36 @@ export function resolveCardLabel<T extends CardLike>(cards: T[], label: string):
 
 export interface StampCard extends CardLike { url: string; stamp_url?: string }
 
+const STAMP_SUFFIX_RE = /\.stamp\.png$/i;
+const PNG_SUFFIX_RE = /\.png$/i;
+
+function ensureStampUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (STAMP_SUFFIX_RE.test(url)) return url;
+  if (PNG_SUFFIX_RE.test(url)) return url.replace(PNG_SUFFIX_RE, '.stamp.png');
+  return null;
+}
+
+export function getStampUrlCandidates(card: StampCard): string[] {
+  const urls = new Set<string>();
+  const preferred = ensureStampUrl(card.stamp_url);
+  if (preferred) urls.add(preferred);
+  const derived = ensureStampUrl(card.url);
+  if (derived) urls.add(derived);
+  return Array.from(urls);
+}
+
+export function getPrimaryStampUrl(card: StampCard): string | null {
+  const [primary] = getStampUrlCandidates(card);
+  return primary ?? null;
+}
+
 export async function loadCardStamp(card: StampCard, maxSize = 64): Promise<ImageData | null> {
-  const urls: string[] = [];
-  if (card.stamp_url) urls.push(card.stamp_url);
-  urls.push(card.url.replace(/\.png$/i, '.stamp.png'));
-  urls.push(card.url);
+  const urls = getStampUrlCandidates(card);
+  if (urls.length === 0) {
+    console.error('No stamp URL available for card:', card.label);
+    return null;
+  }
 
   for (const url of urls) {
     try {

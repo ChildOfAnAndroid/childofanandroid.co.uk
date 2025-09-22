@@ -216,6 +216,8 @@ const gameCanvas = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLDivElement | null>(null);
 const scopeCanvas = ref<HTMLCanvasElement | null>(null);
 const scopeBox = ref<HTMLDivElement | null>(null);
+let canvasCtx: CanvasRenderingContext2D | null = null;
+let scopeCtx: CanvasRenderingContext2D | null = null;
 const hoverCell = ref<GridCell | null>(null);
 const hoverEnv = ref({ x: 0, y: 0, heat: 0, moisture: 0, nutrient: 0 });
 let lastMouseEvent: MouseEvent | null = null;
@@ -244,6 +246,18 @@ function selectCard(label: string) {
 /* ===================== Cell / World Types ===================== */
 type Heading = 0|1|2|3;
 const HEADING_VECS: [number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+const CARDINAL_DIRS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+const ALL_NEIGHBOUR_DIRS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [1, 1], [1, -1], [-1, 1], [-1, -1],
+];
+const neighbourOrder = ALL_NEIGHBOUR_DIRS.map((_, idx) => idx);
+const headingOrder: Heading[] = [0, 1, 2, 3];
 
 type GridCell = {
   id:number;
@@ -433,13 +447,13 @@ function applyPhysics(c: GridCell, dom: ColourName) {
 function applyRules(c: GridCell, dom: ColourName, _domR:number, _domG:number, _domB:number, ii:number){
   if (dom === 'blue') {
     let count = 0;
-    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    for (const [dx, dy] of CARDINAL_DIRS) {
       const n = spatialMap[I((c.x + dx + S()) % S(), (c.y + dy + S()) % S())];
       if (n && n.alive && dominantColour(n) === 'blue') count++;
     }
     if (count >= 2) c.energy = Math.min(260, c.energy + count * 0.2);
   } else if (dom === 'red') {
-    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    for (const [dx, dy] of CARDINAL_DIRS) {
       const nx = (c.x + dx + S()) % S();
       const ny = (c.y + dy + S()) % S();
       const n = spatialMap[I(nx, ny)];
@@ -523,6 +537,15 @@ function reseedRNG(seed?:number){
 reseedRNG();
 function rand(){ return rng(); }
 
+function shuffleNeighbourOrder() {
+  for (let i = neighbourOrder.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = neighbourOrder[i];
+    neighbourOrder[i] = neighbourOrder[j];
+    neighbourOrder[j] = tmp;
+  }
+}
+
 /* ===================== Init / Resize ===================== */
 function allocateWorldArrays(size:number){
   heatField      = new Float32Array(size*size);
@@ -533,9 +556,10 @@ function allocateWorldArrays(size:number){
   dyeGField      = new Float32Array(size*size);
   dyeBField      = new Float32Array(size*size);
   spatialMap     = new Array(size*size).fill(null);
-  const ctx = gameCanvas.value?.getContext("2d");
-  if (ctx) {
-    frameImg = ctx.createImageData(size, size);
+  const canvas = gameCanvas.value;
+  canvasCtx = canvas ? canvas.getContext("2d") : null;
+  if (canvasCtx) {
+    frameImg = canvasCtx.createImageData(size, size);
     frame = frameImg.data;
   } else {
     frameImg = null;
@@ -589,6 +613,7 @@ onMounted(async () => {
   if (scope) {
     scope.width = 256;
     scope.height = 256;
+    scopeCtx = scope.getContext('2d');
   }
 
   animationFrameId = requestAnimationFrame(mainLoop);
@@ -606,8 +631,17 @@ watch(selectedCardLabel, () => loadSelectedImage());
 const MAX_UPDATES_PER_FRAME = 5;
 
 function mainLoop(timestamp: number) {
-  const ctx = gameCanvas.value?.getContext("2d");
-  if (!ctx) {
+  if (!canvasCtx) {
+    const canvas = gameCanvas.value;
+    if (canvas) {
+      canvasCtx = canvas.getContext("2d");
+      if (canvasCtx && !frameImg) {
+        frameImg = canvasCtx.createImageData(canvas.width, canvas.height);
+        frame = frameImg.data;
+      }
+    }
+  }
+  if (!canvasCtx || !frameImg) {
     animationFrameId = requestAnimationFrame(mainLoop);
     return;
   }
@@ -637,7 +671,7 @@ function mainLoop(timestamp: number) {
     }
   }
 
-  drawGrid(ctx);
+  drawGrid();
   if (lastMouseEvent) updateScope(lastMouseEvent);
   animationFrameId = requestAnimationFrame(mainLoop);
 }
@@ -757,7 +791,7 @@ function update() {
     c.age += 1;
 
     const ii = I(c.x, c.y);
-    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    for (const [dx, dy] of CARDINAL_DIRS) {
       const nx = (c.x + dx + S()) % S();
       const ny = (c.y + dy + S()) % S();
       const n = spatialMap[I(nx, ny)];
@@ -926,10 +960,9 @@ function update() {
               // determine where to push removed material
               let px: number, py: number;
               if (dx === 0 && dy === 0) {
-                const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-                const d = dirs[(rand() * dirs.length) | 0];
-                px = (c.x + d[0] + S()) % S();
-                py = (c.y + d[1] + S()) % S();
+                const dir = CARDINAL_DIRS[(rand() * CARDINAL_DIRS.length) | 0];
+                px = (c.x + dir[0] + S()) % S();
+                py = (c.y + dir[1] + S()) % S();
               } else {
                 px = (c.x + dx * 2 + S()) % S();
                 py = (c.y + dy * 2 + S()) % S();
@@ -1037,8 +1070,7 @@ function update() {
       // Examine all four cardinal neighbours to locate height differences.
       // A copy-paste bug duplicated the left direction and omitted the up
       // check, which weakened blue's downhill attraction.
-      const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
-      for (const [dx,dy] of dirs){
+      for (const [dx,dy] of CARDINAL_DIRS){
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
         const ni = I(nx, ny);
@@ -1061,8 +1093,7 @@ function update() {
     }
 
     // --- Cooperation: share energy with compatible neighbours ---
-    const shareDirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
-    for (const [dx,dy] of shareDirs){
+    for (const [dx,dy] of CARDINAL_DIRS){
       const nx = (c.x + dx + S()) % S();
       const ny = (c.y + dy + S()) % S();
       const neighbour = spatialMap[I(nx, ny)];
@@ -1083,7 +1114,7 @@ function update() {
 
     // NEW: Green (plant) cells siphon energy from adjacent blue (water) cells
     if (domG > 0) {
-      for (const [dx, dy] of shareDirs) {
+      for (const [dx, dy] of CARDINAL_DIRS) {
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
         const neighbour = spatialMap[I(nx, ny)];
@@ -1099,7 +1130,7 @@ function update() {
 
     // NEW: Fire cells consume nearby green cells for fuel
     if (domR > 0) {
-      for (const [dx, dy] of shareDirs) {
+      for (const [dx, dy] of CARDINAL_DIRS) {
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
         const neighbour = spatialMap[I(nx, ny)];
@@ -1135,7 +1166,7 @@ function update() {
         c.cargo += take * 100;
       }
       // Gift cargo to other animals
-      for (const [dx, dy] of shareDirs) {
+      for (const [dx, dy] of CARDINAL_DIRS) {
         const nx = (c.x + dx + S()) % S();
         const ny = (c.y + dy + S()) % S();
         const neighbour = spatialMap[I(nx, ny)];
@@ -1154,7 +1185,7 @@ function update() {
     if (c.strength > 0.8 && solidGrid[ii] > 2.5) {
         let bestTarget: [number, number] | null = null;
         let lowestSolid = solidGrid[ii];
-        for (const [dx, dy] of shareDirs) {
+        for (const [dx, dy] of CARDINAL_DIRS) {
             const nx = (c.x + dx + S()) % S();
             const ny = (c.y + dy + S()) % S();
             const ni = I(nx, ny);
@@ -1172,7 +1203,7 @@ function update() {
     if (c.energy <= 0) {
       if (domB > 0) {
         let pooled = false;
-        for (const [dx, dy] of shareDirs) {
+        for (const [dx, dy] of CARDINAL_DIRS) {
           const nx = (c.x + dx + S()) % S();
           const ny = (c.y + dy + S()) % S();
           const neighbour = spatialMap[I(nx, ny)];
@@ -1360,8 +1391,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
   const prefs: {h:Heading, score:number}[] = [];
 
   // Evaluate directions in a random order to avoid directional bias
-  const headings: Heading[] = [0, 1, 2, 3];
-  shuffleArray(headings);
+  shuffleArray(headingOrder);
 
   // Find the cell's most compatible mate and vector toward it
   // but only if the cell has enough energy to prioritise reproduction.
@@ -1390,7 +1420,7 @@ function chooseChainDir(cell:GridCell): [number,number,Heading] {
     fertFactor = (cell.fertility + bestMate.fertility) / 2;
   }
 
-  for (const h of headings) {
+  for (const h of headingOrder) {
 
     const [dx,dy] = HEADING_VECS[h];
     const nx = (cell.x + dx + S()) % S();
@@ -1531,13 +1561,15 @@ function findEmptyAdjacent(x:number,y:number): [number,number] | null {
   // only available space for a newborn was directly above the parents, the
   // function incorrectly reported no free spot and reproduction failed.
   // Include all four cardinal directions explicitly.
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-  shuffleArray(dirs);
-  for (const [dx,dy] of dirs) {
+  // Reuse the shared direction order so we avoid allocating a fresh array
+  // every time the function runs inside the frame update loop.
+  shuffleNeighbourOrder();
+  for (const orderIdx of neighbourOrder) {
+    const [dx, dy] = ALL_NEIGHBOUR_DIRS[orderIdx];
     const nx = (x + dx + S()) % S();
     const ny = (y + dy + S()) % S();
-    const idx = I(nx, ny);
-    if (!spatialMap[idx]) {
+    const cellIdx = I(nx, ny);
+    if (!spatialMap[cellIdx]) {
       return [nx, ny];
     }
   }
@@ -1551,9 +1583,8 @@ function updateAttachment(c: GridCell){
   // Check all eight surrounding tiles. A previous copy/paste error duplicated
   // the left direction and omitted the diagonals which allowed attached cells
   // connected only diagonally to be treated as detached.
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   let connected = false;
-  for (const [dx,dy] of dirs){
+  for (const [dx,dy] of ALL_NEIGHBOUR_DIRS){
     const nx = (c.x + dx + S()) % S();
     const ny = (c.y + dy + S()) % S();
     const n = spatialMap[I(nx, ny)];
@@ -1568,9 +1599,8 @@ function updateAttachment(c: GridCell){
 function countOccupiedAdjacent(x:number,y:number): number {
   // Check all eight neighbours; the previous duplication of [-1,0] meant the
   // tile above was ignored.
-  const dirs:[number,number][] = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   let c=0;
-  for (const [dx,dy] of dirs){
+  for (const [dx,dy] of ALL_NEIGHBOUR_DIRS){
     const nx=(x+dx+S())%S();
     const ny=(y+dy+S())%S();
     if (spatialMap[I(nx,ny)]) c++;
@@ -1580,7 +1610,7 @@ function countOccupiedAdjacent(x:number,y:number): number {
 
 function countAdjacentBlue(x:number,y:number): number {
   let c=0;
-  for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+  for (const [dx,dy] of CARDINAL_DIRS){
     const nx=(x+dx+S())%S();
     const ny=(y+dy+S())%S();
     const n=spatialMap[I(nx,ny)];
@@ -1591,7 +1621,7 @@ function countAdjacentBlue(x:number,y:number): number {
 
 function dominantBlueHeading(cell:GridCell): Heading|null {
   const counts=[0,0,0,0];
-  for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+  for (const [dx,dy] of CARDINAL_DIRS){
     const nx=(cell.x+dx+S())%S();
     const ny=(cell.y+dy+S())%S();
     const n=spatialMap[I(nx,ny)];
@@ -2011,43 +2041,50 @@ function deposit(cell:GridCell){
 }
 
 /* ===================== Draw ===================== */
-function drawGrid(ctx: CanvasRenderingContext2D) {
-  if (!frameImg) return;
+function drawGrid() {
+  if (!canvasCtx || !frameImg) return;
 
   // ensure scaling keeps sharp edges
-  ctx.imageSmoothingEnabled = false;
+  canvasCtx.imageSmoothingEnabled = false;
 
-  const skyR = Number(currentColour.r)||0;
-  const skyG = Number(currentColour.g)||0;
-  const skyB = Number(currentColour.b)||0;
+  const skyR = Number(currentColour.r) || 0;
+  const skyG = Number(currentColour.g) || 0;
+  const skyB = Number(currentColour.b) || 0;
 
   const SKY_SCALE = 0.03;     // much subtler sky tint
   const FIELD_SCALE = 80;     // dim field glow
   const FLOOR_ALPHA = 0.10;   // ~10% opacity
 
-  const s=S();
+  const baseR = (16 + skyR * SKY_SCALE) | 0;
+  const baseG = (16 + skyG * SKY_SCALE) | 0;
+  const baseB = (18 + skyB * SKY_SCALE) | 0;
+  const floorAlpha = FLOOR_ALPHA;
+  const invFloorAlpha = 1 - floorAlpha;
+  const baseBlendR = baseR * invFloorAlpha;
+  const baseBlendG = baseG * invFloorAlpha;
+  const baseBlendB = baseB * invFloorAlpha;
+
+  const s = S();
+  const highlightColour = highlightedGroup.value;
+  const highlightActive = Boolean(highlightColour);
+  const selectedId = selectedCell.value ? selectedCell.value.id : null;
 
   // base + faint field glow; render terrain height
-  for (let y=0;y<s;y++){
-    for (let x=0;x<s;x++){
+  for (let y = 0; y < s; y++){
+    for (let x = 0; x < s; x++){
       const off = (x + y*s)*4;
       const ii = I(x,y);
       const H = Math.min(255, Math.floor(heatField[ii]*FIELD_SCALE));
       const W = Math.min(255, Math.floor(moistureField[ii]*FIELD_SCALE));
       const N = Math.min(255, Math.floor(nutrientField[ii]*FIELD_SCALE));
 
-      const baseR = 16 + (skyR*SKY_SCALE)|0;
-      const baseG = 16 + (skyG*SKY_SCALE)|0;
-      const baseB = 18 + (skyB*SKY_SCALE)|0;
-
       const glowR = baseR + H;
       const glowG = baseG + N;
       const glowB = baseB + W;
 
-      const a = FLOOR_ALPHA;
-      let r = (baseR*(1-a) + glowR*a) | 0;
-      let g = (baseG*(1-a) + glowG*a) | 0;
-      let b = (baseB*(1-a) + glowB*a) | 0;
+      let r = (baseBlendR + glowR * floorAlpha) | 0;
+      let g = (baseBlendG + glowG * floorAlpha) | 0;
+      let b = (baseBlendB + glowB * floorAlpha) | 0;
 
       const rock = solidGrid[ii] * 30;
       if (rock > 0) {
@@ -2086,12 +2123,12 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     frame[off+2] = c.b;
     frame[off+3] = Math.max(0, Math.min(255, c.a));
 
-    if (highlightedGroup.value && colourGroupKeyFromCell(c) === highlightedGroup.value) {
+    if (highlightActive && colourGroupKeyFromCell(c) === highlightColour) {
       frame[off  ] = Math.min(255, frame[off  ] + 100);
       frame[off+1] = Math.min(255, frame[off+1] + 100);
       frame[off+2] = Math.min(255, frame[off+2] + 100);
     }
-    if (selectedCell.value && c.id === selectedCell.value.id) {
+    if (selectedId !== null && c.id === selectedId) {
       frame[off  ] = 255;
       frame[off+1] = 255;
       frame[off+2] = 0;
@@ -2105,7 +2142,7 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
     }
   }
 
-  ctx.putImageData(frameImg, 0, 0);
+  canvasCtx.putImageData(frameImg, 0, 0);
 }
 
 /* ===================== Scope ===================== */
@@ -2115,9 +2152,12 @@ const updateScope = throttle((event: MouseEvent) => {
   const scope = scopeCanvas.value;
   const box = scopeBox.value;
   if (!canvas || !scope || !box || !frameImg) return;
+  if (!scopeCtx) {
+    scopeCtx = scope.getContext('2d');
+    if (!scopeCtx) return;
+  }
   const { x: hx, y: hy } = eventToCellCoords(canvas, event);
-  const ctx = scope.getContext('2d');
-  if (!ctx) return;
+  const ctx = scopeCtx;
   const SCOPE_SIZE = 9;
   const half = Math.floor(SCOPE_SIZE / 2);
   const pixelSize = scope.width / SCOPE_SIZE;

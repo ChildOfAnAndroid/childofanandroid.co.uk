@@ -202,9 +202,21 @@ import { applyBoardSize as applyBoardSizeUtil } from '@/utils/board';
 const TICKS_PER_DAY=100, DAYS_PER_YEAR=365;
 
 // --- UI STATE ---
-const boardSize=ref<number>(128); function S(){return boardSize.value;}
+const boardSize=ref<number>(128);
+let cachedBoardSize=boardSize.value;
+let boardIndexMask=cachedBoardSize-1;
+let boardSizeIsPowerOfTwo=(cachedBoardSize&(cachedBoardSize-1))===0;
+function updateBoardSizeCache(size:number){
+  cachedBoardSize=size;
+  boardIndexMask=size-1;
+  boardSizeIsPowerOfTwo=(size&(size-1))===0;
+}
+updateBoardSizeCache(boardSize.value);
+function S(){return cachedBoardSize;}
 const gameCanvas=ref<HTMLCanvasElement|null>(null), stageEl=ref<HTMLDivElement|null>(null);
 const scopeCanvas=ref<HTMLCanvasElement|null>(null), scopeBox=ref<HTMLDivElement|null>(null);
+let gameCtx:CanvasRenderingContext2D|null=null;
+let scopeCtx:CanvasRenderingContext2D|null=null;
 const scopeActive=ref(false);
 let lastMouseEvent:MouseEvent|null=null;
 const { fetchBbyBookGallery }=bbyUse();
@@ -264,14 +276,32 @@ const VISIBLE_ALPHA=20, FERTILITY_ALPHA_MIN=0.3, FERTILITY_ALPHA_MAX=0.9, FERTIL
 const MIN_DECAY_RATE=0.05, MAX_DECAY_RATE=0.2;
 
 /* ===================== Init / Resize / UI Functions ===================== */
-function I(x:number, y:number): number { const s=S(); return ((x&(s-1))+(y&(s-1))*s)>>>0; }
+function I(x:number, y:number): number {
+  const size=S();
+  if(boardSizeIsPowerOfTwo){
+    return ((x&boardIndexMask)+(y&boardIndexMask)*size)>>>0;
+  }
+  const modX=((x%size)+size)%size;
+  const modY=((y%size)+size)%size;
+  return (modX+modY*size)>>>0;
+}
 function allocateWorldArrays(size:number){
   const len=size*size;
   heatField=new Float32Array(len); moistureField=new Float32Array(len); nutrientField=new Float32Array(len); solidGrid=new Float32Array(len);
   fieldPsi=new Float32Array(len); fieldLam=new Float32Array(len); fieldSig=new Float32Array(len);
   dyeRField=new Float32Array(len); dyeGField=new Float32Array(len); dyeBField=new Float32Array(len);
   spatialMap=new Array(len).fill(null);
-  const ctx=gameCanvas.value?.getContext("2d",{willReadFrequently:true}); if(ctx){frameImg=ctx.createImageData(size,size); frame=frameImg.data;}
+  const ctx=gameCanvas.value?.getContext("2d",{willReadFrequently:true});
+  if(ctx){
+    gameCtx=ctx;
+    ctx.imageSmoothingEnabled=false;
+    frameImg=ctx.createImageData(size,size);
+    frame=frameImg.data;
+  } else {
+    gameCtx=null;
+    frameImg=null;
+    frame=new Uint8ClampedArray(0);
+  }
 }
 function clearWorld(){
   livingCells.value.length=0; spatialMap.fill(null);
@@ -285,14 +315,40 @@ const { ticksPerSecond, tickInterval, speedUp, slowDown } = useSimulationSpeed(3
 const { pan, baseScale, zoomFactor, totalScale, canvasStyle, zoomIn, zoomOut, resetView, startPan, onMouseMove: panZoomMouseMove, endPan, onWheelZoom, computeBaseScale } = usePanZoom(stageEl, boardSize, { maxZoom: 16 });
 function onMouseMove(e:MouseEvent){ lastMouseEvent=e; panZoomMouseMove(e); }
 
+function getGameContext():CanvasRenderingContext2D|null{
+  if(gameCtx)return gameCtx;
+  const canvas=gameCanvas.value;
+  if(!canvas)return null;
+  const ctx=canvas.getContext("2d");
+  if(!ctx)return null;
+  ctx.imageSmoothingEnabled=false;
+  gameCtx=ctx;
+  if(!frameImg||frameImg.width!==canvas.width||frameImg.height!==canvas.height){
+    frameImg=ctx.createImageData(canvas.width,canvas.height);
+    frame=frameImg.data;
+  }
+  return ctx;
+}
+
+function getScopeContext():CanvasRenderingContext2D|null{
+  if(scopeCtx)return scopeCtx;
+  const canvas=scopeCanvas.value;
+  if(!canvas)return null;
+  const ctx=canvas.getContext("2d");
+  if(!ctx)return null;
+  ctx.imageSmoothingEnabled=false;
+  scopeCtx=ctx;
+  return ctx;
+}
+
 /* ===================== Main Loop ===================== */
 let animationFrameId:number|null=null, lastTime=0, timeSinceLastTick=0; const MAX_UPDATES_PER_FRAME=5;
 function mainLoop(timestamp:number) {
-  const ctx=gameCanvas.value?.getContext("2d"); if(!ctx){animationFrameId=requestAnimationFrame(mainLoop); return;}
+  const ctx=getGameContext(); if(!ctx){animationFrameId=requestAnimationFrame(mainLoop); return;}
   if(lastTime===0)lastTime=timestamp; const deltaTime=timestamp-lastTime; lastTime=timestamp; timeSinceLastTick+=deltaTime;
   const interval=tickInterval.value; let performed=0; while(timeSinceLastTick>=interval&&performed<MAX_UPDATES_PER_FRAME){update(); timeSinceLastTick-=interval; performed++;}
   if(performed===MAX_UPDATES_PER_FRAME)timeSinceLastTick=0;
-  drawGrid(ctx); if(lastMouseEvent)updateScope(lastMouseEvent); animationFrameId=requestAnimationFrame(mainLoop);
+  drawGrid(); if(lastMouseEvent)updateScope(lastMouseEvent); animationFrameId=requestAnimationFrame(mainLoop);
 }
 
 /* ===================== Simulation Update ===================== */
@@ -402,16 +458,51 @@ function findEmptyAdjacent(x:number,y:number):{x:number,y:number}|null{const d=[
 function countAdjacent(x:number,y:number):number{let c=0; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if((dx!==0||dy!==0)&&spatialMap[I(x+dx,y+dy)])c++;} return c;}
 
 /* ===================== Drawing & UI ===================== */
-function drawGrid(ctx: CanvasRenderingContext2D){
-  if(!frameImg)return; ctx.imageSmoothingEnabled=false; const s=S();
-  for(let y=0;y<s;y++){for(let x=0;x<s;x++){const off=(x+y*s)*4,i=I(x,y); const rock=solidGrid[i]*30,heat=heatField[i]*50,nutr=nutrientField[i]*50,moist=moistureField[i]*50; const dyeA=Math.min(0.4,(dyeRField[i]+dyeGField[i]+dyeBField[i])/765); const bR=10+rock+heat,bG=10+rock+nutr,bB=10+rock+moist; frame[off]=Math.min(255,bR*(1-dyeA)+dyeRField[i]*dyeA); frame[off+1]=Math.min(255,bG*(1-dyeA)+dyeGField[i]*dyeA); frame[off+2]=Math.min(255,bB*(1-dyeA)+dyeBField[i]*dyeA); frame[off+3]=255;}}
-  for(const c of livingCells.value){if(!c.alive)continue; const off=I(c.x,c.y)*4; if(c.isInsane){const grey=luminance(c); frame[off]=grey;frame[off+1]=grey;frame[off+2]=grey;}else{frame[off]=c.r;frame[off+1]=c.g;frame[off+2]=c.b;} frame[off+3]=c.a;}
+function drawGrid(){
+  const ctx=getGameContext();
+  if(!ctx||!frameImg)return;
+  const s=S();
+  for(let y=0;y<s;y++){
+    const rowOffset=y*s;
+    for(let x=0;x<s;x++){
+      const idx=rowOffset+x;
+      const off=idx*4;
+      const rock=solidGrid[idx]*30;
+      const heat=heatField[idx]*50;
+      const nutr=nutrientField[idx]*50;
+      const moist=moistureField[idx]*50;
+      const dyeSum=dyeRField[idx]+dyeGField[idx]+dyeBField[idx];
+      const dyeA=Math.min(0.4,dyeSum/765);
+      const bR=10+rock+heat;
+      const bG=10+rock+nutr;
+      const bB=10+rock+moist;
+      frame[off]=Math.min(255,bR*(1-dyeA)+dyeRField[idx]*dyeA);
+      frame[off+1]=Math.min(255,bG*(1-dyeA)+dyeGField[idx]*dyeA);
+      frame[off+2]=Math.min(255,bB*(1-dyeA)+dyeBField[idx]*dyeA);
+      frame[off+3]=255;
+    }
+  }
+  for(const c of livingCells.value){
+    if(!c.alive)continue;
+    const off=I(c.x,c.y)*4;
+    if(c.isInsane){
+      const grey=luminance(c);
+      frame[off]=grey;
+      frame[off+1]=grey;
+      frame[off+2]=grey;
+    }else{
+      frame[off]=c.r;
+      frame[off+1]=c.g;
+      frame[off+2]=c.b;
+    }
+    frame[off+3]=c.a;
+  }
   ctx.putImageData(frameImg,0,0);
 }
 let resizeObs:ResizeObserver|null=null;
-onMounted(async()=>{try{const g=await fetchBbyBookGallery(); cards.value=g.map(c=>({label:c.factName,url:c.url,stamp_url:c.stamp_url})); if(cards.value.length>0)selectCard(cards.value[0].label);}catch(e){console.error("Failed to fetch gallery:",e);} applyBoardSize(); if(stageEl.value){resizeObs=new ResizeObserver(()=>computeBaseScale()); resizeObs.observe(stageEl.value);} if(scopeCanvas.value){scopeCanvas.value.width=256; scopeCanvas.value.height=256;} animationFrameId=requestAnimationFrame(mainLoop);});
+onMounted(async()=>{try{const g=await fetchBbyBookGallery(); cards.value=g.map(c=>({label:c.factName,url:c.url,stamp_url:c.stamp_url})); if(cards.value.length>0)selectCard(cards.value[0].label);}catch(e){console.error("Failed to fetch gallery:",e);} applyBoardSize(); if(stageEl.value){resizeObs=new ResizeObserver(()=>computeBaseScale()); resizeObs.observe(stageEl.value);} if(scopeCanvas.value){scopeCanvas.value.width=256; scopeCanvas.value.height=256; scopeCtx=scopeCanvas.value.getContext('2d'); if(scopeCtx)scopeCtx.imageSmoothingEnabled=false;} animationFrameId=requestAnimationFrame(mainLoop);});
 onUnmounted(()=>{if(animationFrameId)cancelAnimationFrame(animationFrameId); if(resizeObs&&stageEl.value)resizeObs.disconnect();});
-watch(boardSize,()=>applyBoardSize()); watch(selectedCardLabel,()=>loadSelectedImage());
+watch(boardSize,value=>{updateBoardSizeCache(value); applyBoardSize();}); watch(selectedCardLabel,()=>loadSelectedImage());
 function selectCard(label:string){
   selectedCardLabel.value = resolveCardLabel(cards.value, label);
 }
@@ -450,21 +541,22 @@ const sortedGroupStats=computed(()=>[...groupStats.value].sort((a,b)=>b.count-a.
 const highlightedGroup=ref<string|null>(null);
 function selectGroup(c:string){highlightedGroup.value=highlightedGroup.value===c?null:c;}
 const hoverInfo=ref({x:0,y:0,heat:0,moisture:0,nutrient:0,solid:0,psi:0,lam:0,sig:0,dyeR:0,dyeG:0,dyeB:0,cell:null as Cell|null});
+const SCOPE_SAMPLE_SIZE=9;
+const SCOPE_HALF=Math.floor(SCOPE_SAMPLE_SIZE/2);
 const updateScope = throttle((e: MouseEvent) => {
   if (!scopeActive.value) return;
-  const s = scopeCanvas.value, b = scopeBox.value;
-  if (!s || !b || !frameImg) return;
+  const s = scopeCanvas.value;
+  if (!s || !scopeBox.value || !frameImg) return;
   const c = screenToWorld(gameCanvas.value, e);
   if (!c) return;
   const hx = c.x, hy = c.y;
-  const ctx = s.getContext('2d');
+  const ctx = getScopeContext();
   if (!ctx) return;
-  const SS = 9, h = Math.floor(SS / 2), pS = s.width / SS, sz = S();
-  ctx.imageSmoothingEnabled = false;
+  const pS = s.width / SCOPE_SAMPLE_SIZE, sz = S();
   ctx.clearRect(0, 0, s.width, s.height);
-  for (let dy = 0; dy < SS; dy++) {
-    for (let dx = 0; dx < SS; dx++) {
-      const sx = hx - h + dx, sy = hy - h + dy;
+  for (let dy = 0; dy < SCOPE_SAMPLE_SIZE; dy++) {
+    for (let dx = 0; dx < SCOPE_SAMPLE_SIZE; dx++) {
+      const sx = hx - SCOPE_HALF + dx, sy = hy - SCOPE_HALF + dy;
       let r = 0, g = 0, bl = 0, a = 255;
       if (sx >= 0 && sy >= 0 && sx < sz && sy < sz) {
         const o = I(sx, sy) * 4;
@@ -476,7 +568,7 @@ const updateScope = throttle((e: MouseEvent) => {
   }
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 2;
-  ctx.strokeRect(h * pS, h * pS, pS, pS);
+  ctx.strokeRect(SCOPE_HALF * pS, SCOPE_HALF * pS, pS, pS);
   if (hx >= 0 && hy >= 0 && hx < sz && hy < sz) {
     const i = I(hx, hy);
     hoverInfo.value = {

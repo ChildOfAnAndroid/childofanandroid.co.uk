@@ -9,7 +9,8 @@ export function resolveCardLabel<T extends CardLike>(cards: T[], label: string):
 
 export interface StampCard extends CardLike {
   url: string;
-  stamp_url: string;
+  stamp_url?: string;         // may be missing
+  stamp_file?: string;        // new: direct filename from index.json
   colour?: { h: number; s: number; l: number }; // optional hue data
 }
 
@@ -41,10 +42,20 @@ export function normalizeStampUrl(url?: string | null): string | null {
 
 export function getStampUrlCandidates(card: StampCard): string[] {
   const urls = new Set<string>();
+
+  // 1. Use explicit stamp_file from index.json if present
+  if (card.stamp_file) {
+    urls.add(`/api/gallery/file/${card.stamp_file}`);
+  }
+
+  // 2. Use provided stamp_url if any
   const preferred = normalizeStampUrl(card.stamp_url);
   if (preferred) urls.add(preferred);
+
+  // 3. Derive from normal url
   const derived = normalizeStampUrl(card.url);
   if (derived) urls.add(derived);
+
   return Array.from(urls);
 }
 

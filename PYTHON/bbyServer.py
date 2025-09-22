@@ -1160,6 +1160,14 @@ def api_gallery_list():
     for m in reversed(gallery_index[-200:]):
         it = dict(m)
         it["url"] = f"{base}/api/gallery/file/{m['file']}"
+        # Provide a stable 'timestamp' alias alongside legacy 'ts'
+        if 'timestamp' not in it:
+            it['timestamp'] = it.get('ts')
+        # Compatibility: some external clients may look for a 'stamp' field
+        # intending a timestamp; provide it as an alias to avoid misusing
+        # unrelated 'stamp' concepts elsewhere (e.g., thumbnail stamps).
+        if 'stamp' not in it:
+            it['stamp'] = it.get('ts')
         if m.get("stamp_file"):
             it["stamp_url"] = f"{base}/api/gallery/file/{m['stamp_file']}"
         out.append(it)

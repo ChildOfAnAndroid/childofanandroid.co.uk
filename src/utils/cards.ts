@@ -7,23 +7,39 @@ export function resolveCardLabel<T extends CardLike>(cards: T[], label: string):
   return match ? match.label : label;
 }
 
-export interface StampCard extends CardLike { url: string; stamp_url?: string }
+export interface StampCard extends CardLike { url: string; stamp_url: string }
 
 const STAMP_SUFFIX_RE = /\.stamp\.png$/i;
 const PNG_SUFFIX_RE = /\.png$/i;
 
-function ensureStampUrl(url?: string | null): string | null {
+export function normalizeStampUrl(url?: string | null): string | null {
   if (!url) return null;
-  if (STAMP_SUFFIX_RE.test(url)) return url;
-  if (PNG_SUFFIX_RE.test(url)) return url.replace(PNG_SUFFIX_RE, '.stamp.png');
+
+  const hashIndex = url.indexOf('#');
+  const hashPart = hashIndex >= 0 ? url.slice(hashIndex) : '';
+  const withoutHash = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+
+  const queryIndex = withoutHash.indexOf('?');
+  const queryPart = queryIndex >= 0 ? withoutHash.slice(queryIndex) : '';
+  const pathPart = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+
+  if (STAMP_SUFFIX_RE.test(pathPart)) {
+    return `${pathPart}${queryPart}${hashPart}`;
+  }
+
+  if (PNG_SUFFIX_RE.test(pathPart)) {
+    const stampedPath = pathPart.replace(PNG_SUFFIX_RE, '.stamp.png');
+    return `${stampedPath}${queryPart}${hashPart}`;
+  }
+
   return null;
 }
 
 export function getStampUrlCandidates(card: StampCard): string[] {
   const urls = new Set<string>();
-  const preferred = ensureStampUrl(card.stamp_url);
+  const preferred = normalizeStampUrl(card.stamp_url);
   if (preferred) urls.add(preferred);
-  const derived = ensureStampUrl(card.url);
+  const derived = normalizeStampUrl(card.url);
   if (derived) urls.add(derived);
   return Array.from(urls);
 }

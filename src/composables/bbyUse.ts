@@ -4,7 +4,7 @@ import { reactive, readonly, ref, watch } from 'vue';
 import _ from 'lodash';
 import { api } from '@/api'; // <-- Import the new API module
 import { setRootColourVars } from '@/utils/colourEngine';
-import { getPrimaryStampUrl } from '@/utils/cards';
+import { normalizeStampUrl } from '@/utils/cards';
 
 interface Bubble {
   id: string;
@@ -369,11 +369,7 @@ export async function fetchBbyBookGallery() {
       const factData = bookLower[decodedLabel.toLowerCase()];
       if (!factData) continue;
 
-      const stampUrl = getPrimaryStampUrl({
-        label: decodedLabel,
-        url: item.url,
-        stamp_url: item.stamp_url,
-      });
+      const stampUrl = normalizeStampUrl(item.stamp_url);
 
       if (!stampUrl) {
         console.warn('[bbyBook] skipping gallery item without stamp image:', decodedLabel);

@@ -4,6 +4,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import os, json, time, uuid, base64, threading, array, random, re, io
 import hashlib
 from collections import deque
+from colorsys import rgb_to_hsv
 import requests
 from urllib.parse import unquote
 try:
@@ -413,9 +414,40 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
         stamp_fname = None
     # --- END NEW STAMP LOGIC ---
 
-    meta = {"id": gid, "ts": ts, "file": fname, "author": author, "title": title or label, "label": label or title}
+    meta = {
+        "id": gid,
+        "ts": ts,
+        "file": fname,
+        "author": author,
+        "title": title or label,
+        "label": label or title,
+    }
     if snap_id: meta["snap_id"] = snap_id
     if stamp_fname: meta["stamp_file"] = stamp_fname
+
+    colour_path = os.path.join(GALL_DIR, stamp_fname or fname)
+    c = _avg_colour_from_image(colour_path)
+    if c: meta["colour"] = c
+
+    def _avg_colour_from_image(path: str) -> dict | None:
+        if Image is None:
+            return None
+        try:
+            with Image.open(path).convert("RGBA") as img:
+                data = list(img.getdata())
+                # filter out transparent pixels
+                opaque = [(r, g, b) for (r, g, b, a) in data if a > 0]
+                if not opaque:
+                    return None
+                avg_r = sum(p[0] for p in opaque) / len(opaque)
+                avg_g = sum(p[1] for p in opaque) / len(opaque)
+                avg_b = sum(p[2] for p in opaque) / len(opaque)
+                h, s, v = rgb_to_hsv(avg_r/255, avg_g/255, avg_b/255)
+                return {"r": int(avg_r), "g": int(avg_g), "b": int(avg_b), "h": int(h*360)}
+        except Exception as e:
+            print("[WARN] avg_colour failed:", e)
+            return None
+
     gallery_index.append(meta)
     if len(gallery_index) > 5000: del gallery_index[:-5000]
     _save_json(GALL_IDX, gallery_index)

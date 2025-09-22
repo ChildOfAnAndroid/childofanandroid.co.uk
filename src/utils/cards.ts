@@ -7,7 +7,11 @@ export function resolveCardLabel<T extends CardLike>(cards: T[], label: string):
   return match ? match.label : label;
 }
 
-export interface StampCard extends CardLike { url: string; stamp_url: string }
+export interface StampCard extends CardLike {
+  url: string;
+  stamp_url: string;
+  colour?: { h: number; s: number; l: number }; // optional hue data
+}
 
 const STAMP_SUFFIX_RE = /\.stamp\.png$/i;
 const PNG_SUFFIX_RE = /\.png$/i;
@@ -75,4 +79,25 @@ export async function loadCardStamp(card: StampCard, maxSize = 64): Promise<Imag
   }
   console.error('Failed to load stamp:', card.label);
   return null;
+}
+
+/**
+ * Utility: sort cards by colour (hue) if available, fallback to label.
+ */
+export function sortCardsByColour(cards: StampCard[]): StampCard[] {
+  return [...cards].sort((a, b) => {
+    if (a.colour && b.colour) {
+      const ah = a.colour.h, bh = b.colour.h;
+      const as = a.colour.s, bs = b.colour.s;
+      const al = a.colour.l, bl = b.colour.l;
+
+      // Sort by hue, then saturation, then lightness
+      if (ah !== bh) return ah - bh;
+      if (as !== bs) return as - bs;
+      return al - bl;
+    }
+    if (a.colour) return -1;
+    if (b.colour) return 1;
+    return a.label.localeCompare(b.label);
+  });
 }

@@ -382,33 +382,32 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
     path = os.path.join(GALL_DIR, fname)
     with open(path, "wb") as f: f.write(image_bytes)
 
-    # --- NEW STAMP LOGIC ---
-    stamp_fname = None
-    MAX_STAMP_DIM = 96 # Align with bbyWorld.vue
+    stamp_fname = f"{ts}_{gid}.stamp.png"
+    stamp_path = os.path.join(GALL_DIR, stamp_fname)
+    MAX_STAMP_DIM = 64
     try:
-        if Image is None: raise Exception("Pillow not installed")
+        if Image is None:
+            raise Exception("Pillow not installed")
 
         with Image.open(io.BytesIO(image_bytes)) as img:
             img = img.convert("RGBA")
-            stamp_img = None
 
-            if snap_id:
-                # Snapshots are from a 64x64 source, so resize to that
-                if img.width != 64 or img.height != 64:
-                    stamp_img = img.resize((64, 64), Image.Resampling.NEAREST)
+            # Default: use original as stamp
+            stamp_img = img.copy()
+
+            # For snapshots, force 64x64
+            if snap_id and (img.width != 64 or img.height != 64):
+                stamp_img = img.resize((64, 64), Image.Resampling.NEAREST)
+
+            # For bigger drawings, shrink down to max size
             elif img.width > MAX_STAMP_DIM or img.height > MAX_STAMP_DIM:
-                # For test grid images, thumbnail preserves aspect ratio
-                stamp_img = img.copy()
                 stamp_img.thumbnail((MAX_STAMP_DIM, MAX_STAMP_DIM), Image.Resampling.NEAREST)
 
-            if stamp_img:
-                stamp_fname = f"{ts}_{gid}.stamp.png"
-                stamp_path = os.path.join(GALL_DIR, stamp_fname)
-                out_buffer = io.BytesIO()
-                stamp_img.save(out_buffer, format="PNG")
-                with open(stamp_path, "wb") as f:
-                    f.write(out_buffer.getvalue())
-
+            # Save stamp
+            out_buffer = io.BytesIO()
+            stamp_img.save(out_buffer, format="PNG")
+            with open(stamp_path, "wb") as f:
+                f.write(out_buffer.getvalue())
     except Exception as e:
         print(f"[WARN] Failed to create stamp for {gid}: {e}")
         stamp_fname = None
@@ -884,7 +883,7 @@ def api_say():
         speak = (platform == "web")  # default: web messages speak
     if speak:
         brain_resp = _brain_post("/api/say", {"text": text, "author": display_name})
-        msg["brain_reply"] = brain_resp.get("reply") if isinstance(brain_resp, dict) else None
+        bot_msg["brain_reply"] = brain_resp.get("reply") if isinstance(brain_resp, dict) else None
     
     return jsonify(
         status=("ok" if status_code == 200 else "error"),

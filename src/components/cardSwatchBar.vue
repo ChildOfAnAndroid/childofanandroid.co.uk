@@ -9,7 +9,7 @@
         :class="{ selected: selectedCardLabel?.toLowerCase() === card.label.toLowerCase() }"
         @click="emit('select', card.label)"
       >
-        <img :src="card.stamp_url || card.url" :alt="card.label" />
+        <img :src="card.stamp_url || card.url.replace(/\.png$/, '.stamp.png')" :alt="card.label"/>
       </button>
     </div>
   </div>

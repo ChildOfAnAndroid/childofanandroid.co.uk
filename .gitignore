@@ -10,6 +10,8 @@ dist
 dist*
 dist/*
 
+deploy_bby.sh
+
 .DS_Store
 
 notebook 

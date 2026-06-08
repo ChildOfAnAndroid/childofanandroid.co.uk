@@ -166,6 +166,7 @@ import { computeGroupStats } from '@/utils/groupStats';
 import { resolveCardLabel, loadCardStamp, type StampCard } from '@/utils/cards';
 import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
+import FamilyTree from '@/components/familyTree.vue';
 import { rand, seedRand } from '@/utils/rng';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { screenToWorld } from '@/utils/canvas';

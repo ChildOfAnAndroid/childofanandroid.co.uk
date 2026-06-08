@@ -25,12 +25,11 @@ FADE_TICK_SECONDS = 60          # how often the fade loop runs
 AUTOSNAP_IDLE_AFTER = 60        # seconds after last paint to autosnap if a burst was active
 BURST_WINDOW = 30               # seconds to count burst
 BURST_THRESHOLD_PX = 200        # pixels in window to mark a burst
-STATE_SYNC_HZ = 10.0            # pull remote /api/state this many times per second (if available)
+STATE_SYNC_HZ = 0.1             # fallback poll rate (every 10s) — brain now pushes reactively via /api/brain_push
 # ====== FADE PROBABILITIES (tuned) ======
 P_SHORT  = 0.001    # ~0.1%
 P_MEDIUM = 0.899    # ~89.9%
-P_LONG   = 0.100    # ~10.0%
-LIFESPAN_SCALE = 1.0
+LIFESPAN_SCALE = 30.0
 MIN_FADE_SECONDS = 20 * 60      # 20 min minimum fade span
 STROKE_COHERENCE = True
 COHERENCE_JITTER = 0.12
@@ -161,7 +160,6 @@ PAINT_TS_FILE       = os.path.join(STORE_DIR, "paintTimestamps.raw")
 PAINT_LIFE_FILE     = os.path.join(STORE_DIR, "paintLifespans.raw")
 PAINT_ALPHA0_FILE   = os.path.join(STORE_DIR, "paintAlpha0.raw")
 BBYBOOK_LOCAL       = os.path.join(STORE_DIR, "bbybook.json")
-GALLERY_ADMIN_TOKEN = os.environ.get("GALLERY_ADMIN_TOKEN", "").strip()
 
 # Prefer proxy-provided scheme/host when building absolute URLs
 from flask import request as _request_for_base
@@ -185,15 +183,6 @@ def _brain_post(path: str, payload: dict, timeout=15):
         return r.json()
     except Exception as e:
         return {"error": f"brain post failed: {e}"}
-
-def _brain_get(path: str, timeout=10):
-    try:
-        url = _brain_url(path)
-        r = requests.get(url, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        return {"error": f"brain get failed: {e}"}
 
 # ========= HELPERS =========
 def _load_json(path, default):
@@ -299,6 +288,13 @@ last_autosnap_id = None
 
 # ========= SNAPSHOTS/GALLERY HELPERS =========
 def _save_snapshot(label=""):
+    """
+    Atomically saves a BabyLLM appearance snapshot.
+    Writes three local files:
+      1. <id>.raw: Raw pixel/paint data bytes.
+      2. <id>.state.json: Current state of the baby (mouth/eyes settings, color channel values).
+      3. index.json (updated): Appends metadata record containing the custom label/title.
+    """
     snap_id, ts = str(uuid.uuid4()), int(time.time())
     raw_path = os.path.join(SNAP_DIR, f"{snap_id}.raw")
     state_path = os.path.join(SNAP_DIR, f"{snap_id}.state.json")
@@ -373,6 +369,32 @@ def _crop_transparent_to_square(image_bytes: bytes) -> bytes:
     return image_bytes
 
 def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_id=None):
+    """
+    Saves a canvas drawing to the public gallery index and directory.
+    Writes two local files:
+      1. <timestamp>_<id>.png: The full composite image.
+      2. <timestamp>_<id>.stamp.png: A 64x64 thumbnail/stamp used for visual references.
+    Then, extracts the average color of the pixels and updates the index file.
+    """
+    def _avg_colour_from_image(path: str) -> dict | None:
+        if Image is None:
+            return None
+        try:
+            with Image.open(path).convert("RGBA") as img:
+                data = list(img.getdata())
+                # filter out transparent pixels
+                opaque = [(r, g, b) for (r, g, b, a) in data if a > 0]
+                if not opaque:
+                    return None
+                avg_r = sum(p[0] for p in opaque) / len(opaque)
+                avg_g = sum(p[1] for p in opaque) / len(opaque)
+                avg_b = sum(p[2] for p in opaque) / len(opaque)
+                h, s, v = rgb_to_hsv(avg_r/255, avg_g/255, avg_b/255)
+                return {"r": int(avg_r), "g": int(avg_g), "b": int(avg_b), "h": int(h*360)}
+        except Exception as e:
+            print("[WARN] avg_colour failed:", e)
+            return None
+
     if not image_bytes:
         raise ValueError("empty image")
     if len(image_bytes) > MAX_UPLOAD_MB*1024*1024:
@@ -429,112 +451,12 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
     c = _avg_colour_from_image(colour_path)
     if c: meta["colour"] = c
 
-    def _avg_colour_from_image(path: str) -> dict | None:
-        if Image is None:
-            return None
-        try:
-            with Image.open(path).convert("RGBA") as img:
-                data = list(img.getdata())
-                # filter out transparent pixels
-                opaque = [(r, g, b) for (r, g, b, a) in data if a > 0]
-                if not opaque:
-                    return None
-                avg_r = sum(p[0] for p in opaque) / len(opaque)
-                avg_g = sum(p[1] for p in opaque) / len(opaque)
-                avg_b = sum(p[2] for p in opaque) / len(opaque)
-                h, s, v = rgb_to_hsv(avg_r/255, avg_g/255, avg_b/255)
-                return {"r": int(avg_r), "g": int(avg_g), "b": int(avg_b), "h": int(h*360)}
-        except Exception as e:
-            print("[WARN] avg_colour failed:", e)
-            return None
-
     gallery_index.append(meta)
     if len(gallery_index) > 5000: del gallery_index[:-5000]
     _save_json(GALL_IDX, gallery_index)
     return meta
 
-# ---- Gallery index import / merge (recovery) ----
-def _validate_gallery_item(it: dict) -> dict | None:
-    """
-    Validate and normalize a gallery index item. Returns cleaned dict or None.
-    """
-    if not isinstance(it, dict):
-        return None
-    file = it.get("file") or ""
-    if not isinstance(file, str) or not file.endswith(".png"):
-        return None
-    out = {
-        "id": str(it.get("id") or uuid.uuid4()),
-        "ts": int(it.get("ts") or time.time()),
-        "author": str(it.get("author") or "anon"),
-        "title": str(it.get("title") or it.get("label") or ""),
-        "label": str(it.get("label") or it.get("title") or ""),
-        "file": file
-    }
-    # carry optional fields if present
-    if isinstance(it.get("snap_id"), str):
-        out["snap_id"] = it["snap_id"]
-    if isinstance(it.get("stamp_file"), str):
-        out["stamp_file"] = it["stamp_file"]
-    return out
 
-@app.post("/api/gallery/import_index")
-def api_gallery_import_index():
-    """
-    Replace or merge the gallery index from a posted JSON payload.
-    Body:
-    {
-        "index": [ ...items... ],
-        "mode": "replace" | "merge"   (default: replace)
-    }
-    Matching is done by 'file' (preferred) then by 'id' if present.
-    """
-    try:
-        payload = request.get_json(silent=True) or {}
-        items = payload.get("index")
-        mode = (payload.get("mode") or "replace").strip().lower()
-        if not isinstance(items, list) or not items:
-            return jsonify(error="missing or invalid 'index' array"), 400
-
-        cleaned = []
-        for it in items:
-            v = _validate_gallery_item(it)
-            if v:
-                cleaned.append(v)
-
-        if not cleaned:
-            return jsonify(error="no valid items to import"), 400
-
-        imported = 0
-        updated = 0
-
-        global gallery_index
-        if mode == "replace":
-            gallery_index = cleaned
-            imported = len(cleaned)
-        else:
-            # merge mode: keep existing, update/insert by 'file' fallback 'id'
-            existing_by_file = {it["file"]: i for i, it in enumerate(gallery_index) if isinstance(it, dict) and it.get("file")}
-            existing_by_id   = {it.get("id"): i for i, it in enumerate(gallery_index) if isinstance(it, dict) and it.get("id")}
-            for it in cleaned:
-                idx = existing_by_file.get(it["file"])
-                if idx is None and it.get("id"):
-                    idx = existing_by_id.get(it["id"])
-                if idx is None:
-                    gallery_index.append(it)
-                    imported += 1
-                else:
-                    gallery_index[idx] = it
-                    updated += 1
-
-        # keep only the newest 5000 like saver does
-        if len(gallery_index) > 5000:
-            gallery_index = gallery_index[-5000:]
-
-        _save_json(GALL_IDX, gallery_index)
-        return jsonify(ok=True, mode=mode, imported=imported, updated=updated, total=len(gallery_index))
-    except Exception as e:
-        return jsonify(error=f"import failed: {e}"), 500
 
 def _claim_alias_if_exists(platform: str, display_name: str, handle: str, real_uid: str):
     """If an alias record like '{platform}:alias:{slug(name)}' exists and is unclaimed,
@@ -724,21 +646,27 @@ threading.Thread(target=pixel_aging_loop, daemon=True).start()
 threading.Thread(target=state_sync_loop, daemon=True).start()
 
 # ========= ROUTES =========
-@app.post("/api/speak")
-def api_speak():
-    data = request.get_json(silent=True) or {}
-    text = (data.get("text") or "").strip()
-    author = (data.get("author") or data.get("display_name") or "anon").strip()
-    if not text: return jsonify(error="missing text"), 400
-    brain_resp = _brain_post("/api/say", {"text": text, "author": author})
-    return jsonify(brain_resp), 200
-
 @app.get("/api/ping")
 def ping(): return jsonify(ok=True, msg="hello from server")
 
 @app.get("/api/state")
 def get_state():
     with state_lock: return jsonify(babyState)
+
+@app.post("/api/brain_push")
+def brain_push():
+    """Receive a reactive state push from the brain (Discord bot).
+
+    The brain monitors its own state and POSTs here whenever meaningful
+    attributes change, replacing the need for high-frequency polling.
+    The state_sync_loop still runs as a slow fallback.
+    """
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify(error="bad json"), 400
+    with state_lock:
+        babyState.update(data)
+    return jsonify(ok=True)
 
 # --- Proxy POST for /api/state ---
 
@@ -755,15 +683,6 @@ def api_set_state():
         return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type","application/json")})
     except requests.exceptions.RequestException as e:
         return jsonify(error=f"brain unreachable: {e}"), 504
-
-# --- Legacy aliases (frontend might call /state) ---
-@app.get("/state")
-def legacy_get_state():
-    return get_state()
-
-@app.post("/state")
-def legacy_post_state():
-    return api_set_state()
 
 @app.get("/api/chat_history")
 def api_chat_history():
@@ -782,11 +701,6 @@ def api_chat_history():
         if len(public_events) > 200: public_events = public_events[-200:]
         return jsonify(public_events)
     except Exception as e: return jsonify(error=f"chat history failed: {e}"), 500
-
-# --- Legacy alias (frontend might call /chat_history) ---
-@app.get("/chat_history")
-def legacy_chat_history():
-    return api_chat_history()
 
 # --- Consent route ---
 @app.post('/api/consent')
@@ -976,11 +890,6 @@ def api_get_paint_canvas():
         b64 = base64.b64encode(paint_rgba).decode("utf-8")
     return jsonify(paintOverlayData_b64=b64, w=PAINT_W, h=PAINT_H)
 
-# --- Legacy alias (frontend might call /get_paint_canvas) ---
-@app.get("/get_paint_canvas")
-def legacy_get_paint_canvas():
-    return api_get_paint_canvas()
-
 @app.post("/api/paint_pixel")
 def api_paint_pixel():
     data = request.json or {}
@@ -1056,11 +965,6 @@ def api_paint_events():
         out.append(ev)
     out.reverse()
     return jsonify(out)
-
-# --- Legacy alias (frontend might call /paint_events) ---
-@app.get("/paint_events")
-def legacy_paint_events():
-    return api_paint_events()
 
 # ---- Snapshots ----
 @app.post("/api/snapshot")
@@ -1233,52 +1137,7 @@ def api_gallery_file(fname):
     if not os.path.exists(path): return ("not found", 404)
     return send_from_directory(GALL_DIR, fname, mimetype="image/png")
 
-# --- Delete a gallery image by id or filename (protected) ---
-@app.delete("/api/gallery/<img_id>")
-def delete_gallery_image(img_id):
-    # auth: require token if configured
-    provided = request.headers.get('X-Admin-Token') or request.headers.get('Authorization', '').replace('Bearer ', '').strip()
-    if not GALLERY_ADMIN_TOKEN or not provided or provided != GALLERY_ADMIN_TOKEN:
-        return jsonify({"status": "error", "message": "forbidden"}), 403
 
-    try:
-        # Find the metadata record first, whether by ID or filename
-        target_meta = next((m for m in gallery_index if m.get('id') == img_id or m.get('file') == img_id), None)
-        if not target_meta:
-            return jsonify({"status": "error", "message": "not found"}), 404
-
-        deleted = {}
-        target_id = target_meta.get("id")
-        
-        # Delete main image file
-        main_file = target_meta.get('file')
-        if main_file:
-            path = os.path.join(GALL_DIR, main_file)
-            if os.path.isfile(path):
-                os.remove(path)
-                deleted["image"] = True
-        
-        # Delete stamp file if it exists
-        stamp_file = target_meta.get('stamp_file')
-        if stamp_file:
-            path = os.path.join(GALL_DIR, stamp_file)
-            if os.path.isfile(path):
-                os.remove(path)
-                deleted["stamp"] = True
-
-        # Remove from index by its ID
-        before = len(gallery_index)
-        gallery_index[:] = [m for m in gallery_index if m.get('id') != target_id]
-        if len(gallery_index) != before:
-            deleted["index"] = True
-            _save_json(GALL_IDX, gallery_index)
-
-        if not deleted:
-            return jsonify({"status": "error", "message": "index entry found but no files to delete"}), 404
-
-        return jsonify({"status": "ok", "deleted": deleted, "id": target_id})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ---- Activity ----
 @app.get("/api/activity")

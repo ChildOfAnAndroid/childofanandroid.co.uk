@@ -773,7 +773,23 @@ onBeforeUnmount(() => { if (animationFrameId) cancelAnimationFrame(animationFram
 
 // actions
 function showToast(msg:string, ms=1500){ toast.value=msg; setTimeout(()=>toast.value='', ms); }
-async function onSave(){ if(saving.value) return; saving.value=true; try{ const label=prompt('title? (optional)','')||'manual'; const url=await saveCompositeToServer(label); showToast('saved! opening…'); window.open(url,'_blank'); }catch(e){console.error(e); showToast('not saved :(',2000);} finally{saving.value=false;} }
+async function onSave() {
+  if (saving.value) return;
+  const label = prompt('title? (optional)', '');
+  if (label === null) return; // User clicked Cancel, abort save
+
+  saving.value = true;
+  try {
+    const url = await saveCompositeToServer(label || 'manual');
+    showToast('saved! opening…');
+    window.open(url, '_blank');
+  } catch (e: any) {
+    console.error('[snapshot/save] failed:', e);
+    showToast(`not saved: ${e.message || e}`, 3000);
+  } finally {
+    saving.value = false;
+  }
+}
 onMounted(()=>{ pollActivityForAutosnap(); });
 let clearResetTimer: ReturnType<typeof setTimeout> | null = null;
 const clearConfirmClicks = ref(0);
@@ -793,18 +809,19 @@ function handleFillTestSquareClick() {
   showToast('filled your painting', 1500);
 }
 async function handleSaveTestSquareClick() {
-  if (!testSquareRef.value) return;
+  if (!testSquareRef.value || saving.value) return;
   if (saveConfirmClicks.value === 0) {
     saveConfirmClicks.value = 1;
     showToast('name your look then press confirm', 3000);
     return;
   }
+  
+  saving.value = true;
   try {
-    // MODIFIED: Call the new exportRawCanvas function
     const canvas = testSquareRef.value.exportRawCanvas();
     if (!canvas) {
         throw new Error("Failed to export raw canvas data.");
-    };
+    }
 
     const url = await saveTestGridImage(
       canvas,
@@ -815,8 +832,9 @@ async function handleSaveTestSquareClick() {
     window.open(url, '_blank');
   } catch (e: any) {
     console.error('[gallery/save] failed:', e?.message || e);
-    showToast('save failed :(', 2500);
+    showToast(`save failed: ${e?.message || e}`, 3000);
   } finally {
+    saving.value = false;
     saveConfirmClicks.value = 0;
     saveLabel.value = '';
   }

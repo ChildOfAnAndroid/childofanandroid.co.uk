@@ -273,25 +273,7 @@ function sayRandomFact() {
   }
 }
 
-// --- optional admin token + delete helpers ---
-export async function deleteGalleryById(id: string, token?: string) {
-  const headers: Record<string,string> = {};
-  if (token) headers['X-Admin-Token'] = token;
-  const res = await fetch(`/api/gallery/${encodeURIComponent(id)}`, { method: 'DELETE', headers });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-export function extractGalleryIdFromUrl(url: string): string | null {
-  try {
-    const name = url.split('/').pop() || '';
-    return name.replace(/\\.png$/i, '') || null;
-  } catch { return null; }
-}
-export async function deleteGalleryByUrl(url: string, token?: string) {
-  const id = extractGalleryIdFromUrl(url);
-  if (!id) throw new Error('could not parse id from url');
-  return deleteGalleryById(id, token);
-}
+
 
 export async function saveCompositeToServer(label = "manual") {
   const canvas = document.querySelector('[aria-label="AI baby sprite, somewhere between a ghost and a robot"]') as HTMLCanvasElement | null;

@@ -11,10 +11,30 @@ const API_BASE = 'https://childofanandroid.co.uk/api';
  */
 async function request(endpoint: string, options: RequestInit = {}) {
   const url = `${API_BASE}${endpoint}`;
+  
+  let hasContentType = false;
+  let headersInit: Record<string, string> = {};
+
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      hasContentType = options.headers.has('content-type') || options.headers.has('Content-Type');
+      options.headers.forEach((value, key) => {
+        headersInit[key] = value;
+      });
+    } else if (Array.isArray(options.headers)) {
+      hasContentType = options.headers.some(([key]) => key.toLowerCase() === 'content-type');
+      for (const [key, value] of options.headers) {
+        headersInit[key] = value;
+      }
+    } else {
+      hasContentType = Object.keys(options.headers).some(key => key.toLowerCase() === 'content-type');
+      headersInit = options.headers as Record<string, string>;
+    }
+  }
+
   const headers = {
-    // Defaults to JSON, but can be overridden for file uploads.
-    'Content-Type': 'application/json',
-    ...options.headers,
+    ...(hasContentType ? {} : { 'Content-Type': 'application/json' }),
+    ...headersInit,
   };
 
   try {
@@ -57,21 +77,23 @@ export const api = {
   getBbyBook: () => request('/bbybook'),
   getGallery: () => request('/gallery'),
   getActivity: () => request('/activity'),
-  postSpeak: (body: { text: string; author?: string }) =>
-  request('/speak', { method: 'POST', body: JSON.stringify(body) }),
 
   postSay: (body: PostSayBody) => request('/say', { method: 'POST', body: JSON.stringify(body) }),
   postPixelUpdate: (body: { pixels: object[] }) => request('/paint_pixel', { method: 'POST', body: JSON.stringify(body) }),
   postStateChange: (body: object) => request('/state', { method: 'POST', body: JSON.stringify(body) }),
+  // --- Snapshot & Gallery Save Pipeline ---
+  // The frontend customization pipeline saves in two stages:
+  // 1. postSnapshot: Sends the state and composite base64 PNG. The server writes the snapshot to storage.
+  // 2. postSaveToGallery: Sends the raw canvas drawing as a binary PNG blob to the public gallery.
+  // Uses a custom 'content-type' header to override the request helper's default JSON header.
   postSnapshot: (body: { label: string; composite_png_b64: string }) => request('/snapshot', { method: 'POST', body: JSON.stringify(body) }),
   postAttachPng: (snap_id: string, body: { composite_png_b64: string }) => request(`/snapshot_attach_png/${snap_id}`, { method: 'POST', body: JSON.stringify(body) }),
 
-  // Gallery save has a different body/header type
   postSaveToGallery: (blob: Blob, authorName: string, label: string) => {
     return request('/gallery/save', {
       method: 'POST',
       headers: {
-        'content-type': 'image/png', // Override default header
+        'content-type': 'image/png', // Lowercase content-type to override default JSON Content-Type
         'x-author': encodeURIComponent(authorName),
         'x-label': encodeURIComponent(label),
       },

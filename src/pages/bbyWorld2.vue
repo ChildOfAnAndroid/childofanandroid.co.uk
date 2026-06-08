@@ -194,6 +194,7 @@ import { useWorldTime } from '@/composables/useWorldTime';
 import { computeGroupStats } from '@/utils/groupStats';
 import SpeedControls from '@/components/speedControls.vue';
 import CardSwatchBar from '@/components/cardSwatchBar.vue';
+import FamilyTree from '@/components/familyTree.vue';
 import { useSimulationSpeed } from '@/composables/useSimulationSpeed';
 import { resolveCardLabel, loadCardStamp, type StampCard } from '@/utils/cards';
 import { eventToCellCoords } from '@/utils/canvas';

@@ -11,7 +11,6 @@ import bbyBook from '@/pages/bbyBook.vue'
 import bbyWorld from '@/pages/bbyWorld.vue'
 import bbyWorld1 from '@/pages/bbyWorld1.vue'
 import bbyWorld2 from '@/pages/bbyWorld2.vue'
-import bbyAdmin from '@/pages/bbyAdmin.vue'
 import rightNav from '@/components/rightNav.vue'
 
 const routes = [
@@ -76,13 +75,7 @@ const routes = [
 			}
 	},
 
-    {
-            path: '/admin',
-            components: {
-                    main: bbyAdmin,
-                    nav: rightNav
-            }
-    }
+
 ]
 
 export const router = createRouter({

@@ -1,0 +1,1 @@
+Live verification is generated after the public branch is built and tested in GitHub Actions.

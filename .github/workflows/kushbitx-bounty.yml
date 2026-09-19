@@ -1,0 +1,42 @@
+name: KushBitx bounty verification
+
+on:
+  push:
+    branches:
+      - bounty/kushbitx-agent
+    paths:
+      - 'bounties/kushbitx-agent/**'
+      - '.github/workflows/kushbitx-bounty.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bounties/kushbitx-agent
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install JavaScript dependencies
+        run: npm install --ignore-scripts
+      - name: Install Python dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Run automated tests
+        run: npm test
+      - name: Run live free-path agent
+        run: python3 src/agent.py --evidence evidence/run-output.txt
+      - name: Verify evidence contains no payment action
+        run: |
+          grep -F '"signed": false' evidence/run-output.txt
+          grep -F '"paid": false' evidence/run-output.txt
+          grep -F 'SpendGuard is advisory evaluation' evidence/run-output.txt

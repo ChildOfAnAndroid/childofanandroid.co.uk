@@ -1,1 +1,17 @@
-Live verification is generated after the public branch is built and tested in GitHub Actions.
+KushBitx local ML agent run
+mission: Inspect the Base USDC token, evaluate a 1.00 USDC agent spend with SpendGuard, then discover the token-risk x402 payment challenge. Do not sign or pay.
+
+planner step 1: preview (confidence=0.9104, state={"challenge": false, "preview": false, "spend": false})
+tool: kushbitx_preview_token -> {"ok": true}
+planner step 2: spend (confidence=0.8958, state={"challenge": false, "preview": true, "spend": false})
+tool: kushbitx_evaluate_spend -> {"advisory": true, "executionAuthorizedByThisTool": false, "ok": true}
+planner step 3: challenge (confidence=0.8958, state={"challenge": false, "preview": true, "spend": true})
+tool: kushbitx_discover_x402 -> {"challenge": {"amount": "250000", "asset": "USD Coin", "maxTimeoutSeconds": 300, "network": "eip155:8453", "payTo": "<redacted-address>", "scheme": "exact", "x402Version": 2}, "ok": true, "paid": false, "paymentHeaderPresent": true, "signed": false, "stoppedAtPaymentChallenge": true}
+planner step 4: finish (confidence=0.9104, state={"challenge": true, "preview": true, "spend": true})
+
+boundary: no private key requested or stored; no signing or payment tool exists.
+boundary: SpendGuard is advisory evaluation; enforcement belongs to the signing/execution layer.
+
+Verification: GitHub Actions run 35456514983, job 105932645397, 2026-09-19.
+Automated tests: 8 Node tests passed; 3 Python tests passed.
+Live free-path agent step: passed against https://kushbitx.com.

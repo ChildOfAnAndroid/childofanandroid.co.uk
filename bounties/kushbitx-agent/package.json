@@ -1,0 +1,14 @@
+{
+  "name": "childofanandroid-kushbitx-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "test": "node --test test/*.test.mjs && python3 -m unittest discover -s test -p 'test_*.py'",
+    "agent": "python3 src/agent.py"
+  },
+  "dependencies": {
+    "@kushbitx/sdk": "0.1.0"
+  }
+}

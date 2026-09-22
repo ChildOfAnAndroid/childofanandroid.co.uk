@@ -126,7 +126,7 @@ function startClient() {
     if (!paintOverlayData.value) return;
     try {
       // This endpoint is unique; keep direct fetch for URL searchParams.
-      const url = new URL('https://childofanandroid.co.uk/api/paint_events');
+      const url = new URL('/api/paint_events', window.location.origin);
       if (lastPaintEventId.value) url.searchParams.append('since', lastPaintEventId.value);
       const response = await fetch(url.toString());
       if (!response.ok) return;

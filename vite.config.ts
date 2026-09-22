@@ -1,26 +1,25 @@
-// vite.config.js
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import path from 'path';
+import { fileURLToPath, URL } from 'node:url';
+import { devApiTarget } from './dev-api-target';
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue()],
-
-  server: {
-    host: "0.0.0.0",
-    port: 6969,
-    proxy: {
-      '/api': {
-        target: 'https://childofanandroid.co.uk',
-        changeOrigin: true, // This is essential for fixing CORS
-      }
-    }
-  },
-
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    }
-  }
-})
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'BBY_');
+  return {
+    plugins: [vue()],
+    server: {
+      host: '127.0.0.1',
+      port: 6969,
+      strictPort: true,
+      proxy: {
+        '/api': {
+          target: devApiTarget(env),
+          changeOrigin: true,
+        },
+      },
+    },
+    resolve: {
+      alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
+  };
+});

@@ -19,3 +19,13 @@ notebook*
 notebook/*
 
 *.zip
+
+# Private runtime data and local credentials are not site source.
+.env
+.env.*
+!.env.example
+*.local
+PYTHON/storage/
+__pycache__/
+*.py[cod]
+.venv/

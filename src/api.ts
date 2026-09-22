@@ -1,6 +1,7 @@
 // src/api.ts
 
-const API_BASE = 'https://childofanandroid.co.uk/api';
+// Same-origin in production; Vite proxies locally during development.
+const API_BASE = '/api';
 
 /**
  * A centralized fetch wrapper for the bbyAPI.

@@ -3,6 +3,8 @@ from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os, json, time, uuid, base64, threading, array, random, re, io
 import hashlib
+import hmac
+import tempfile
 from collections import deque
 from colorsys import rgb_to_hsv
 import requests
@@ -15,9 +17,7 @@ except Exception:
 # ========= CONFIG =========
 LLM_SERVER_URL = os.environ.get("LLM_SERVER_URL", "").strip()
 if not LLM_SERVER_URL:
-    print("\n[FATAL] LLM_SERVER_URL environment variable is not set!")
-    print("This server cannot function without knowing where the brain server is.")
-    print("Please set it and restart.\n")
+    print("[WARN] LLM_SERVER_URL is unset; running with offline chat and cached state.")
 PORT = int(os.environ.get("BBY_PORT", "8420"))
 PAINT_W, PAINT_H = 64, 64
 MAX_UPLOAD_MB = 8
@@ -48,7 +48,95 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
-CORS(app)
+# CORS is a browser boundary, not authorisation. Privileged routes below also
+# require the server-side admin credential; no credential is shipped in Vite.
+ALLOWED_ORIGINS = frozenset(origin.strip().rstrip("/") for origin in
+    os.environ.get("BBY_ALLOWED_ORIGINS",
+        "https://childofanandroid.co.uk,https://www.childofanandroid.co.uk,"
+        "http://localhost:6969,http://127.0.0.1:6969").split(",") if origin.strip())
+if "*" in ALLOWED_ORIGINS or "null" in ALLOWED_ORIGINS:
+    raise ValueError("BBY_ALLOWED_ORIGINS must contain explicit origins")
+app.config["GALLERY_ADMIN_TOKEN"] = os.environ.get("GALLERY_ADMIN_TOKEN", "").strip()
+CORS(app, resources={r"/api/*": {"origins": list(ALLOWED_ORIGINS)}},
+     allow_headers=["Content-Type", "Authorization", "X-Author", "X-Title", "X-Label", "X-Snap-Id"])
+
+
+@app.before_request
+def _check_write_origin():
+    if request.path.startswith("/api/") and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("Origin")
+        if origin is not None and origin not in ALLOWED_ORIGINS:
+            return jsonify(error="origin not allowed"), 403
+    return None
+
+
+@app.after_request
+def _api_response_headers(response):
+    if request.path.startswith("/api/"):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _admin_authorised() -> bool:
+    expected = app.config.get("GALLERY_ADMIN_TOKEN", "")
+    header = request.headers.get("Authorization", "")
+    scheme, _, supplied = header.partition(" ")
+    return bool(expected and scheme.lower() == "bearer" and supplied and
+                hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")))
+
+
+def _require_admin():
+    if not app.config.get("GALLERY_ADMIN_TOKEN"):
+        return jsonify(error="owner access is not configured"), 503
+    if not _admin_authorised():
+        return jsonify(error="owner authorisation required"), 401, {"WWW-Authenticate": "Bearer"}
+    return None
+
+
+def _public_state_update(data: object) -> dict:
+    """Keep the website's appearance controls, not arbitrary brain mutations."""
+    flags = {"cheeks_on", "tears_on", "jumping", "stretch_left", "stretch_right",
+             "stretch_up", "stretch_down", "squish_left", "squish_right",
+             "squish_up", "squish_down"}
+    numbers = {"R", "G", "B", "eyes", "mouth"}
+    if not isinstance(data, dict) or not data or set(data) - flags - numbers:
+        raise ValueError("only public appearance controls may be changed")
+    for key, value in data.items():
+        if key in flags and type(value) is not bool:
+            raise ValueError(f"{key} must be a boolean")
+        if key in numbers and (type(value) is not int or not 0 <= value <= 255):
+            raise ValueError(f"{key} must be an integer between 0 and 255")
+    return dict(data)
+
+
+def _validated_png(image_bytes: bytes) -> bytes:
+    """Decode and re-encode bounded PNGs before writing public image files."""
+    if Image is None:
+        raise RuntimeError("Pillow is required for image uploads")
+    if not image_bytes or len(image_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
+        raise ValueError("empty or oversized PNG")
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            if image.format != "PNG" or not (0 < image.width <= 4096 and 0 < image.height <= 4096):
+                raise ValueError("expected a PNG no larger than 4096 by 4096")
+            image.load()
+            out = io.BytesIO()
+            image.convert("RGBA").save(out, format="PNG")
+    except (OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("invalid PNG") from exc
+    result = out.getvalue()
+    if len(result) > MAX_UPLOAD_MB * 1024 * 1024:
+        raise ValueError("normalised PNG is too large")
+    return result
+
+
+def _snapshot_record(sid: str) -> dict | None:
+    try:
+        if str(uuid.UUID(sid)) != sid:
+            return None
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return next((row for row in snapshot_index if row.get("id") == sid), None)
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 STORE_DIR = os.path.join(BASE_DIR, "storage")
@@ -170,19 +258,7 @@ def _get_base_url():
     return f"{proto}://{host}".rstrip("/")
 
 # === Brain (local Mac) proxy helpers ===
-def _brain_url(path: str) -> str:
-    base = (LLM_SERVER_URL or '').rstrip('/')
-    path = '/' + path.lstrip('/')
-    return base + path
 
-def _brain_post(path: str, payload: dict, timeout=15):
-    try:
-        url = _brain_url(path)
-        r = requests.post(url, json=payload, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        return {"error": f"brain post failed: {e}"}
 
 # ========= HELPERS =========
 def _load_json(path, default):
@@ -242,6 +318,9 @@ paint_lock = threading.Lock()
 events_lock = threading.Lock()
 activity_lock = threading.Lock()
 chat_lock = threading.Lock()
+snapshot_lock = threading.RLock()
+gallery_lock = threading.RLock()
+state_refresh_requested = threading.Event()
 
 snapshot_index = _load_json(SNAP_IDX, [])
 gallery_index  = _load_json(GALL_IDX, [])
@@ -308,21 +387,43 @@ def _save_snapshot(label=""):
         print(f"[_save_snapshot][FATAL] FAILED TO WRITE SNAPSHOT FILES for {snap_id}: {e}")
         print("[_save_snapshot] This might be a file permissions issue on the server!")
         return None
-    meta = {"id": snap_id, "ts": ts, "label": label, "has_png": False}; snapshot_index.append(meta); _save_json(SNAP_IDX, snapshot_index)
+    meta = {"id": snap_id, "ts": ts, "label": label, "has_png": False}
+    with snapshot_lock:
+        snapshot_index.append(meta)
+        _save_json(SNAP_IDX, snapshot_index)
     print(f"[_save_snapshot] Successfully saved snapshot {snap_id}.")
     return meta
 
 def _attach_png(snap_id: str, png_bytes: bytes):
-    png_path = os.path.join(SNAP_DIR, f"{snap_id}.png")
-    try:
-        with open(png_path, "wb") as f: f.write(png_bytes)
-        for m in snapshot_index:
-            if m["id"] == snap_id:
-                m["has_png"] = True
-                break
-        _save_json(SNAP_IDX, snapshot_index)
-    except Exception as e:
-        print("[ERROR] attach png:", e)
+    # First attachment wins. Install a complete file atomically, with no replace,
+    # so two browsers (or worker processes) cannot overwrite an existing image.
+    png_bytes = _validated_png(png_bytes)
+    with snapshot_lock:
+        record = _snapshot_record(snap_id)
+        if record is None:
+            raise ValueError("unknown snapshot")
+        png_path = os.path.join(SNAP_DIR, f"{snap_id}.png")
+        temp_path = None
+        created = False
+        try:
+            with tempfile.NamedTemporaryFile(dir=SNAP_DIR, prefix=".snapshot-", delete=False) as handle:
+                temp_path = handle.name
+                handle.write(png_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+            try:
+                os.link(temp_path, png_path)
+                created = True
+            except FileExistsError:
+                # A previous completed attachment is authoritative, not replaced.
+                pass
+        finally:
+            if temp_path is not None:
+                os.unlink(temp_path)
+        if not record.get("has_png"):
+            record["has_png"] = True
+            _save_json(SNAP_IDX, snapshot_index)
+        return created
 
 
 def _crop_transparent_to_square(image_bytes: bytes) -> bytes:
@@ -340,7 +441,9 @@ def _crop_transparent_to_square(image_bytes: bytes) -> bytes:
             bbox = img.getbbox()
             if not bbox:
                 # Image is fully transparent, return a 1x1 transparent pixel
-                return Image.new("RGBA", (1, 1), (0,0,0,0)).tobytes()
+                out = io.BytesIO()
+                Image.new("RGBA", (1, 1), (0,0,0,0)).save(out, format="PNG")
+                return out.getvalue()
 
             # 2. Crop to the tightest rectangle first
             cropped = img.crop(bbox)
@@ -399,7 +502,7 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
         raise ValueError("empty image")
     if len(image_bytes) > MAX_UPLOAD_MB*1024*1024:
         raise ValueError("image too large")
-    image_bytes = _crop_transparent_to_square(image_bytes)
+    image_bytes = _crop_transparent_to_square(_validated_png(image_bytes))
     gid = str(uuid.uuid4()); ts = int(time.time())
     fname = f"{ts}_{gid}.png"
     path = os.path.join(GALL_DIR, fname)
@@ -451,9 +554,10 @@ def _add_to_gallery(image_bytes: bytes, author="anon", title="", label="", snap_
     c = _avg_colour_from_image(colour_path)
     if c: meta["colour"] = c
 
-    gallery_index.append(meta)
-    if len(gallery_index) > 5000: del gallery_index[:-5000]
-    _save_json(GALL_IDX, gallery_index)
+    with gallery_lock:
+        gallery_index.append(meta)
+        if len(gallery_index) > 5000: del gallery_index[:-5000]
+        _save_json(GALL_IDX, gallery_index)
     return meta
 
 
@@ -619,28 +723,41 @@ def pixel_aging_loop():
 
 def state_sync_loop():
     if not LLM_SERVER_URL:
-        print("[STATE_SYNC] FATAL: loop cannot run as LLM_SERVER_URL is not set.")
+        print("[STATE_SYNC] disabled: no brain URL; cached state remains available.")
         return
     print(f"[STATE_SYNC] active, polling {LLM_SERVER_URL} at {STATE_SYNC_HZ}Hz")
     base_period = 1.0 / max(STATE_SYNC_HZ, 0.1)
     period = base_period
     failures = 0
     while True:
+        started = time.monotonic()
         try:
             r = requests.get(f"{LLM_SERVER_URL.rstrip('/')}/api/state", timeout=2)
-            if r.ok:
-                with state_lock:
-                    babyState.update(r.json())
-                failures = 0
-                period = base_period
-            elif random.randint(0, 50) == 0:
-                print(f"[STATE_SYNC][WARN] Failed to sync state, brain returned status: {r.status_code}")
-        except requests.exceptions.RequestException:
+            r.raise_for_status()
+            payload = r.json()
+            if not isinstance(payload, dict):
+                raise ValueError("brain state must be an object")
+            with state_lock:
+                babyState.update(payload)
+            failures = 0
+            period = base_period
+        except (requests.exceptions.RequestException, ValueError):
             failures += 1
             if failures == 1 or failures % 5 == 0:
-                print(f"[STATE_SYNC][WARN] Could not connect to brain server at {LLM_SERVER_URL}.")
+                print("[STATE_SYNC][WARN] Could not refresh authoritative brain state.")
             period = min(period * 2, 60)
-        time.sleep(period)
+        if failures:
+            # Notifications must not bypass backoff when the brain is down.
+            state_refresh_requested.clear()
+            time.sleep(period)
+        else:
+            # Existing BabyLLM senders may still POST their old JSON state. Treat
+            # it only as a coalesced wake-up hint; pull data from the trusted URL.
+            state_refresh_requested.wait(timeout=period)
+            state_refresh_requested.clear()
+            remaining = 1.0 - (time.monotonic() - started)
+            if remaining > 0:
+                time.sleep(remaining)
 
 threading.Thread(target=pixel_aging_loop, daemon=True).start()
 threading.Thread(target=state_sync_loop, daemon=True).start()
@@ -655,34 +772,32 @@ def get_state():
 
 @app.post("/api/brain_push")
 def brain_push():
-    """Receive a reactive state push from the brain (Discord bot).
+    """Accept an invalidation hint, never caller-supplied brain state.
 
-    The brain monitors its own state and POSTs here whenever meaningful
-    attributes change, replacing the need for high-frequency polling.
-    The state_sync_loop still runs as a slow fallback.
+    This preserves existing BabyLLM notification clients without exposing a
+    state-write credential or requiring a new shared secret on two machines.
+    The single background worker coalesces hints and fetches authoritative state.
     """
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify(error="bad json"), 400
-    with state_lock:
-        babyState.update(data)
-    return jsonify(ok=True)
+    if not LLM_SERVER_URL:
+        return jsonify(error="brain not configured"), 503
+    state_refresh_requested.set()
+    return jsonify(ok=True, refresh_queued=True), 202
 
 # --- Proxy POST for /api/state ---
 
 @app.post("/api/state")
 def api_set_state():
-    data = request.get_json(silent=True) or {}
-    _reload_users_from_disk()
-    if not isinstance(data, dict):
-        return jsonify(error="no json body"), 400
+    try:
+        data = _public_state_update(request.get_json(silent=True))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
     if not LLM_SERVER_URL:
         return jsonify(error="brain not configured"), 503
     try:
         r = requests.post(f"{LLM_SERVER_URL.rstrip('/')}/api/state", json=data, timeout=5)
         return (r.text, r.status_code, {"Content-Type": r.headers.get("Content-Type","application/json")})
-    except requests.exceptions.RequestException as e:
-        return jsonify(error=f"brain unreachable: {e}"), 504
+    except requests.exceptions.RequestException:
+        return jsonify(error="brain unreachable"), 504
 
 @app.get("/api/chat_history")
 def api_chat_history():
@@ -734,7 +849,12 @@ def api_consent():
 @app.post("/api/say")
 def api_say():
     """Proxies the chat message to the brain server and records history."""
-    data = request.json or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(status="error", reply="expected a JSON object"), 400
+    for key in ("text", "author", "platform", "user_id", "handle", "display_name"):
+        if key in data and data[key] is not None and not isinstance(data[key], str):
+            return jsonify(status="error", reply=f"{key} must be text"), 400
     _reload_users_from_disk()
     text = (data.get("text") or "").strip()
     author = (data.get("author") or "anon").strip()
@@ -757,6 +877,13 @@ def api_say():
 
     if not text:
         return jsonify(status="error", reply="no text :("), 400
+    if len(text) > 20000:
+        return jsonify(status="error", reply="message too long"), 400
+    speak = data.get("speak")
+    if speak is None:
+        speak = platform == "web"
+    if type(speak) is not bool:
+        return jsonify(status="error", reply="speak must be a boolean"), 400
 
     # Decide if we persist this user/message
     is_command = bool(data.get("is_command")) or _looks_like_command(text)
@@ -794,18 +921,24 @@ def api_say():
         try:
             r = requests.post(
                 f"{LLM_SERVER_URL.rstrip('/')}/api/say",
-                json={"text": text, "author": author},
+                json={"text": text, "author": display_name, "speak": speak},
                 timeout=185 # Slightly longer than brain timeout
             )
             status_code = r.status_code
             if r.ok:
-                reply = r.json().get("reply", "... (brain gave empty reply)")
+                payload = r.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("invalid brain response")
+                reply = payload.get("reply", "... (brain gave empty reply)")
             else:
                 reply = f"... (brain error: {r.status_code})"
         except requests.exceptions.RequestException as e:
             print("[ERROR] /api/say proxy failed:", e)
             reply = "... (could not reach brain)"
             status_code = 504 # Gateway timeout
+        except ValueError:
+            reply = "... (brain returned an invalid response)"
+            status_code = 502
 
     # The brain server now handles its own color, so we just get the latest state
     with state_lock:
@@ -824,12 +957,7 @@ def api_say():
         if len(chat_history) > 500: chat_history[:] = chat_history[-500:]
         _save_json(CHAT_FILE, chat_history)
 
-    speak = data.get("speak")
-    if speak is None:
-        speak = (platform == "web")  # default: web messages speak
-    if speak:
-        brain_resp = _brain_post("/api/say", {"text": text, "author": display_name})
-        bot_msg["brain_reply"] = brain_resp.get("reply") if isinstance(brain_resp, dict) else None
+    # Speaking is part of the single request above, never a second generation.
     
     return jsonify(
         status=("ok" if status_code == 200 else "error"),
@@ -842,6 +970,9 @@ def api_say():
 # --- Optional: Read-only endpoint to fetch a user record by uid ---
 @app.get('/api/users/<path:uid>')
 def api_get_user(uid: str):
+    denied = _require_admin()
+    if denied is not None:
+        return denied
     _reload_users_from_disk()
     rec = users.get(uid)
     if not rec: return jsonify(error='not found'), 404
@@ -969,18 +1100,24 @@ def api_paint_events():
 # ---- Snapshots ----
 @app.post("/api/snapshot")
 def api_snapshot():
-    data = request.json or {}
-    label = (data.get("label") or "").strip()
-    meta = _save_snapshot(label)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error="expected a JSON object"), 400
+    label = data.get("label") or ""
+    if not isinstance(label, str) or len(label) > 500:
+        return jsonify(error="label must be at most 500 characters"), 400
+    b64 = data.get("composite_png_b64")
+    try:
+        png = _validated_png(_b64_to_bytes(b64)) if b64 else None
+    except (ValueError, TypeError):
+        return jsonify(error="invalid composite PNG"), 400
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+    meta = _save_snapshot(label.strip())
     if not meta:
         return jsonify(status="error", message="failed"), 500
-    b64 = data.get("composite_png_b64")
-    if b64:
-        try:
-            _attach_png(meta["id"], _b64_to_bytes(b64))
-            meta["has_png"] = True
-        except Exception as e:
-            print("[WARN] attach composite:", e)
+    if png:
+        _attach_png(meta["id"], png)
     base = _get_base_url()
     if meta.get("has_png"):
         meta["png_url"] = f"{base}/api/snapshots/{meta['id']}.png"
@@ -988,15 +1125,32 @@ def api_snapshot():
 
 @app.post("/api/snapshot_attach_png/<sid>")
 def api_snapshot_attach_png(sid):
-    data = request.json or {}
-    b64 = data.get("composite_png_b64")
-    if not b64:
-        return jsonify(error="missing composite_png_b64"), 400
-    try:
-        _attach_png(sid, _b64_to_bytes(b64))
-        return jsonify(status="ok")
-    except Exception as e:
-        return jsonify(error=str(e)), 500
+    # Browser autosnapshot completion is intentional. Limit it to the current
+    # auto-created snapshot; all other completions require owner authorisation.
+    with snapshot_lock:
+        record = _snapshot_record(sid)
+        if record is None:
+            return jsonify(error="snapshot not found"), 404
+        if not _admin_authorised():
+            with activity_lock:
+                current_autosnap = sid == last_autosnap_id
+            if not current_autosnap or record.get("label") != "auto-burst":
+                return jsonify(error="owner authorisation required"), 403
+        if os.path.isfile(os.path.join(SNAP_DIR, f"{sid}.png")):
+            if not record.get("has_png"):
+                record["has_png"] = True
+                _save_json(SNAP_IDX, snapshot_index)
+            return jsonify(status="ok", already_attached=True)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data.get("composite_png_b64"):
+            return jsonify(error="missing composite_png_b64"), 400
+        try:
+            created = _attach_png(sid, _b64_to_bytes(data["composite_png_b64"]))
+        except (ValueError, TypeError):
+            return jsonify(error="invalid composite PNG"), 400
+        except RuntimeError as exc:
+            return jsonify(error=str(exc)), 503
+    return jsonify(status="ok", already_attached=not created)
 
 @app.get("/api/snapshots")
 def api_snapshots():
@@ -1036,12 +1190,16 @@ def api_snapshots_latest():
 
 @app.get("/api/snapshots/<sid>.png")
 def api_snapshot_png(sid):
+    if _snapshot_record(sid) is None:
+        return jsonify(error="snapshot not found"), 404
     path = os.path.join(SNAP_DIR, f"{sid}.png")
     if not os.path.exists(path): return ("not found", 404)
     return send_from_directory(SNAP_DIR, f"{sid}.png", mimetype="image/png")
 
 @app.get("/api/snapshot/<sid>")
 def api_snapshot_raw(sid):
+    if _snapshot_record(sid) is None:
+        return jsonify(error="snapshot not found"), 404
     raw_path = os.path.join(SNAP_DIR, f"{sid}.raw")
     state_path = os.path.join(SNAP_DIR, f"{sid}.state.json")
     if not (os.path.exists(raw_path) and os.path.exists(state_path)):
@@ -1062,9 +1220,10 @@ def api_gallery_index_count():
 @app.post("/api/gallery/save")
 def api_gallery_save():
     try:
-        body = request.get_data(cache=False)
-        if body:
-            img = body
+        if not request.is_json:
+            if request.mimetype != "image/png":
+                return jsonify(ok=False, error="expected image/png or JSON"), 415
+            img = request.get_data(cache=False)
             # Headers are ASCII only, so values may be percent-encoded to allow
             # emoji or other unicode characters. Decode them if present.
             author = unquote(request.headers.get("x-author") or "anon")
@@ -1072,7 +1231,9 @@ def api_gallery_save():
             label  = unquote(request.headers.get("x-label")  or "")
             snap_id= request.headers.get("x-snap-id") or None
         else:
-            j = request.get_json(silent=True) or {}
+            j = request.get_json(silent=True)
+            if not isinstance(j, dict):
+                return jsonify(ok=False, error="expected a JSON object"), 400
             b64 = j.get("png_b64", "").strip()
             if not b64: return jsonify(ok=False, error="missing png_b64"), 400
             img = _b64_to_bytes(b64)
@@ -1083,8 +1244,10 @@ def api_gallery_save():
         meta = _add_to_gallery(img, author=author, title=title, label=label, snap_id=snap_id)
         base = _get_base_url()
         return jsonify(ok=True, id=meta["id"], url=f"{base}/api/gallery/file/{meta['file']}", title=meta.get("title",""))
-    except ValueError as e:
-        return jsonify(ok=False, error=str(e)), 413
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(ok=False, error="invalid gallery image or metadata"), 400
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 503
     except Exception as e:
         return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 500
 
@@ -1110,24 +1273,31 @@ def api_gallery_list():
 
 @app.post("/api/gallery/update_meta")
 def api_gallery_update_meta():
-    data = request.get_json(force=True) or {}
+    denied = _require_admin()
+    if denied is not None:
+        return denied
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(ok=False, error="expected a JSON object"), 400
+    for key in ("id", "title", "label"):
+        if key in data and (not isinstance(data[key], str) or len(data[key]) > 500):
+            return jsonify(ok=False, error=f"{key} must be text of at most 500 characters"), 400
     gid = (data.get("id") or "").strip()
-    if not gid: return jsonify(ok=False, error="missing id"), 400
+    if not gid:
+        return jsonify(ok=False, error="missing id"), 400
     new_title = (data.get("title") or "").strip()
     new_label = (data.get("label") or "").strip()
-    found = False
-    for m in gallery_index:
-        if m.get("id") == gid:
-            if new_title:
-                m["title"] = new_title
-                if not new_label:
-                    m["label"] = m.get("label") or new_title
-            if new_label:
-                m["label"] = new_label
-            found = True
-            break
-    if not found: return jsonify(ok=False, error="not found"), 404
-    _save_json(GALL_IDX, gallery_index)
+    with gallery_lock:
+        record = next((m for m in gallery_index if m.get("id") == gid), None)
+        if record is None:
+            return jsonify(ok=False, error="not found"), 404
+        if new_title:
+            record["title"] = new_title
+            if not new_label:
+                record["label"] = record.get("label") or new_title
+        if new_label:
+            record["label"] = new_label
+        _save_json(GALL_IDX, gallery_index)
     return jsonify(ok=True)
 
 @app.get("/api/gallery/file/<fname>")
@@ -1153,5 +1323,6 @@ def api_activity():
 
 # ========= RUN =========
 if __name__ == "__main__":
-    print(f"=== bby_public_server on 127.0.0.1:{PORT} (Brain at {LLM_SERVER_URL or 'NOT SET!'}) ===")
-    app.run(host="0.0.0.0", port=PORT)
+    host = os.environ.get("BBY_HOST", "127.0.0.1")
+    print(f"=== bby_public_server on {host}:{PORT} (Brain at {LLM_SERVER_URL or 'offline'}) ===")
+    app.run(host=host, port=PORT)

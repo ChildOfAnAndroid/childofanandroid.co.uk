@@ -6,8 +6,11 @@ import { router } from './router'
 // --- cab admin helpers ---
 const cab: any = {};
 
-// rename by URL (finds the item's id, then PATCHes)
-cab.name = async function (url: string, newTitle: string, newLabel?: string) {
+// Owner-only rename helper. The token is supplied for this call, never stored.
+cab.name = async function (url: string, newTitle: string, newLabel?: string, adminToken?: string) {
+  if (!adminToken?.trim()) throw new Error(
+    "Owner authorisation required: supply the gallery admin token as the fourth argument."
+  );
   const filename = (url || '').split('/').pop();
   if (!filename) throw new Error('bad URL');
 
@@ -23,7 +26,7 @@ cab.name = async function (url: string, newTitle: string, newLabel?: string) {
   // 2) call update_meta with the id
   const res = await fetch('/api/gallery/update_meta', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken.trim()}` },
     body: JSON.stringify({
       id: item.id,
       title: newTitle,

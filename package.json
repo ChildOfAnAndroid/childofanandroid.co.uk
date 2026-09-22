@@ -6,7 +6,9 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vue-tsc -b && vite build",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"test:frontend": "node scripts/test_frontend.mjs",
+		"test:server": "python3 -m unittest discover -s tests -p 'test_*.py' -v"
 	},
 	"dependencies": {
 		"lodash": "^4.17.21",

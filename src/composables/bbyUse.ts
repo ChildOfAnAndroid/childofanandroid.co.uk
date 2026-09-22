@@ -125,13 +125,7 @@ function startClient() {
   setInterval(async () => {
     if (!paintOverlayData.value) return;
     try {
-      // This endpoint is unique; keep direct fetch for URL searchParams.
-      const url = new URL('https://childofanandroid.co.uk/api/paint_events');
-      if (lastPaintEventId.value) url.searchParams.append('since', lastPaintEventId.value);
-      const response = await fetch(url.toString());
-      if (!response.ok) return;
-
-      const events: {id: string, pixels: {x:number, y:number, r:number, g:number, b:number, a:number}[]}[] = await response.json();
+      const events: {id: string, pixels: {x:number, y:number, r:number, g:number, b:number, a:number}[]}[] = await api.getPaintEvents(lastPaintEventId.value);
       if (events.length > 0) {
         const data = paintOverlayData.value.data;
         for (const ev of events) {

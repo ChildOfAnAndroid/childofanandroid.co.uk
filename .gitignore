@@ -19,3 +19,12 @@ notebook*
 notebook/*
 
 *.zip
+
+# Local configuration, credentials, and persistent gateway data.
+.env
+.env.*
+!.env.example
+PYTHON/storage/
+__pycache__/
+*.py[cod]
+.pytest_cache/
